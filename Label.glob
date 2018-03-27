@@ -1,0 +1,93 @@
+DIGEST 25a7876016f66f3b13547e2282bfd570
+FLabel
+R15:18 Coq.Lists.List <> <> lib
+R36:53 Coq.Strings.String <> <> lib
+ind 68:76 <> principal
+constr 92:100 <> Principal
+R110:113 Coq.Init.Logic <> :type_scope:x_'->'_x not
+R114:122 Label <> principal ind
+R104:109 Coq.Strings.String <> string ind
+ind 187:191 <> Label
+constr 207:208 <> LB
+R212:212 Coq.Init.Logic <> :type_scope:x_'->'_x not
+R227:231 Coq.Init.Logic <> :type_scope:x_'->'_x not
+R232:236 Label <> Label ind
+R213:216 Coq.Init.Datatypes <> list ind
+R218:226 Label <> principal ind
+def 251:263 <> beq_principal
+R282:282 Label <> y var
+R280:280 Label <> x var
+R295:303 Label <> Principal constr
+R309:317 Label <> Principal constr
+R328:337 Coq.Strings.String <> string_dec def
+R360:364 Coq.Init.Datatypes <> false constr
+R350:353 Coq.Init.Datatypes <> true constr
+def 383:397 <> principals_find
+R404:412 Label <> principal ind
+R421:424 Coq.Init.Datatypes <> list ind
+R426:434 Label <> principal ind
+R448:449 Label <> pl var
+R462:464 Coq.Init.Datatypes <> nil constr
+R469:473 Coq.Init.Datatypes <> false constr
+R482:485 Coq.Init.Datatypes <> :list_scope:x_'::'_x not
+R494:506 Label <> beq_principal def
+R508:508 Label <> p var
+R528:542 Label <> principals_find def
+R544:544 Label <> p var
+R517:520 Coq.Init.Datatypes <> true constr
+def 568:581 <> principals_add
+R588:596 Label <> principal ind
+R605:608 Coq.Init.Datatypes <> list ind
+R610:618 Label <> principal ind
+R630:644 Label <> principals_find def
+R648:649 Label <> pl var
+R646:646 Label <> p var
+R672:673 Label <> pl var
+R657:660 Coq.Init.Datatypes <> cons constr
+R664:665 Label <> pl var
+R662:662 Label <> p var
+def 686:702 <> principals_remove
+R709:717 Label <> principal ind
+R726:729 Coq.Init.Datatypes <> list ind
+R731:739 Label <> principal ind
+R754:755 Label <> pl var
+R768:770 Coq.Init.Datatypes <> nil constr
+R775:777 Coq.Init.Datatypes <> nil constr
+R786:789 Coq.Init.Datatypes <> :list_scope:x_'::'_x not
+R798:810 Label <> beq_principal def
+R812:812 Label <> p var
+R860:864 Coq.Init.Datatypes <> :list_scope:x_'::'_x not
+R886:886 Coq.Init.Datatypes <> :list_scope:x_'::'_x not
+R865:881 Label <> principals_remove def
+R883:883 Label <> p var
+R822:838 Label <> principals_remove def
+R840:840 Label <> p var
+def 905:920 <> principals_inter
+R929:932 Coq.Init.Datatypes <> list ind
+R934:942 Label <> principal ind
+R952:955 Coq.Init.Datatypes <> list ind
+R957:965 Label <> principal ind
+R979:981 Label <> pl1 var
+R995:997 Coq.Init.Datatypes <> nil constr
+R1002:1004 Coq.Init.Datatypes <> nil constr
+R1013:1016 Coq.Init.Datatypes <> :list_scope:x_'::'_x not
+R1026:1040 Label <> principals_find def
+R1044:1046 Label <> pl2 var
+R1109:1124 Label <> principals_inter def
+R1128:1130 Label <> pl2 var
+R1056:1060 Coq.Init.Datatypes <> :list_scope:x_'::'_x not
+R1083:1083 Coq.Init.Datatypes <> :list_scope:x_'::'_x not
+R1061:1076 Label <> principals_inter def
+R1080:1082 Label <> pl2 var
+def 1150:1166 <> prirncipals_union
+R1175:1178 Coq.Init.Datatypes <> list ind
+R1180:1188 Label <> principal ind
+R1198:1201 Coq.Init.Datatypes <> list ind
+R1203:1211 Label <> principal ind
+R1225:1227 Label <> pl1 var
+R1241:1243 Coq.Init.Datatypes <> nil constr
+R1248:1250 Label <> pl2 var
+R1259:1262 Coq.Init.Datatypes <> :list_scope:x_'::'_x not
+R1268:1281 Label <> principals_add def
+R1286:1302 Label <> prirncipals_union def
+R1306:1308 Label <> pl2 var

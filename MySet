@@ -1,0 +1,43 @@
+Require Import List.
+Require Import Coq.Strings.String.
+
+Inductive principal : Type :=
+  | Principal : string -> principal.
+
+Definition beq_principal x y :=
+  match x,y with
+    | Principal n1, Principal n2 => if string_dec n1 n2 then true else false
+  end.
+
+Fixpoint principals_find (p : principal) (pl : list principal) :=
+  match pl with
+    | nil => false
+    | h :: t => if beq_principal p h then true else (principals_find p t)
+  end.
+
+Definition principals_add (p : principal) (pl : list principal) :=
+  if (principals_find p pl) then cons p pl else pl.
+
+Fixpoint principals_remove (p : principal) (pl : list principal) := 
+  match pl with
+    | nil => nil
+    | h :: t => if beq_principal p h then (principals_remove p t) else 
+        h :: (principals_remove p t)
+  end.
+
+Fixpoint principals_inter (pl1 : list principal) (pl2 : list principal) :=
+  match pl1 with 
+    | nil => nil
+    | h :: t => if (principals_find h pl2) then (h :: (principals_inter t pl2))
+                 else (principals_inter t pl2)
+  end.
+
+Fixpoint prirncipals_union (pl1 : list principal) (pl2 : list principal) :=
+  match pl1 with 
+    | nil => pl2
+    | h :: t => principals_add h (prirncipals_union t pl2)
+  end.
+
+
+
+
