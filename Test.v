@@ -146,31 +146,40 @@ Definition empty_labeled_stack_frame : labeled_stack_frame := (Labeled_frame L_L
 
 Definition main_frame : labeled_stack_frame := empty_labeled_stack_frame.
 
-Definition stack :Type := list labeled_stack_frame.
+Definition stack :Type := list (option labeled_stack_frame).
 
 Check stack. 
 
 Check labeled_frame_update.
 
 Definition stack_push (s : stack) (lsf : labeled_stack_frame) := 
-  cons lsf s. 
+  cons (Some lsf) s. 
 
 Fixpoint update_stack_top (s : stack) (x : id) (v : tm) := 
 match s with 
-  | cons lsf s' => cons (labeled_frame_update lsf x v) s'
+  | cons (Some lsf) s' => cons (Some (labeled_frame_update lsf x v)) s'
   | nil => nil
+  | cons None s' => update_stack_top s' x v
+end.
+
+Definition stack_pop (s : stack) : (option labeled_stack_frame) := 
+match s with
+  | h :: t => h
+  | nil => None
 end.
 
 Definition variableLookup (s : stack) (x : id) : (option tm)  :=
 match s with 
-  | (lsf) :: t => (get_stack_frame lsf)(x)
+  | (Some lsf) :: t => (get_stack_frame lsf)(x)
   | nil => None
+  | None :: lsf => None
 end. 
 
 Definition get_current_label (s : stack) : Label :=
 match s with
-  | lsf :: t => (get_stack_label lsf)
+  | (Some lsf) :: t => (get_stack_label lsf)
   | nil => L_Label
+  | None :: lsf => L_Label
 end.
 
 (* Definitions for Heap related*)
@@ -242,10 +251,11 @@ Definition current_label (sigma : Sigma) : Label :=
 
 Fixpoint update_current_label (s : stack) (lb : Label) := 
 match s with 
-  | cons lsf s' => match lsf with
-                            | Labeled_frame lb' sf => cons (Labeled_frame lb sf) s'
+  | cons (Some lsf) s' => match lsf with
+                            | Labeled_frame lb' sf => cons (Some (Labeled_frame lb sf)) s'
                           end 
   | nil => nil
+  | cons None s' => update_current_label s' lb
 end.
 
 
@@ -292,7 +302,7 @@ Inductive step : tm -> Sigma -> tm -> Sigma -> Prop :=
   | ST_var : forall id sigma s h lb sf lsf v s',
       sigma = SIGMA s h ->
       s = cons lsf s' ->
-      lsf = Labeled_frame lb sf ->
+      lsf = Some (Labeled_frame lb sf) ->
       Some v = sf(id) ->
       (Tvar id) / sigma ==> v / sigma
 
@@ -331,7 +341,7 @@ Inductive step : tm -> Sigma -> tm -> Sigma -> Prop :=
       sf = sf_update (sf_update empty_stack_frame (Id "this") (ObjId o)) arg_id v ->
       l = (current_label sigma) ->
       lsf = Labeled_frame l sf ->
-      theta = lsf -> 
+      theta = Some lsf -> 
       Delta' = cons theta s ->
       Some ((var_def cls_a arg_id), body) = findmbody cls meth p -> 
       sigma' = SIGMA Delta' (get_heap sigma) ->
@@ -427,7 +437,7 @@ Inductive step : tm -> Sigma -> tm -> Sigma -> Prop :=
       sf = sf_update (sf_update empty_stack_frame (Id "this") (ObjId o)) arg_id v ->
       l = join_label lb (current_label sigma) ->
       lsf = Labeled_frame l sf ->
-      theta = lsf -> 
+      theta = Some lsf -> 
       Delta' = cons theta s ->
       Some ((var_def cls_a arg_id), body) = findmbody cls meth p -> 
       sigma' = SIGMA Delta' (get_heap sigma) ->

@@ -5,8 +5,6 @@ Require Import Coq.Strings.String.
 Inductive principal : Type :=
   | Principal : string -> principal.
 
-
-
 (* centralized label: the readers of this data*)
 Inductive Label : Type :=
   | LB : (list principal) -> Label.
