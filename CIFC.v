@@ -7,13 +7,21 @@ Require Import Coq.Lists.List.
 
 Require Import Label.
 
-(* class name *)
-Inductive cn : Type :=
-  | className : string -> cn.
 
 (* identifiers *)
 Inductive id : Type :=
   | Id : string -> id.
+
+(* class name *)
+Inductive cn : Type :=
+  | class_name : string -> cn.
+
+Inductive field : Type :=
+  | fd : cn -> id -> field.
+
+
+
+
 
 (* comparison of identifiers *)
 Definition beq_id x y :=
@@ -21,8 +29,7 @@ Definition beq_id x y :=
     | Id n1, Id n2 => if string_dec n1 n2 then true else false
   end.
 
-Inductive field : Type :=
-  | fd : cn -> id -> field.
+
 
 (*
 (* expression *)
@@ -85,11 +92,17 @@ Inductive tm : Type :=
   | ObjId: oid -> tm
   | NPE : tm
   (* runtime labeled date*)
-  | v_l : tm -> Label -> tm
-  | v_opa_l : tm -> Label -> tm.
+  | v_l : tm -> tm -> tm
+  | v_opa_l : tm -> tm -> tm.
 
 Inductive method_def : Type :=
   | m_def : cn -> id -> cn -> id -> tm -> method_def.
+
+
+Inductive CLASS : Type :=
+  | class_def : cn -> (list field) -> (list method_def) -> CLASS. 
+
+
 
 Inductive value : tm -> Prop :=
   (* contants are values or normal form *)
@@ -106,7 +119,6 @@ Inductive value : tm -> Prop :=
       forall t lb, value (v_l t lb).
 *)
 
-Notation "( x , y )" := (pair x y).
 
 (* stack frame *)
 Definition stack_frame : Type := id -> (option tm).
@@ -144,16 +156,13 @@ Definition L_Label := LB nil.
 Definition empty_stack_frame : stack_frame := fun _ => None.
 Definition empty_labeled_stack_frame : labeled_stack_frame := (Labeled_frame L_Label empty_stack_frame).
 
-Definition main_frame : labeled_stack_frame := empty_labeled_stack_frame.
 
+(* stack *)
 Definition stack :Type := list labeled_stack_frame.
 
 Check stack. 
 
 Check labeled_frame_update.
-
-Definition stack_push (s : stack) (lsf : labeled_stack_frame) := 
-  cons lsf s. 
 
 Fixpoint update_stack_top (s : stack) (x : id) (v : tm) := 
 match s with 
@@ -180,13 +189,13 @@ Definition fields_update (F : FieldMap) (x : id) (v : tm) :=
   fun x' => if beq_id x x' then (Some v) else F x'.
 
 Inductive heapObj : Type :=
-  | Heap_OBJ : cn -> FieldMap -> Label -> heapObj.
+  | Heap_OBJ : CLASS -> FieldMap -> Label -> heapObj.
 
 Definition heap := oid -> (option heapObj).
 
 Definition get_obj_label (h : heap) (o : oid) : Label :=
   match h(o) with
-  | Some (Heap_OBJ id F lb) => lb
+  | Some (Heap_OBJ c F lb) => lb
   | None => L_Label
   end. 
 
@@ -206,15 +215,8 @@ Definition Config := pair Sigma tm.
 
 Check Config.
 
-Inductive ty : Type :=
-  | cnTy : ty 
-  | LabelTy : ty
-  | LabelelTy : ty -> ty
-  | OpaqueLabeledTy : ty -> ty.
 
 
-(* typing environment *)
-Definition context := id -> (option ty).
 
 Definition get_stack (sgm : Sigma) : stack :=
   match sgm with
@@ -226,8 +228,6 @@ Definition get_heap (sgm : Sigma) : heap :=
    | SIGMA s h => h
   end.
 
-
-Reserved Notation "Gamma '|-' t '\in' T" (at level 40).
 Reserved Notation "c1 '/' st '==>' c1' '/' st'"
   (at level 40, st at level 39, c1' at level 39).
 
@@ -249,38 +249,45 @@ match s with
 end.
 
 
-Definition P := cn -> ((list id) * option (list method_def)). 
-
-Check P.
-
 (* variable declaration *)
 Inductive vd : Type :=
   | var_def : cn -> id -> vd.
 
-Check snd.
 
-Definition findmbody (cls : cn) (m : id) (p : P) := 
-  match snd (p(cls)) with
-    | Some nil => None
-    | Some (h :: t) => match h with 
-                  | m_def cls m cls_a arg_id body => Some ((var_def cls_a arg_id), body)
-                end
-    | None => None
+
+Fixpoint find_method_body (methods : list method_def) (m : id) :=
+  match methods with
+    | nil => None
+    | h :: t =>  match h with 
+                  | m_def cls m' cls_a arg_id body => if beq_id m m' then Some (m_def cls m' cls_a arg_id body) else find_method_body t m
+                 end
+  end.
+
+Definition find_method (cls : CLASS) (m : id) := 
+  match cls with
+    | class_def c_name fields methods => find_method_body methods m
   end.
 
 
-Definition find_fields (cls : cn) (p : P) :=
-  fst (p(cls)).
 
-Check find_fields.
 
+Definition find_fields (cls : CLASS) := 
+  match cls with
+    | class_def c_name fields methods => fields
+  end.
+
+Fixpoint type_of_field (fields : list field) (f : id) : option cn :=
+  match fields with
+     | nil => None
+     | (fd cls h) :: t => if beq_id h f then Some cls else (type_of_field t f)
+  end.
 
 Definition empty_field_map : FieldMap := fun _ => None.
 
-Fixpoint init_field_map (fields : list id) (fm : FieldMap) :=
+Fixpoint init_field_map (fields : list field) (fm : FieldMap) :=
   match fields with 
     | nil => fm
-    | h :: t => init_field_map t (fun x' => if beq_id h x' then Some null else fm h)
+    | (fd cls h) :: t => init_field_map t (fun x' => if beq_id h x' then Some null else fm h)
   end.
 
 Check init_field_map.
@@ -325,15 +332,15 @@ Inductive step : tm -> Sigma -> tm -> Sigma -> Prop :=
        e / sigma ==>  e' / sigma' -> 
       (MethodCall e id e) / sigma ==> (MethodCall e id e') / sigma'
   (* normal method call *)
-  | ST_MethodCall3 : forall sigma sigma' o s h cls fields v lx l theta Delta' sf lsf arg_id cls_a body meth p ,
+  | ST_MethodCall3 : forall sigma sigma' o s h cls fields v lx l theta Delta' sf lsf arg_id cls_a body meth returnT,
       sigma = SIGMA s h ->
       Some (Heap_OBJ cls fields lx) = h(o) -> 
+      Some (m_def returnT meth cls_a arg_id body) = find_method cls meth -> 
       sf = sf_update (sf_update empty_stack_frame (Id "this") (ObjId o)) arg_id v ->
       l = (current_label sigma) ->
       lsf = Labeled_frame l sf ->
       theta = lsf -> 
       Delta' = cons theta s ->
-      Some ((var_def cls_a arg_id), body) = findmbody cls meth p -> 
       sigma' = SIGMA Delta' (get_heap sigma) ->
       MethodCall (ObjId o) meth v / sigma ==> body / sigma'
   (* null pointer exception for method call *)
@@ -341,14 +348,15 @@ Inductive step : tm -> Sigma -> tm -> Sigma -> Prop :=
       MethodCall null meth v / sigma ==> NPE / sigma
 
 (* new expression *)
-  | ST_NewExp : forall sigma sigma' P F o h cls h' s lb,
+  | ST_NewExp : forall sigma sigma' F o h cls h' s lb cn f_def m_def,
       sigma = SIGMA s h->
       h(o) = None -> 
-      F =  (init_field_map (find_fields cls P) empty_field_map) ->
+      F =  (init_field_map (find_fields cls) empty_field_map) ->
       lb = (current_label sigma) -> 
+      cls = class_def cn f_def m_def->
       h' = add_heap_obj h o (Heap_OBJ cls F lb) ->
       sigma' = SIGMA s h' ->
-      NewExp cls / sigma ==> ObjId o / sigma'
+      NewExp cn / sigma ==> ObjId o / sigma'
 
 (* this expression *)
   | ST_this : forall sigma o s h, 
@@ -386,7 +394,7 @@ Inductive step : tm -> Sigma -> tm -> Sigma -> Prop :=
        (labelOf e) / sigma ==> (labelOf e') / sigma'
   (* label of  *)
   | ST_labelof2 : forall sigma v lb,
-      (labelOf (v_l v lb)) / sigma ==> (l lb) / sigma
+      (labelOf (v_l v lb)) / sigma ==> (lb) / sigma
 
 (* unlabel opaque*)
   (* context rule *)
@@ -397,7 +405,7 @@ Inductive step : tm -> Sigma -> tm -> Sigma -> Prop :=
   | ST_unlabel_opaque2 : forall sigma v lb l' sigma' s h,
       sigma = SIGMA s h ->
       l' = join_label lb (current_label sigma) ->
-      (unlabelOpaque ((v_opa_l v lb))) / sigma ==> v / sigma'
+      (unlabelOpaque ((v_opa_l v (l lb)))) / sigma ==> v / sigma'
 
 (* Opaque call *)
   (* context rule *)
@@ -418,20 +426,20 @@ Inductive step : tm -> Sigma -> tm -> Sigma -> Prop :=
       s = cons lsf s' ->
       lb = (current_label sigma) ->
       sigma' = SIGMA s' h->
-      (opaqueCall (Return v)) / sigma ==> v_opa_l v lb / sigma'
+      (opaqueCall (Return v)) / sigma ==> v_opa_l v (l lb) / sigma'
 
 (* method call with unlabel opaque *)
-  | ST_MethodCall_unlableOpaque : forall sigma sigma' o s h cls fields v lx l lb theta Delta' sf lsf arg_id cls_a body meth p ,
+  | ST_MethodCall_unlableOpaque : forall sigma sigma' o s h cls fields v lx l' lb theta Delta' sf lsf arg_id cls_a body meth returnT,
       sigma = SIGMA s h ->
       Some (Heap_OBJ cls fields lx) = h(o) -> 
       sf = sf_update (sf_update empty_stack_frame (Id "this") (ObjId o)) arg_id v ->
-      l = join_label lb (current_label sigma) ->
-      lsf = Labeled_frame l sf ->
+      l' = join_label lb (current_label sigma) ->
+      lsf = Labeled_frame l' sf ->
       theta = lsf -> 
       Delta' = cons theta s ->
-      Some ((var_def cls_a arg_id), body) = findmbody cls meth p -> 
+      Some (m_def returnT meth cls_a arg_id body) = find_method cls meth ->
       sigma' = SIGMA Delta' (get_heap sigma) ->
-      MethodCall (ObjId o) meth (unlabelOpaque ((v_opa_l v lb))) / sigma ==> body / sigma'
+      MethodCall (ObjId o) meth (unlabelOpaque ((v_opa_l v (l lb)))) / sigma ==> body / sigma'
 
 (* assignment *)
   (* context rule *)
@@ -471,7 +479,7 @@ Inductive step : tm -> Sigma -> tm -> Sigma -> Prop :=
       (FieldWrite (ObjId o) f v) / sigma ==> NPE / sigma
   (* field write normal *)
   | ST_fieldWrite_opaque : forall sigma sigma' o s h h' f lo cls F F' v l' lb e2,
-      e2 = unlabelOpaque ((v_opa_l v lb)) ->
+      e2 = unlabelOpaque ((v_opa_l v (l lb))) ->
       sigma = SIGMA s h ->
       Some (Heap_OBJ cls F lo) = h(o) -> 
       F' = fields_update F f v ->
@@ -518,6 +526,178 @@ Inductive step : tm -> Sigma -> tm -> Sigma -> Prop :=
 
 where "c1 '/' st '==>' c1' '/' st'" := (step c1 st c1' st').
 
+Inductive ty : Type :=
+  | classTy : cn -> ty 
+  | LabelTy : ty
+  | LabelelTy : ty -> ty
+  | OpaqueLabeledTy : ty -> ty
+  | voidTy : ty.
+
+Definition typing_context := id -> (option ty).
+Definition empty_context : typing_context := fun _ => None.
+
+(*
+(* typing environment *)
+Reserved Notation "Gamma '|-' t '\in' T" (at level 40).
+
+Inductive has_type : typing_context -> tm -> ty -> Prop :=
+  | T_Var : forall Gamma x T,
+      Gamma x = Some T ->
+      Gamma |- Tvar x \in T
+  | T_null : forall Gamma T,
+      Gamma |- null \in T
+where "Gamma '|-' t '\in' T" := (has_type Gamma t T).
+*)
+
+Reserved Notation "CT ; Gamma '|-' t '\in' T" (at level 0).
+
+Definition Class_table := cn -> CLASS.
+
+Check find_method.
+
+Inductive has_type : Class_table -> typing_context -> tm -> ty -> Prop :=
+(*variable *)
+  | T_Var : forall Gamma x T CT, 
+      Gamma x = Some T ->
+      CT ; Gamma |- Tvar x \in T
+(* null *)
+  | T_null : forall Gamma T CT, 
+      CT ; Gamma |- null \in T
+(* Field read *)
+  | T_FieldAccess : forall Gamma e f cls_def CT clsT cls',
+      CT ; Gamma |- e \in (classTy clsT) ->
+      cls_def = CT(clsT) ->
+      type_of_field (find_fields cls_def) f = Some cls' ->
+      CT ; Gamma |- (FieldAccess e f) \in (classTy cls')
+(* method call *)
+  | T_MethodCall : forall Gamma e meth argu CT T returnT cls_def body arg_id arguT para_T cls_a,
+      CT ; Gamma |- e \in (classTy T) ->
+      CT ; Gamma |- argu \in arguT ->
+      cls_def = CT(T) ->
+      find_method cls_def meth = Some (m_def returnT meth cls_a arg_id body)  ->
+      arguT = para_T ->
+      CT ; Gamma |- MethodCall e meth argu \in (classTy returnT)
+(* new exp *)
+  | T_NewExp : forall Gamma cn CT,
+      CT ; Gamma |- NewExp cn \in (classTy cn)
+(* this *)
+  | T_this : forall Gamma T CT,
+      CT ; Gamma |- this \in T
+(* label *)
+  | T_label : forall Gamma lb CT,
+      CT ; Gamma |- l lb \in LabelTy
+(* label data *)
+  | T_labelData : forall Gamma lb CT e T,
+      CT ; Gamma |- lb \in LabelTy ->
+      CT ; Gamma |- e \in T ->
+      CT ; Gamma |- labelData e lb \in (LabelelTy T)
+(* unlabel *)
+  | T_unlabel : forall Gamma CT e T,
+      CT ; Gamma |- e \in (LabelelTy T) ->
+      CT ; Gamma |- unlabel e \in T
+(* labelOf *)
+  | T_labelOf : forall Gamma CT e T,
+      CT ; Gamma |- e \in (LabelelTy T) ->
+      CT ; Gamma |- labelOf e \in LabelTy
+(* unlabel opaque *)
+  | T_unlabelOpaque : forall Gamma CT e T,
+      CT ; Gamma |- e \in (LabelelTy T) -> 
+      CT ; Gamma |- unlabelOpaque e \in T
+(* opaque call *)
+  | T_opaqueCall : forall Gamma CT e T,
+      CT ; Gamma |- e \in T ->
+      CT ; Gamma |- opaqueCall e \in (OpaqueLabeledTy T)
+(* Skip *)
+  | T_skip : forall Gamma CT T,
+      CT ; Gamma |- Skip \in T
+(* assignment *)
+  | T_assignment : forall Gamma CT e T x,
+      Gamma x = Some T ->
+      CT ; Gamma |- e \in T ->
+      CT ; Gamma |- Assignment x e \in T
+(* Field Write *)
+  | T_FieldWrite : forall Gamma x f cls_def CT clsT cls' e,
+      CT ; Gamma |- x \in (classTy clsT) ->
+      CT ; Gamma |- e \in (classTy cls') ->
+      cls_def = CT(clsT) ->
+      type_of_field (find_fields cls_def) f = Some cls' ->
+      CT ; Gamma |- (FieldWrite x f e) \in (classTy cls')
+(* if *)
+  | T_if : forall Gamma CT e e1 e2 e3 T T',
+      CT ; Gamma |- e \in T ->
+      CT ; Gamma |- e1 \in T ->
+      CT ; Gamma |- e2 \in T' ->
+      CT ; Gamma |- e3 \in T' ->
+      CT ; Gamma |- If e e1 e2 e3 \in T'
+(* sequence *)
+  | T_sequence : forall Gamma CT e1 e2 T T',
+      CT ; Gamma |- e1 \in T ->
+      CT ; Gamma |- e2 \in T' ->
+      CT ; Gamma |- Sequence e1 e2 \in T'
+(* return *)
+  | T_return : forall Gamma CT e T,
+      CT ; Gamma |- e \in T ->
+      CT ; Gamma |- Return e \in T
+(* ObjId *)
+  | T_ObjId : forall Gamma CT o T,
+      CT ; Gamma |- ObjId o \in T
+(* NPE *)
+  | T_NPE : forall Gamma CT T,
+      CT ; Gamma |- NPE \in T
+(* runtime labeled data *)
+  | T_v_l : forall Gamma lb CT v T,
+      CT ; Gamma |- lb \in LabelTy ->
+      CT ; Gamma |- v \in T ->
+      CT ; Gamma |- v_l v lb \in (LabelelTy T)
+(* runtime labeled data *)
+  | T_v_opa_l : forall Gamma lb CT v T,
+      CT ; Gamma |- lb \in LabelTy ->
+      CT ; Gamma |- v \in T ->
+      CT ; Gamma |- v_opa_l v lb \in (OpaqueLabeledTy T)
+
+
+
+where "CT ; Gamma '|-' t '\in' T" := (has_type CT Gamma t T).
+
+Definition empty_heap : heap := fun _ => None.
+
+Inductive wfe_heap : Class_table -> typing_context -> heap -> Prop :=
+  | empty_heap_wfe : forall ct ctx, wfe_heap ct ctx empty_heap
+  | heap_wfe : forall h o cls F lo cn field_defs method_defs ct ctx,
+        h(o) = None ->
+        cls = class_def cn field_defs method_defs->
+        wfe_heap ct ctx h -> 
+        wfe_heap ct ctx (add_heap_obj h o (Heap_OBJ cls F lo)).
+
+
+Check Heap_OBJ.
+
+(*define the well-formed environment as a prop *)Inductive wfe : CT -> Gamma -> Sigma -> Prop :=
+  
+
+
+lemma 
+
+Theorem progress : forall t T sigma gamma CT, 
+  CT ; gamma |- t \in T -> value t \/ exists t' sigma', t / sigma ==> t' / sigma'.
+Proof.
+  intros t T sigma gamma CT H.
+  induction H. 
+  - right. exists t'.
+
+Admitted.
+
+  | NPE : tm
+  (* runtime labeled date*)
+  | v_l : tm -> Label -> tm
+  | v_opa_l : tm -> Label -> tm.
+
+Theorem preservation : forall t t' T sigma sigma', 
+    gamma |- t \in T ->
+    t / st ==> t' / st' ->
+    gamma |- t' \in T.
+
+Proof
 
 
 
