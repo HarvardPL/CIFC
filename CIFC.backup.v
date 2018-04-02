@@ -554,114 +554,12 @@ Inductive has_type : typing_context -> tm -> ty -> Prop :=
 where "Gamma '|-' t '\in' T" := (has_type Gamma t T).
 *)
 
+Reserved Notation "CT ; heap ; Gamma '|-' t '\in' T" (at level 0).
+
 Definition Class_table := cn -> option CLASS.
 
+Check find_method.
 
-
-Inductive has_type : Class_table -> typing_context -> heap -> tm -> ty -> Prop :=
-(*variable *)
-  | T_Var : forall Gamma x T CT h, 
-      Gamma x = Some (classTy T) ->
-      has_type CT Gamma h (Tvar x) (classTy T)
-(* null *)
-  | T_null : forall Gamma h T CT, 
-      has_type CT Gamma h null T
-(* Field read *)
-  | T_FieldAccess : forall Gamma e f cls_def CT clsT cls' h,
-      has_type CT Gamma h e (classTy clsT) ->       
-      Some cls_def = CT(clsT) ->
-      type_of_field (find_fields cls_def) f = Some cls' ->
-      has_type CT Gamma h (FieldAccess e f) (classTy cls')
-(* method call *)
-  | T_MethodCall : forall Gamma e meth argu CT h T returnT cls_def body arg_id arguT para_T cls_a,
-      has_type CT Gamma h e (classTy T) ->
-      has_type CT Gamma h argu arguT ->
-      Some cls_def = CT(T) ->
-      find_method cls_def meth = Some (m_def returnT meth cls_a arg_id body)  ->
-      arguT = para_T ->
-      has_type CT Gamma h (MethodCall e meth argu) (classTy returnT)
-(* new exp *)
-  | T_NewExp : forall h Gamma cn CT,
-      has_type CT Gamma h (NewExp cn) (classTy cn)
-(* this *)
-  | T_this : forall h Gamma T CT,
-      has_type CT Gamma h this T
-(* label *)
-  | T_label : forall h Gamma lb CT,
-      has_type CT Gamma h (l lb) LabelTy
-(* label data *)
-  | T_labelData : forall h Gamma lb CT e T,
-      has_type CT Gamma h lb LabelTy ->
-      has_type CT Gamma h e T ->
-      has_type CT Gamma h (labelData e lb) (LabelelTy T)
-(* unlabel *)
-  | T_unlabel : forall h Gamma CT e T,
-      has_type CT Gamma h e (LabelelTy T) ->
-      has_type CT Gamma h (unlabel e) T
-(* labelOf *)
-  | T_labelOf : forall h Gamma CT e T,
-      has_type CT Gamma h e (LabelelTy T) ->
-      has_type CT Gamma h (labelOf e) LabelTy
-(* unlabel opaque *)
-  | T_unlabelOpaque : forall h Gamma CT e T,
-      has_type CT Gamma h e (LabelelTy T) -> 
-      has_type CT Gamma h (unlabelOpaque e) T
-(* opaque call *)
-  | T_opaqueCall : forall h Gamma CT e T,
-      has_type CT Gamma h e T ->
-      has_type CT Gamma h (opaqueCall e) (OpaqueLabeledTy T)
-(* Skip *)
-  | T_skip : forall h Gamma CT T,
-      has_type CT Gamma h Skip T
-(* assignment *)
-  | T_assignment : forall h Gamma CT e T x,
-      Gamma x = Some T ->
-      has_type CT Gamma h e T ->
-      has_type CT Gamma h (Assignment x e) T
-(* Field Write *)
-  | T_FieldWrite : forall h Gamma x f cls_def CT clsT cls' e,
-      has_type CT Gamma h x (classTy clsT) ->
-      has_type CT Gamma h e (classTy cls') ->
-      Some cls_def = CT(clsT) ->
-      type_of_field (find_fields cls_def) f = Some cls' ->
-      has_type CT Gamma h (FieldWrite x f e) (classTy cls')
-(* if *)
-  | T_if : forall Gamma h CT e e1 e2 e3 T T',
-      has_type CT Gamma h e T ->
-      has_type CT Gamma h e1 T ->
-      has_type CT Gamma h e2 T' ->
-      has_type CT Gamma h e3 T' ->
-      has_type CT Gamma h (If e e1 e2 e3) T'
-(* sequence *)
-  | T_sequence : forall h Gamma CT e1 e2 T T',
-      has_type CT Gamma h e1 T ->
-      has_type CT Gamma h e2 T' ->
-      has_type CT Gamma h (Sequence e1 e2) T'
-(* return *)
-  | T_return : forall h Gamma CT e T,
-      has_type CT Gamma h e T ->
-      has_type CT Gamma h (Return e) T
-(* ObjId *)
-  | T_ObjId : forall h Gamma CT o cls_def cls_name,
-      Some cls_def = CT(cls_name) ->
-      has_type CT Gamma h (ObjId o) (classTy cls_name)
-(* NPE *)
-  | T_NPE : forall h Gamma CT T,
-      has_type CT Gamma h NPE T
-(* runtime labeled data *)
-  | T_v_l : forall h Gamma lb CT v T,
-      has_type CT Gamma h lb  LabelTy ->
-      has_type CT Gamma h v  T ->
-      has_type CT Gamma h (v_l v lb) (LabelelTy T)
-(* runtime labeled data *)
-  | T_v_opa_l : forall h Gamma lb CT v T,
-      has_type CT Gamma h lb  LabelTy ->
-      has_type CT Gamma h v  T ->
-      has_type CT Gamma h (v_opa_l v lb) (OpaqueLabeledTy T).
-
-
-(*
-Reserved Notation "CT ; h ; Gamma '|-' t '\in' T" (at level 0).
 Inductive has_type : Class_table -> heap -> typing_context -> tm -> ty -> Prop :=
 (*variable *)
   | T_Var : forall Gamma h x T CT, 
@@ -763,9 +661,7 @@ Inductive has_type : Class_table -> heap -> typing_context -> tm -> ty -> Prop :
       CT ; h ; Gamma |- v \in T ->
       CT ; h ; Gamma |- v_opa_l v lb \in (OpaqueLabeledTy T)
 
-where "CT ; h ; Gamma '|-' t '\in' T" := (has_type CT h Gamma t T).
-*)
-
+where "CT ; heap ; Gamma '|-' t '\in' T" := (has_type CT heap Gamma t T).
 
 Definition empty_heap : heap := fun _ => None.
 
