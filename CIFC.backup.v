@@ -210,8 +210,7 @@ Definition beq_oid x y :=
     | OID n1, OID n2 => if beq_nat n1 n2 then true else false
   end.
 
-Definition add_heap_obj (h : heap) (o : oid) (ho : heapObj) :=
-  fun x' => if beq_oid o x' then (Some ho) else h x'.
+
 
 Inductive Sigma := 
   | SIGMA : stack -> heap -> Sigma.
@@ -297,7 +296,8 @@ Fixpoint init_field_map (fields : list field) (fm : FieldMap) :=
 
 Check init_field_map.
 
-
+Definition add_heap_obj (h : heap) (o : oid) (ho : heapObj) :=
+  fun x' => if beq_oid o x' then (Some ho) else h x'.
 
 Inductive step : tm -> Sigma -> tm -> Sigma -> Prop :=
 (* variabel access *)
@@ -314,13 +314,13 @@ Inductive step : tm -> Sigma -> tm -> Sigma -> Prop :=
        e / sigma ==>  e' / sigma' -> 
       (FieldAccess e f) / sigma ==> (FieldAccess e' f) / sigma'
   (* normal field access *)
-  | ST_fieldRead2 : forall sigma sigma' o s h fname lb cls fields v l' Delta Delta',
+  | ST_fieldRead2 : forall sigma sigma' o s h fname lb cls fields v l' s',
       sigma = SIGMA s h ->
       Some (Heap_OBJ cls fields lb) = h(o) -> 
       Some v = fields(fname) -> 
       l' = join_label lb (current_label sigma) ->
-      Delta' = update_current_label Delta l'-> 
-      sigma' = SIGMA Delta' (get_heap sigma) ->
+      s' = update_current_label s l'-> 
+      sigma' = SIGMA s' (get_heap sigma) ->
       (FieldAccess (ObjId o) fname) / sigma ==> v / sigma'
   (* null pointer exception for field access *)
   | ST_fieldReadException : forall sigma f ,
@@ -337,7 +337,7 @@ Inductive step : tm -> Sigma -> tm -> Sigma -> Prop :=
        e / sigma ==>  e' / sigma' -> 
       (MethodCall e id e) / sigma ==> (MethodCall e id e') / sigma'
   (* normal method call *)
-  | ST_MethodCall3 : forall sigma sigma' o s h cls fields v lx l theta Delta' sf lsf arg_id cls_a body meth returnT,
+  | ST_MethodCall3 : forall sigma sigma' o s h cls fields v lx l theta s' sf lsf arg_id cls_a body meth returnT,
       sigma = SIGMA s h ->
       Some (Heap_OBJ cls fields lx) = h(o) -> 
       Some (m_def returnT meth cls_a arg_id body) = find_method cls meth -> 
@@ -345,8 +345,8 @@ Inductive step : tm -> Sigma -> tm -> Sigma -> Prop :=
       l = (current_label sigma) ->
       lsf = Labeled_frame l sf ->
       theta = lsf -> 
-      Delta' = cons theta s ->
-      sigma' = SIGMA Delta' (get_heap sigma) ->
+      s' = cons theta s ->
+      sigma' = SIGMA s' (get_heap sigma) ->
       MethodCall (ObjId o) meth v / sigma ==> body / sigma'
   (* null pointer exception for method call *)
   | ST_MethodCallException : forall sigma v meth, 
@@ -554,12 +554,116 @@ Inductive has_type : typing_context -> tm -> ty -> Prop :=
 where "Gamma '|-' t '\in' T" := (has_type Gamma t T).
 *)
 
-Reserved Notation "CT ; heap ; Gamma '|-' t '\in' T" (at level 0).
-
 Definition Class_table := cn -> option CLASS.
 
-Check find_method.
 
+
+Inductive has_type : Class_table -> typing_context -> heap -> tm -> ty -> Prop :=
+(*variable *)
+  | T_Var : forall Gamma x T CT h, 
+      Gamma x = Some (classTy T) ->
+      has_type CT Gamma h (Tvar x) (classTy T)
+(* null *)
+  | T_null : forall Gamma h T CT, 
+      has_type CT Gamma h null T
+(* Field read *)
+  | T_FieldAccess : forall Gamma e f cls_def CT clsT cls' h fields_def,
+      has_type CT Gamma h e (classTy clsT) ->       
+      Some cls_def = CT(clsT) ->
+      fields_def = (find_fields cls_def) ->
+      type_of_field fields_def f = Some cls' ->
+      has_type CT Gamma h (FieldAccess e f) (classTy cls')
+(* method call *)
+  | T_MethodCall : forall Gamma e meth argu CT h T returnT cls_def body arg_id arguT para_T cls_a,
+      has_type CT Gamma h e (classTy T) ->
+      has_type CT Gamma h argu arguT ->
+      Some cls_def = CT(T) ->
+      find_method cls_def meth = Some (m_def returnT meth cls_a arg_id body)  ->
+      arguT = para_T ->
+      has_type CT Gamma h (MethodCall e meth argu) (classTy returnT)
+(* new exp *)
+  | T_NewExp : forall h Gamma cn CT,
+      has_type CT Gamma h (NewExp cn) (classTy cn)
+(* this *)
+  | T_this : forall h Gamma T CT,
+      has_type CT Gamma h this T
+(* label *)
+  | T_label : forall h Gamma lb CT,
+      has_type CT Gamma h (l lb) LabelTy
+(* label data *)
+  | T_labelData : forall h Gamma lb CT e T,
+      has_type CT Gamma h lb LabelTy ->
+      has_type CT Gamma h e T ->
+      has_type CT Gamma h (labelData e lb) (LabelelTy T)
+(* unlabel *)
+  | T_unlabel : forall h Gamma CT e T,
+      has_type CT Gamma h e (LabelelTy T) ->
+      has_type CT Gamma h (unlabel e) T
+(* labelOf *)
+  | T_labelOf : forall h Gamma CT e T,
+      has_type CT Gamma h e (LabelelTy T) ->
+      has_type CT Gamma h (labelOf e) LabelTy
+(* unlabel opaque *)
+  | T_unlabelOpaque : forall h Gamma CT e T,
+      has_type CT Gamma h e (LabelelTy T) -> 
+      has_type CT Gamma h (unlabelOpaque e) T
+(* opaque call *)
+  | T_opaqueCall : forall h Gamma CT e T,
+      has_type CT Gamma h e T ->
+      has_type CT Gamma h (opaqueCall e) (OpaqueLabeledTy T)
+(* Skip *)
+  | T_skip : forall h Gamma CT T,
+      has_type CT Gamma h Skip T
+(* assignment *)
+  | T_assignment : forall h Gamma CT e T x,
+      Gamma x = Some T ->
+      has_type CT Gamma h e T ->
+      has_type CT Gamma h (Assignment x e) T
+(* Field Write *)
+  | T_FieldWrite : forall h Gamma x f cls_def CT clsT cls' e,
+      has_type CT Gamma h x (classTy clsT) ->
+      has_type CT Gamma h e (classTy cls') ->
+      Some cls_def = CT(clsT) ->
+      type_of_field (find_fields cls_def) f = Some cls' ->
+      has_type CT Gamma h (FieldWrite x f e) (classTy cls')
+(* if *)
+  | T_if : forall Gamma h CT e e1 e2 e3 T T',
+      has_type CT Gamma h e T ->
+      has_type CT Gamma h e1 T ->
+      has_type CT Gamma h e2 T' ->
+      has_type CT Gamma h e3 T' ->
+      has_type CT Gamma h (If e e1 e2 e3) T'
+(* sequence *)
+  | T_sequence : forall h Gamma CT e1 e2 T T',
+      has_type CT Gamma h e1 T ->
+      has_type CT Gamma h e2 T' ->
+      has_type CT Gamma h (Sequence e1 e2) T'
+(* return *)
+  | T_return : forall h Gamma CT e T,
+      has_type CT Gamma h e T ->
+      has_type CT Gamma h (Return e) T
+(* ObjId *)
+  | T_ObjId : forall h Gamma CT o cls_name F lo cls_def,
+      Some cls_def = CT(cls_name) ->
+      h(o) = Some (Heap_OBJ cls_def F lo) ->
+      has_type CT Gamma h (ObjId o) (classTy cls_name)
+(* NPE *)
+  | T_NPE : forall h Gamma CT T,
+      has_type CT Gamma h NPE T
+(* runtime labeled data *)
+  | T_v_l : forall h Gamma lb CT v T,
+      has_type CT Gamma h lb  LabelTy ->
+      has_type CT Gamma h v  T ->
+      has_type CT Gamma h (v_l v lb) (LabelelTy T)
+(* runtime labeled data *)
+  | T_v_opa_l : forall h Gamma lb CT v T,
+      has_type CT Gamma h lb  LabelTy ->
+      has_type CT Gamma h v  T ->
+      has_type CT Gamma h (v_opa_l v lb) (OpaqueLabeledTy T).
+
+
+(*
+Reserved Notation "CT ; h ; Gamma '|-' t '\in' T" (at level 0).
 Inductive has_type : Class_table -> heap -> typing_context -> tm -> ty -> Prop :=
 (*variable *)
   | T_Var : forall Gamma h x T CT, 
@@ -661,19 +765,77 @@ Inductive has_type : Class_table -> heap -> typing_context -> tm -> ty -> Prop :
       CT ; h ; Gamma |- v \in T ->
       CT ; h ; Gamma |- v_opa_l v lb \in (OpaqueLabeledTy T)
 
-where "CT ; heap ; Gamma '|-' t '\in' T" := (has_type CT heap Gamma t T).
+where "CT ; h ; Gamma '|-' t '\in' T" := (has_type CT h Gamma t T).
+*)
+
 
 Definition empty_heap : heap := fun _ => None.
 
+Fixpoint field_lookup (f : id) (fields : list field) :=
+  match fields with 
+    | nil => false
+    | (fd cn h :: t) => if beq_id h f then true else field_lookup f t
+  end. 
+   
+Inductive wfe_fields : (list field) -> FieldMap -> Prop  :=
+  | empty_fields_wfe : wfe_fields nil empty_field_map 
+  | fields_wfe : forall fm v h t cn x,
+      wfe_fields t fm -> 
+      h = fd cn x ->
+      fm(x) = Some v ->
+      wfe_fields (cons h t) fm.
+
 Inductive wfe_heap : Class_table -> typing_context -> heap -> Prop :=
   | empty_heap_wfe : forall ct ctx, wfe_heap ct ctx empty_heap
-  | heap_wfe : forall h o cls F lo cn field_defs method_defs ct ctx,
+  | heap_wfe : forall h h' o cls_def F cn ct gamma fields ho lo,
         h(o) = None ->
-        cls = class_def cn field_defs method_defs->
-        Some cls  = ct cn ->
-        wfe_heap ct ctx h -> 
-        wfe_heap ct ctx (add_heap_obj h o (Heap_OBJ cls F lo)).
+        wfe_heap ct gamma h ->
+        ho = Some (Heap_OBJ cls_def F lo) ->
+        h' = (fun x' => if beq_oid o x' then ho else (h x')) ->
+        (* cls = class_def cn field_defs method_defs-> *)
+        Some cls_def  = ct cn ->
+        fields = (find_fields cls_def) ->
+        (forall f cls', type_of_field fields f = Some cls' -> exists v, F(f) = Some v)->
+        (*wfe_fields fields F -> *)
+        wfe_heap ct gamma h'.
 
+Lemma some_eq : forall cls_def F lo cls_def' F' lo',
+  Some (Heap_OBJ cls_def F lo) = Some (Heap_OBJ cls_def' F' lo') ->
+  cls_def = cls_def' /\ F = F'.
+Proof with auto. 
+  intros. inversion H. auto. 
+Qed.  
+
+
+
+
+
+Lemma field_val_of_heap_obj : forall h o gamma CT cls_def F lo cls' fields,
+  wfe_heap CT gamma h -> 
+  h(o) = Some (Heap_OBJ cls_def F lo) ->
+  fields = (find_fields cls_def) ->
+  forall f, type_of_field fields f = Some cls' -> exists v, F(f) = Some v.
+  (*(type_of_field fields_def fname) = Some f_def->*)
+
+Proof with auto.
+  intros. induction H. inversion H0. case_eq (beq_oid o0 o). intro.
+  rewrite -> H5 in H0. rewrite -> H9 in H0. subst. inversion H0. subst.
+  apply H8 with (f:=f) (cls':=cls'). assumption.
+  intros. rewrite -> H5 in H0. rewrite -> H9 in H0. apply IHwfe_heap. assumption.
+
+Qed.
+
+(*
+Inductive wfe_heap : Class_table -> typing_context -> heap -> Prop :=
+  | empty_heap_wfe : forall ct ctx, wfe_heap ct ctx empty_heap
+  | heap_wfe : forall h o cls F cn field_defs method_defs ct ctx h' lo,
+      h(o) = Heap_OBJ cls F lo ->
+      cls = class_def cn field_defs method_defs->
+      Some cls  = ct cn ->
+      F (x) ->
+      h' = (add_heap_obj h o (Heap_OBJ cls F lo)) ->
+      wfe_heap ct ctx h'.
+*)
 
 
 Lemma empty_heap_empty :
@@ -687,11 +849,11 @@ Qed.
 Lemma heap_consist_ct : forall h o ct ctx cls F lo, 
   wfe_heap ct ctx h -> 
   h(o) = Some (Heap_OBJ cls F lo) ->
-  exists cn field_defs method_defs, ct cn = Some (class_def cn field_defs method_defs).
+  exists cn cls_def, ct cn = Some (cls_def).
 Proof with auto.
-  intros. inversion H. 
-  - subst. inversion H0.
-  - subst. exists cn0. exists field_defs. exists method_defs. rewrite -> H3. auto.
+  intros. inversion H.  
+  - subst. inversion H0. 
+  - subst. exists cn0. exists cls_def. auto.
 Qed.
 
 Lemma ct_consist_heap : forall h o ct ctx cls F lo, 
@@ -784,271 +946,161 @@ Qed.
 Lemma wfe_oid : forall o ct gamma s h sigma cls_def cn, 
   sigma = SIGMA s h ->
   wfe_stack ct gamma h s ->
-  (ct ; gamma |- ObjId o \in (classTy cn)) -> ct cn = Some cls_def 
-    -> ObjId o = null \/ exists F lb, h(o) = Some (Heap_OBJ cls_def F lb).
+  (has_type ct gamma h (ObjId o) (classTy cn)) -> ct cn = Some cls_def 
+    -> exists fieldsMap lb, h(o) = Some (Heap_OBJ cls_def fieldsMap lb).
 Proof with auto. 
-  intros. inversion H0. inversion H1.
-Admitted. 
+  intros. inversion H0. 
+    - inversion H1. subst. inversion H16.
+    - inversion H1. subst. exists F. rewrite <- H21 in H2. inversion H2. exists lo. rewrite -> H3 in H22. assumption.  
+Qed.
+
+Definition val_option_type (input : option tm) : tm :=
+  match input with 
+    | Some v => v
+    | None => null
+  end.
+
+Lemma excluded_middle_opaqueLabel : forall e, (exists t, e = unlabelOpaque t) \/ (forall t, ~ (e = unlabelOpaque t)).
+Proof with eauto.
+  intros. case e. 
+right. intro.  intros contra. inversion contra.
+right. intro.  intros contra. inversion contra.
+right. intro.  intros contra. inversion contra.
+right. intro.  intros contra. inversion contra.
+right. intro.  intros contra. inversion contra.
+right. intro.  intros contra. inversion contra.
+right. intro.  intros contra. inversion contra.
+right. intro.  intros contra. inversion contra.
+right. intro.  intros contra. inversion contra.
+right. intro.  intros contra. inversion contra.
+left. exists t. auto. 
+right. intro.  intros contra. inversion contra.
+right. intro.  intros contra. inversion contra.
+right. intro.  intros contra. inversion contra.
+right. intro.  intros contra. inversion contra.
+right. intro.  intros contra. inversion contra.
+right. intro.  intros contra. inversion contra.
+right. intro.  intros contra. inversion contra.
+right. intro.  intros contra. inversion contra.
+right. intro.  intros contra. inversion contra.
+right. intro.  intros contra. inversion contra.
+right. intro.  intros contra. inversion contra.
+Qed.
+
 
 Theorem progress : forall t T sigma gamma CT s h, 
-  sigma = SIGMA s h ->  wfe CT gamma sigma -> 
-  CT ; gamma |- t \in T -> value t \/ exists t' sigma', t / sigma ==> t' / sigma'.
+  sigma = SIGMA s h ->  wfe_heap CT gamma h -> wfe_stack CT gamma h s -> 
+  has_type CT gamma h t T -> value t \/ exists t' sigma', t / sigma ==> t' / sigma'.
 Proof with auto.
   intros t T sigma gamma CT s h.
   intros. 
-  assert (wfe_stack CT gamma h s).
-  apply wfe_sigma_s_h with (sigma:=sigma) (s:=s) (h:=h) (ct:=CT) (gamma:=gamma). auto. auto.
-  induction H1. 
+
+  induction H2. 
 (* TVar *)
 - right. 
-      inversion H2. + subst. inversion H1.
+      inversion H1. + subst. inversion H2.
                     + subst. exists v. exists (SIGMA (Labeled_frame lb sf :: s') h).
 
-apply ST_var with 
-(id:=x) (lb:=lb) (sf:=sf) (lsf:=Labeled_frame lb sf) (v:=v) (sigma:=(SIGMA (Labeled_frame lb sf :: s') h)) (s':=s') (s:=(Labeled_frame lb sf :: s')) (h:=h).
-auto. auto. auto. 
-rewrite -> H7 in H1. case_eq (beq_id x0 x). intro. apply beq_equal with (x:=x0) (x':=x) in H. subst. auto.
-intro. rewrite -> H in H1. inversion H1.   
+      apply ST_var with 
+      (id:=x) (lb:=lb) (sf:=sf) (lsf:=Labeled_frame lb sf) (v:=v) 
+      (sigma:=(SIGMA (Labeled_frame lb sf :: s') h)) (s':=s') (s:=(Labeled_frame lb sf :: s')) (h:=h).
+      auto. auto. auto. 
+      case_eq (beq_id x0 x). intro. apply beq_equal with (x:=x0) (x':=x) in H. subst. auto.
+      intro. rewrite -> H in H2. rewrite -> H7 in H2. inversion H2.   
 (* null *)
 -  left. apply v_null.
 (* field access *)
-- right. auto. destruct IHhas_type. auto. auto. inversion H5.  
-    +  
+- right. 
+    destruct IHhas_type. auto. auto. apply H1. 
+    + inversion H6. rewrite <- H7 in H2. 
+      assert (exists F lb, h(o) = Some (Heap_OBJ cls_def F lb)).
+       apply wfe_oid with (o:=o) (ct:=CT) (gamma:=Gamma) (s:=s) (h:=h) 
+                          (sigma:=sigma) (cls_def:=cls_def) (cn:=clsT). auto. auto. auto. auto. 
+       destruct H8 as [F]. destruct H8 as [lb].
+      assert (exists v, F(f) = Some v).
+      apply field_val_of_heap_obj with (h:=h) (o:=o) (gamma:=Gamma) (CT:=CT) 
+                              (cls_def:=cls_def) (F:=F) (lo:=lb) (cls':=cls') (fields:=fields_def).
+      auto. auto. auto. auto. auto. 
+      destruct H9 as [v].
+      remember (join_label lb (current_label sigma)) as l'.
+      remember (update_current_label s l') as s'.
+      remember (SIGMA s' (get_heap sigma)) as sigma'.
+            exists v. exists sigma'. apply ST_fieldRead2 with 
+            (sigma:=sigma) (sigma':=sigma') (o:=o) (s:=s) (h:=h) (fname:=f) (lb:=lb) 
+            (cls:=cls_def) (fields:=F) (v:=v) (l':=l') (s':=s'). 
+            auto. auto. auto.            auto. auto. auto. 
+    (* call field access on null point object *)
+    exists NPE. exists sigma. apply ST_fieldReadException.
+    (* label is primitive: calling field access is not valid *)
+    rewrite <- H7 in H2. inversion H2.
+   + (* context rule *)
+    destruct H6 as [e']. destruct H6 as [sigma'].
+    exists (FieldAccess e' f). exists sigma'.
+    apply ST_fieldRead1 with (sigma:=sigma) (sigma':=sigma') (e:=e) (e':=e') (f:=f). assumption.
 
-inversion H2. rewrite <- H6 in H1. inversion H1.
-
- subst. inversion H1. inversion H2.
-
-apply H0 H2 in IHhas_type. apply ST_fieldRead1 with (sigma:=) (sigma') (e) (e') (f).
-
-Admitted.
-
-(*
-
-(* field read *)
-  (* context rule *)
-  | ST_fieldRead1 : forall sigma sigma' e e' f,
-       e / sigma ==>  e' / sigma' -> 
-      (FieldAccess e f) / sigma ==> (FieldAccess e' f) / sigma'
-  (* normal field access *)
-  | ST_fieldRead2 : forall sigma sigma' o s h fname lb cls fields v l' Delta Delta',
-      sigma = SIGMA s h ->
-      Some (Heap_OBJ cls fields lb) = h(o) -> 
-      Some v = fields(fname) -> 
-      l' = join_label lb (current_label sigma) ->
-      Delta' = update_current_label Delta l'-> 
-      sigma' = SIGMA Delta' (get_heap sigma) ->
-      (FieldAccess (ObjId o) fname) / sigma ==> v / sigma'
-  (* null pointer exception for field access *)
-  | ST_fieldReadException : forall sigma f ,
-      (FieldAccess null f) / sigma ==> NPE / sigma
 
 (* method call *)
-  (* context rule: evaluate object target *)
-  | ST_MethodCall1 : forall sigma sigma' e e' id,
-       e / sigma ==>  e' / sigma' -> 
-      (MethodCall e id e) / sigma ==> (MethodCall e' id e) / sigma'
-  (* context rule: evaluate arguments *)
-  | ST_MethodCall2 : forall sigma sigma' e e' id t,
-      e <> unlabelOpaque t ->
-       e / sigma ==>  e' / sigma' -> 
-      (MethodCall e id e) / sigma ==> (MethodCall e id e') / sigma'
-  (* normal method call *)
-  | ST_MethodCall3 : forall sigma sigma' o s h cls fields v lx l theta Delta' sf lsf arg_id cls_a body meth returnT,
-      sigma = SIGMA s h ->
-      Some (Heap_OBJ cls fields lx) = h(o) -> 
-      Some (m_def returnT meth cls_a arg_id body) = find_method cls meth -> 
-      sf = sf_update (sf_update empty_stack_frame (Id "this") (ObjId o)) arg_id v ->
-      l = (current_label sigma) ->
-      lsf = Labeled_frame l sf ->
-      theta = lsf -> 
-      Delta' = cons theta s ->
-      sigma' = SIGMA Delta' (get_heap sigma) ->
-      MethodCall (ObjId o) meth v / sigma ==> body / sigma'
-  (* null pointer exception for method call *)
-  | ST_MethodCallException : forall sigma v meth, 
-      MethodCall null meth v / sigma ==> NPE / sigma
+- right.
+   destruct IHhas_type1. auto. auto. auto. 
+       + inversion H5. rewrite <- H6 in H2_. inversion H2_.
+          (* case analysis for argument: if the argument is a value *)
+            destruct IHhas_type2. auto. auto. auto. subst. 
+            remember (sf_update (sf_update empty_stack_frame (Id "this") (ObjId o)) arg_id argu) as sf. 
+            remember (SIGMA s h ) as sigma.
+            remember (current_label sigma) as l.
+            remember (Labeled_frame l sf) as lsf. 
+            remember (cons lsf s) as s'.
+            remember (SIGMA s' (get_heap sigma)) as sigma'.
+            exists body. exists sigma'.
+            apply ST_MethodCall3 with (sigma:=sigma) (sigma':=sigma') (o:=o) (s:=s) (h:=h) (cls:=cls_def) (fields:=F) 
+                                       (v:=argu) (lx:=lo) (l:=l) 
+                                       (theta:=lsf) (s':=s') (sf:=sf) (lsf:=lsf) (arg_id:=arg_id) 
+                                        (cls_a:=cls_a) (body:=body) (meth:=meth) (returnT:=returnT); auto.
+            rewrite <- H12 in H2. inversion H2. rewrite <- H13; auto.
+          (* case analysis for argument, if the argument is not a value *)
+            subst. 
+                destruct H14 as [t']. destruct H as [sigma'].
+                pose proof (excluded_middle_opaqueLabel argu).
+                destruct H4.
+                  (* case for argu = unlabelOpaque t *)
+                  destruct H4 as [t]. 
+                  rewrite -> H4 in H. inversion H. subst. 
+                  exists (MethodCall (ObjId o) meth (unlabelOpaque e')).
+                  exists (sigma').
+                  apply ST_MethodCall2 with (sigma:=(SIGMA s h)) (sigma':=sigma') 
+                                            (v:=(ObjId o)) (e:=unlabelOpaque t) (e':=unlabelOpaque e') (id:=meth).
+                  intros. subst. intro contra. inversion contra. rewrite -> H8 in H. inversion H4. 
+                      rewrite <- H6 in H; subst; inversion H7. subst. inversion H7.  subst.  inversion H7.
+                      assumption. apply v_oid. subst. 
+                      remember (SIGMA s h ) as sigma.
+                      remember (sf_update (sf_update empty_stack_frame (Id "this") (ObjId o)) arg_id t') as sf.
+                      remember (join_label lb (current_label sigma)) as l'. 
+                      remember (Labeled_frame l' sf) as lsf. 
+                      remember (cons lsf s) as s'.
+                      remember (SIGMA s' (get_heap sigma)) as sigma''.
+                      exists body. exists sigma''. 
+                      apply ST_MethodCall_unlableOpaque with (sigma:=sigma) (sigma':=sigma'') (o:=o) (s:=s) (h:=h) 
+                                            (cls:=cls_def0) (fields:=F) (v:=t') (lx:=lo) (l':=l') (lb:=lb) (s':=s')
+                                           (sf:=sf) (lsf:=lsf) (arg_id:=arg_id) (cls_a:=cls_a) (body:=body) 
+                                           (meth:=meth) (returnT:=returnT).
+                      auto. auto. auto. auto. auto. auto. subst. 
+                      rewrite <- H12 in H2. inversion H2. rewrite <- H6. rewrite -> H3; auto. 
+                      auto. 
+                  (* case for argu <> unlabelOpaque t *)
+                  exists (MethodCall (ObjId o) meth t'). exists sigma'. 
+                  apply ST_MethodCall2 with (sigma:=(SIGMA s h)) (sigma':=sigma') (v:=((ObjId o))) 
+                                            (e:=argu) (e':=t') (id:=meth).
+                  intro. assert (argu <> unlabelOpaque t). apply (H4 t). intro. assumption. assumption. apply v_oid.
+
+                  subst. exists NPE. exists (SIGMA s h). 
+              apply ST_MethodCallException with (sigma:=(SIGMA s h)) (v:=argu) (meth:=meth).
+
+                  subst. inversion H2_. 
+      +  destruct H5 as [t']. destruct H5 as [sigma']. exists (MethodCall t' meth argu). exists (sigma').   
+                  apply ST_MethodCall1 with (sigma:=sigma) (sigma':=sigma') (e2:=argu) (e:=e) (e':=t') (id:=meth). apply H5.
 
 (* new expression *)
-  | ST_NewExp : forall sigma sigma' F o h cls h' s lb cn f_def m_def,
-      sigma = SIGMA s h->
-      h(o) = None -> 
-      F =  (init_field_map (find_fields cls) empty_field_map) ->
-      lb = (current_label sigma) -> 
-      cls = class_def cn f_def m_def->
-      h' = add_heap_obj h o (Heap_OBJ cls F lb) ->
-      sigma' = SIGMA s h' ->
-      NewExp cn / sigma ==> ObjId o / sigma'
-
-(* this expression *)
-  | ST_this : forall sigma o s h, 
-      sigma = SIGMA s h ->
-      Some o = variableLookup s (Id "this") ->
-      this / sigma ==>  o / sigma
-
-(* label data express *)
-  (* context rule *)
-  | ST_LabelData1 : forall sigma sigma' e e' lb,
-       e / sigma ==>  e' / sigma' -> 
-      (labelData e lb) / sigma ==> (labelData e' lb) / sigma'
-  (* label data *)
-  | ST_LabelData2 : forall sigma v_l v lb,
-      (labelData v lb) / sigma ==> (v_l v lb) / sigma
-  (* label data exception *)
-  | ST_LabelDataException : forall sigma lb,
-      (labelData null lb) / sigma ==> NPE / sigma
-
-(* unlabel *)
-  (* context rule *)
-  | ST_unlabel1 : forall sigma sigma' e e',
-       e / sigma ==>  e' / sigma' -> 
-      (unlabel e) / sigma ==> (unlabel e') / sigma'
-  (* unlabel *)
-  | ST_unlabel : forall sigma v_l v lb l' sigma' s h,
-      sigma = SIGMA s h ->
-      l' = join_label lb (current_label sigma) ->
-      (unlabel ((v_l v lb))) / sigma ==> v / sigma'
-
-(* Label of *)
-  (* context rule *)
-  | ST_labelof1 : forall sigma sigma' e e',
-       e / sigma ==>  e' / sigma' -> 
-       (labelOf e) / sigma ==> (labelOf e') / sigma'
-  (* label of  *)
-  | ST_labelof2 : forall sigma v lb,
-      (labelOf (v_l v lb)) / sigma ==> (lb) / sigma
-
-(* unlabel opaque*)
-  (* context rule *)
-  | ST_unlabel_opaque1 : forall sigma sigma' e e',
-       e / sigma ==>  e' / sigma' -> 
-      (unlabelOpaque e) / sigma ==> (unlabelOpaque e') / sigma'
-  (* unlabel opaque *)
-  | ST_unlabel_opaque2 : forall sigma v lb l' sigma' s h,
-      sigma = SIGMA s h ->
-      l' = join_label lb (current_label sigma) ->
-      (unlabelOpaque ((v_opa_l v (l lb)))) / sigma ==> v / sigma'
-
-(* Opaque call *)
-  (* context rule *)
-  | ST_opaquecall1 : forall sigma sigma' e e' t,
-       e <> Return t ->
-       e / sigma ==>  e' / sigma' -> 
-      (opaqueCall e) / sigma ==> (opaqueCall e') / sigma'
-  (* return context rule*)
-  | ST_opaquecall_return1 : forall sigma sigma' e e',
-       e / sigma ==>  e' / sigma' -> 
-      (opaqueCall (Return e)) / sigma ==> (opaqueCall (Return e')) / sigma'
-  (* opaque call with value, without method call inside*)
-  | ST_opaquecall_val2 : forall sigma v,
-      (opaqueCall v) / sigma ==> v / sigma
-  (* opaque call with return statement *)
-  | ST_opaquecall_return2 : forall sigma sigma' s h lb s' lsf v,
-      sigma = SIGMA s h->
-      s = cons lsf s' ->
-      lb = (current_label sigma) ->
-      sigma' = SIGMA s' h->
-      (opaqueCall (Return v)) / sigma ==> v_opa_l v (l lb) / sigma'
-
-(* method call with unlabel opaque *)
-  | ST_MethodCall_unlableOpaque : forall sigma sigma' o s h cls fields v lx l' lb theta Delta' sf lsf arg_id cls_a body meth returnT,
-      sigma = SIGMA s h ->
-      Some (Heap_OBJ cls fields lx) = h(o) -> 
-      sf = sf_update (sf_update empty_stack_frame (Id "this") (ObjId o)) arg_id v ->
-      l' = join_label lb (current_label sigma) ->
-      lsf = Labeled_frame l' sf ->
-      theta = lsf -> 
-      Delta' = cons theta s ->
-      Some (m_def returnT meth cls_a arg_id body) = find_method cls meth ->
-      sigma' = SIGMA Delta' (get_heap sigma) ->
-      MethodCall (ObjId o) meth (unlabelOpaque ((v_opa_l v (l lb)))) / sigma ==> body / sigma'
-
-(* assignment *)
-  (* context rule *)
-  | ST_assignment1 : forall sigma sigma' e e' id,
-       e / sigma ==>  e' / sigma' -> 
-       Assignment id e / sigma ==> Assignment id e' / sigma'
-  (* assignment *)
-  | ST_assignment2 : forall sigma sigma' id v s' s h,
-       sigma = SIGMA s h ->
-       s' = update_stack_top s id v->
-       sigma' = SIGMA s' h ->
-       Assignment id v / sigma ==> Skip / sigma'
-
-(* Field Write *)
-  (* context rule 1 *)
-  | ST_fieldWrite1 : forall sigma sigma' f e1 e1' e2,
-       e1 / sigma ==>  e1' / sigma' -> 
-       FieldWrite e1 f e2 / sigma ==> FieldWrite e1' f e2/ sigma'
-
-  (* context rule 2 *)
-  | ST_fieldWrite2 : forall sigma sigma' f e1 e2 e2' t,
-       e2 <> unlabelOpaque t ->
-       e2 / sigma ==>  e2' / sigma' -> 
-       FieldWrite e1 f e2 / sigma ==> FieldWrite e1 f e2'/ sigma'
-
-  (* field write normal *)
-  | ST_fieldWrite3 : forall sigma sigma' o s h h' f lb cls F F' v l',
-      sigma = SIGMA s h ->
-      Some (Heap_OBJ cls F lb) = h(o) -> 
-      F' = fields_update F f v ->
-      l' = join_label lb (current_label sigma) ->
-      h' = add_heap_obj h o (Heap_OBJ cls F' l') ->
-      sigma' = SIGMA s h' ->
-      (FieldWrite (ObjId o) f v) / sigma ==> Skip / sigma'
-  (* null pointer exception for field write *)
-  | ST_fieldWriteException : forall sigma f v o, 
-      (FieldWrite (ObjId o) f v) / sigma ==> NPE / sigma
-  (* field write normal *)
-  | ST_fieldWrite_opaque : forall sigma sigma' o s h h' f lo cls F F' v l' lb e2,
-      e2 = unlabelOpaque ((v_opa_l v (l lb))) ->
-      sigma = SIGMA s h ->
-      Some (Heap_OBJ cls F lo) = h(o) -> 
-      F' = fields_update F f v ->
-      l' = join_label lo lb ->
-      h' = add_heap_obj h o (Heap_OBJ cls F' l') ->
-      sigma' = SIGMA s h' ->
-      (FieldWrite (ObjId o) f e2) / sigma ==> Skip / sigma'
-
-(* return statement *)
-  (* context rule*)
-  | ST_return1 : forall sigma sigma' e e',
-       e / sigma ==>  e' / sigma' -> 
-        Return e / sigma ==> Return e' / sigma'
-  (* return val *)
-  | ST_return2 : forall sigma sigma' v s s' s'' h lsf l', 
-      sigma = SIGMA s h ->
-      s = cons lsf s' ->
-      l' = join_label (get_current_label s) (get_current_label s') ->
-      s'' = update_current_label s' l' ->
-      sigma' = SIGMA s'' h ->
-       Return v / sigma ==> v / sigma'
-(* if statement *)
-   (* context rule 1 *)
-  | ST_if1 : forall sigma sigma' s1 s2 e1' e1 e2, 
-       e1 / sigma ==>  e1' / sigma' -> 
-       If e1 e2 s1 s2 / sigma ==> If e1' e2 s1 s2 / sigma'
-   (* context rule 2 *)
-  | ST_if2 : forall sigma sigma' s1 s2 e2' e2 v, 
-       e2 / sigma ==>  e2' / sigma' -> 
-       If v e2 s1 s2 / sigma ==> If v e2' s1 s2 / sigma'
-  | ST_if_b1 : forall sigma s1 s2 v1 v2, 
-       v1 = v2 ->
-       If v1 v2 s1 s2 / sigma ==>  s1 / sigma
-  | ST_if_b2 : forall sigma s1 s2 v1 v2, 
-       v1 <> v2 ->
-       If v1 v2 s1 s2 / sigma ==>  s2 / sigma
-(* sequence *)
-   (* context rule *)
-  | ST_seq1 : forall sigma s1 s2 s1', 
-    Sequence s1 s2 / sigma ==> Sequence s1' s2 / sigma
-   (* sequence rule *)
-  | ST_seq2 : forall sigma v s , 
-    Sequence v s / sigma ==> s / sigma
-
-where "c1 '/' st '==>' c1' '/' st'" := (step c1 st c1' st').
-
-*)
+- right.
 
 Theorem preservation : forall t t' T sigma sigma', 
     gamma |- t \in T ->
