@@ -29,39 +29,6 @@ Definition beq_id x y :=
     | Id n1, Id n2 => if string_dec n1 n2 then true else false
   end.
 
-
-
-(*
-(* expression *)
-Inductive exp : Type :=
-  | Tvar : id -> exp
-  | null : exp
-  | FieldAccess : exp -> id -> exp
-  | MethodCall : exp -> id -> exp -> exp
-  | NewExp : cn -> exp
-  | this : exp
-(* label expressions *)  
-  | l : Label -> exp
-  | labelData : exp -> exp -> exp
-  | unlabel : exp -> exp
-  | lablOf : exp -> exp
-  | unlabelOpaque : exp -> exp
-  | opaqueCall : exp -> id -> exp -> exp.
-
-Inductive stmt : Type :=
-  | Skip : stmt
-  | Assignment : id -> exp -> stmt
-  | FieldWrite : exp -> id -> exp -> stmt
-  | If : id -> id -> stmt -> stmt -> stmt
-  | methodCallStmt : exp -> id -> exp -> stmt
-  | Sequence : stmt -> stmt -> stmt.
-
-Inductive methodDel : Type :=
-  | method_def : cn -> id -> cn -> stmt -> id -> methodDel.
-
-*)
-
-
 Inductive oid : Type := 
   | OID : nat -> oid.
 
@@ -71,10 +38,9 @@ Inductive tm : Type :=
   | FieldAccess : tm -> id -> tm
   | MethodCall : tm -> id -> tm -> tm
   | NewExp : cn -> tm
-  | this : tm
 (* label related *)
   | l : Label -> tm
-  | labelData : tm -> tm -> tm
+  | labelData : tm -> Label -> tm
   | unlabel : tm -> tm
   | labelOf : tm -> tm
   | unlabelOpaque : tm -> tm
@@ -92,8 +58,8 @@ Inductive tm : Type :=
   | ObjId: oid -> tm
   | NPE : tm
   (* runtime labeled date*)
-  | v_l : tm -> tm -> tm
-  | v_opa_l : tm -> tm -> tm.
+  | v_l : tm -> Label -> tm
+  | v_opa_l : tm -> Label -> tm.
 
 Inductive method_def : Type :=
   | m_def : cn -> id -> cn -> id -> tm -> method_def.
@@ -114,16 +80,16 @@ Inductive value : tm -> Prop :=
   | v_null :
       value null
   | v_label :
-      forall lb, value (l lb).
-
+      forall lb, value (l lb)
+  | v_labeled : forall v lb,
+      value v ->
+      value (v_l v lb)
+  | v_opa_labeled : forall v lb,
+      value v ->
+      value (v_opa_l v lb).
 
 Inductive Exception : tm -> Prop :=
   | exception : Exception NPE.
-
-(*  | v_labeled :
-      forall t lb, value (v_l t lb).
-*)
-
 
 (* stack frame *)
 Definition stack_frame : Type := id -> (option tm).
@@ -296,11 +262,6 @@ Fixpoint init_field_map (fields : list field) (fm : FieldMap) :=
 
 Check init_field_map.
 
-Record ordinal n := {
-    val :> nat;
-    _   : val < n;
-}.
-
 
 Definition add_heap_obj (h : heap) (o : oid) (ho : heapObj) :=
   fun x' => if beq_oid o x' then (Some ho) else h x'.
@@ -339,7 +300,7 @@ Inductive step : tm -> Sigma -> tm -> Sigma -> Prop :=
       (MethodCall e id e2) / sigma ==> (MethodCall e' id e2) / sigma'
   (* context rule: evaluate arguments *)
   | ST_MethodCall2 : forall sigma sigma' v e e' id,
-      (forall t, value t -> e <> unlabelOpaque t) ->
+      (forall t, value t -> t<> null -> e <> unlabelOpaque t) ->
       e / sigma ==>  e' / sigma' -> 
       value v ->
       (MethodCall v id e) / sigma ==> (MethodCall v id e') / sigma'
@@ -370,24 +331,23 @@ Inductive step : tm -> Sigma -> tm -> Sigma -> Prop :=
       s' = cons lsf s ->
       Some (m_def returnT meth cls_a arg_id body) = find_method cls meth ->
       sigma' = SIGMA s' (get_heap sigma) ->
-      MethodCall (ObjId o) meth (unlabelOpaque ((v_opa_l v (l lb)))) / sigma ==> body / sigma'
+      MethodCall (ObjId o) meth (unlabelOpaque (v_opa_l v lb)) / sigma ==> body / sigma'
+
+  (* null pointer exception for method call with unlabel opaque of null data*)
+  | ST_MethodCallOpaqueDataException : forall sigma o meth, 
+      MethodCall (ObjId o) meth (unlabelOpaque null) / sigma ==> NPE / sigma
 
 (* new expression *)
-  | ST_NewExp : forall sigma sigma' F o h cls h' s lb cn f_def m_def,
+  | ST_NewExp : forall sigma sigma' F o h cls h' s lb cn,
       sigma = SIGMA s h->
       h(o) = None -> 
       F =  (init_field_map (find_fields cls) empty_field_map) ->
       lb = (current_label sigma) -> 
-      cls = class_def cn f_def m_def->
+
       h' = add_heap_obj h o (Heap_OBJ cls F lb) ->
       sigma' = SIGMA s h' ->
       NewExp cn / sigma ==> ObjId o / sigma'
 
-(* this expression *)
-  | ST_this : forall sigma o s h, 
-      sigma = SIGMA s h ->
-      Some o = variableLookup s (Id "this") ->
-      this / sigma ==>  o / sigma
 
 (* label data express *)
   (* context rule *)
@@ -395,8 +355,8 @@ Inductive step : tm -> Sigma -> tm -> Sigma -> Prop :=
        e / sigma ==>  e' / sigma' -> 
       (labelData e lb) / sigma ==> (labelData e' lb) / sigma'
   (* label data *)
-  | ST_LabelData2 : forall sigma v_l v lb id,
-      (v = ObjId id) ->
+  | ST_LabelData2 : forall sigma v lb,
+      value v ->
       (labelData v lb) / sigma ==> (v_l v lb) / sigma
   (* label data exception *)
   | ST_LabelDataException : forall sigma lb,
@@ -408,10 +368,16 @@ Inductive step : tm -> Sigma -> tm -> Sigma -> Prop :=
        e / sigma ==>  e' / sigma' -> 
       (unlabel e) / sigma ==> (unlabel e') / sigma'
   (* unlabel *)
-  | ST_unlabel : forall sigma v_l v lb l' sigma' s h,
+  | ST_unlabel2 : forall sigma v lb l' sigma' s h s',
+      value v ->
       sigma = SIGMA s h ->
       l' = join_label lb (current_label sigma) ->
-      (unlabel ((v_l v lb))) / sigma ==> v / sigma'
+      s' = update_current_label s l'-> 
+      sigma' = SIGMA s' (get_heap sigma) ->
+      (unlabel (v_l v lb)) / sigma ==> v / sigma'
+  (* unlabel data exception *)
+  | ST_unlabelDataException : forall sigma,
+      (unlabel null) / sigma ==> NPE / sigma
 
 (* Label of *)
   (* context rule *)
@@ -420,7 +386,10 @@ Inductive step : tm -> Sigma -> tm -> Sigma -> Prop :=
        (labelOf e) / sigma ==> (labelOf e') / sigma'
   (* label of  *)
   | ST_labelof2 : forall sigma v lb,
-      (labelOf (v_l v lb)) / sigma ==> (lb) / sigma
+      (labelOf (v_l v lb)) / sigma ==> l lb / sigma
+  | ST_labelOfDataException : forall sigma, 
+      labelOf null / sigma ==> NPE / sigma
+
 
 (* unlabel opaque*)
   (* context rule *)
@@ -428,16 +397,19 @@ Inductive step : tm -> Sigma -> tm -> Sigma -> Prop :=
        e / sigma ==>  e' / sigma' -> 
       (unlabelOpaque e) / sigma ==> (unlabelOpaque e') / sigma'
   (* unlabel opaque *)
-  | ST_unlabel_opaque2 : forall sigma v lb l' sigma' s h,
+  | ST_unlabel_opaque2 : forall sigma v lb l' sigma' s h s',
       sigma = SIGMA s h ->
       l' = join_label lb (current_label sigma) ->
-      value (v_opa_l v (l lb)) ->
-      (unlabelOpaque ((v_opa_l v (l lb)))) / sigma ==> v / sigma'
+      s' = update_current_label s l'-> 
+      sigma' = SIGMA s' (get_heap sigma) ->
+      (unlabelOpaque (v_opa_l v lb)) / sigma ==> v / sigma'
+  | ST_unlabel_opaqueDataException : forall sigma, 
+      unlabelOpaque null / sigma ==> NPE / sigma
 
 (* Opaque call *)
   (* context rule *)
-  | ST_opaquecall1 : forall sigma sigma' e e' t,
-       e <> Return t ->
+  | ST_opaquecall1 : forall sigma sigma' e e',
+       (forall v, value v -> e <> Return v) ->
        e / sigma ==>  e' / sigma' -> 
       (opaqueCall e) / sigma ==> (opaqueCall e') / sigma'
   (* return context rule*)
@@ -446,6 +418,7 @@ Inductive step : tm -> Sigma -> tm -> Sigma -> Prop :=
       (opaqueCall (Return e)) / sigma ==> (opaqueCall (Return e')) / sigma'
   (* opaque call with value, without method call inside*)
   | ST_opaquecall_val2 : forall sigma v,
+      (value v) ->
       (opaqueCall v) / sigma ==> v / sigma
   (* opaque call with return statement *)
   | ST_opaquecall_return2 : forall sigma sigma' s h lb s' lsf v,
@@ -454,8 +427,9 @@ Inductive step : tm -> Sigma -> tm -> Sigma -> Prop :=
       lb = (current_label sigma) ->
       sigma' = SIGMA s' h->
       value v ->
-      (opaqueCall (Return v)) / sigma ==> v_opa_l v (l lb) / sigma'
-
+      (opaqueCall (Return v)) / sigma ==> v_opa_l v lb / sigma'
+  | ST_opaquecall_return3 : forall sigma,
+      opaqueCall (Return null) / sigma ==> NPE / sigma
 
 
 (* assignment *)
@@ -497,7 +471,7 @@ Inductive step : tm -> Sigma -> tm -> Sigma -> Prop :=
       (FieldWrite (ObjId o) f v) / sigma ==> NPE / sigma
   (* field write normal *)
   | ST_fieldWrite_opaque : forall sigma sigma' o s h h' f lo cls F F' v l' lb e2,
-      e2 = unlabelOpaque ((v_opa_l v (l lb))) ->
+      e2 = unlabelOpaque (v_opa_l v lb) ->
       sigma = SIGMA s h ->
       Some (Heap_OBJ cls F lo) = h(o) -> 
       F' = fields_update F f v ->
@@ -513,12 +487,14 @@ Inductive step : tm -> Sigma -> tm -> Sigma -> Prop :=
         Return e / sigma ==> Return e' / sigma'
   (* return val *)
   | ST_return2 : forall sigma sigma' v s s' s'' h lsf l', 
+      value v ->
       sigma = SIGMA s h ->
       s = cons lsf s' ->
       l' = join_label (get_current_label s) (get_current_label s') ->
       s'' = update_current_label s' l' ->
       sigma' = SIGMA s'' h ->
        Return v / sigma ==> v / sigma'
+
 (* if statement *)
    (* context rule 1 *)
   | ST_if1 : forall sigma sigma' s1 s2 e1' e1 e2, 
@@ -603,15 +579,12 @@ Inductive has_type : Class_table -> typing_context -> heap -> tm -> ty -> Prop :
   | T_NewExp : forall h Gamma cn CT cls_def,
       Some cls_def = CT(cn) ->
       has_type CT Gamma h (NewExp cn) (classTy cn)
-(* this *)
-  | T_this : forall h Gamma T CT,
-      has_type CT Gamma h this T
 (* label *)
   | T_label : forall h Gamma lb CT,
       has_type CT Gamma h (l lb) LabelTy
 (* label data *)
   | T_labelData : forall h Gamma lb CT e T,
-      has_type CT Gamma h lb LabelTy ->
+      has_type CT Gamma h (l lb) LabelTy ->
       has_type CT Gamma h e T ->
       has_type CT Gamma h (labelData e lb) (LabelelTy T)
 (* unlabel *)
@@ -624,7 +597,7 @@ Inductive has_type : Class_table -> typing_context -> heap -> tm -> ty -> Prop :
       has_type CT Gamma h (labelOf e) LabelTy
 (* unlabel opaque *)
   | T_unlabelOpaque : forall h Gamma CT e T,
-      has_type CT Gamma h e (LabelelTy T) -> 
+      has_type CT Gamma h e (OpaqueLabeledTy T) -> 
       has_type CT Gamma h (unlabelOpaque e) T
 (* opaque call *)
   | T_opaqueCall : forall h Gamma CT e T,
@@ -671,12 +644,12 @@ Inductive has_type : Class_table -> typing_context -> heap -> tm -> ty -> Prop :
       has_type CT Gamma h NPE T
 (* runtime labeled data *)
   | T_v_l : forall h Gamma lb CT v T,
-      has_type CT Gamma h lb  LabelTy ->
+      has_type CT Gamma h (l lb)  LabelTy ->
       has_type CT Gamma h v  T ->
       has_type CT Gamma h (v_l v lb) (LabelelTy T)
 (* runtime labeled data *)
   | T_v_opa_l : forall h Gamma lb CT v T,
-      has_type CT Gamma h lb  LabelTy ->
+      has_type CT Gamma h (l lb)  LabelTy ->
       has_type CT Gamma h v  T ->
       has_type CT Gamma h (v_opa_l v lb) (OpaqueLabeledTy T).
 
@@ -722,7 +695,7 @@ Inductive wfe_heap : Class_table -> typing_context -> heap -> Prop :=
         Some cls_def  = ct cn ->
         fields = (find_fields cls_def) ->
         (forall f cls', type_of_field fields f = Some cls' -> exists v, F(f) = Some v)->
-        (*wfe_fields fields F -> *)
+        (exists o', h' o' = None) ->
         wfe_heap ct gamma h'.
 
 
@@ -743,9 +716,9 @@ Lemma field_val_of_heap_obj : forall h o gamma CT cls_def F lo cls' fields,
 
 Proof with auto.
   intros. induction H. inversion H0. case_eq (beq_oid o0 o). intro.
-  rewrite -> H5 in H0. rewrite -> H9 in H0. subst. inversion H0. subst.
+  rewrite -> H5 in H0. rewrite -> H10 in H0. subst. inversion H0. subst.
   apply H8 with (f:=f) (cls':=cls'). assumption.
-  intros. rewrite -> H5 in H0. rewrite -> H9 in H0. apply IHwfe_heap. assumption.
+  intros. rewrite -> H5 in H0. rewrite -> H10 in H0. apply IHwfe_heap. assumption.
 
 Qed.
 
@@ -809,7 +782,7 @@ Inductive wfe_stack : Class_table -> typing_context -> heap -> stack -> Prop :=
         h = empty_heap ->
         gamma = empty_context -> 
         wfe_stack ct gamma h nil
-  | stack_wfe : forall s ct h gamma x T s' lb sf cls_def gamma' v, 
+  | stack_wfe : forall s ct h gamma x T s' lb sf cls_def gamma' v v', 
         s = cons (Labeled_frame lb sf) s'->
         wfe_stack ct gamma h s' ->
         wfe_heap ct gamma h ->
@@ -817,6 +790,7 @@ Inductive wfe_stack : Class_table -> typing_context -> heap -> stack -> Prop :=
         gamma x = None ->
         variable_exists s' x = false ->
         sf x = Some v ->
+        sf (Id "this") = Some v' ->
         gamma'= (fun x' => if beq_id x x' then (Some (classTy T)) else (gamma x)) ->
         ct T = Some cls_def -> 
         wfe_stack ct gamma' h s.
@@ -875,7 +849,7 @@ Lemma wfe_oid : forall o ct gamma s h sigma cls_def cn,
 Proof with auto. 
   intros. inversion H0. 
     - inversion H1. subst. inversion H16.
-    - inversion H1. subst. exists F. rewrite <- H21 in H2. inversion H2. exists lo. rewrite -> H3 in H22. assumption.  
+    - inversion H1. subst. exists F. rewrite <- H22 in H2. inversion H2. exists lo. rewrite -> H3 in H23. assumption.  
 Qed.
 
 Definition val_option_type (input : option tm) : tm :=
@@ -896,7 +870,7 @@ right. intro.  intros contra. inversion contra.
 right. intro.  intros contra. inversion contra.
 right. intro.  intros contra. inversion contra.
 right. intro.  intros contra. inversion contra.
-right. intro.  intros contra. inversion contra.
+
 left. exists t. auto. 
 right. intro.  intros contra. inversion contra.
 right. intro.  intros contra. inversion contra.
@@ -910,6 +884,33 @@ right. intro.  intros contra. inversion contra.
 right. intro.  intros contra. inversion contra.
 right. intro.  intros contra. inversion contra.
 Qed.
+
+Lemma excluded_middle_returnT : forall e, (exists t, e = Return t) \/ (forall t, ~ (e = Return t)).
+Proof with eauto.
+  intros. case e. 
+right. intro.  intros contra. inversion contra.
+right. intro.  intros contra. inversion contra.
+right. intro.  intros contra. inversion contra.
+right. intro.  intros contra. inversion contra.
+right. intro.  intros contra. inversion contra.
+right. intro.  intros contra. inversion contra.
+right. intro.  intros contra. inversion contra.
+right. intro.  intros contra. inversion contra.
+right. intro.  intros contra. inversion contra.
+right. intro.  intros contra. inversion contra.
+right. intro.  intros contra. inversion contra.
+right. intro.  intros contra. inversion contra.
+right. intro.  intros contra. inversion contra.
+right. intro.  intros contra. inversion contra.
+right. intro.  intros contra. inversion contra.
+right. intro.  intros contra. inversion contra.
+left. exists t.  auto. 
+right. intro.  intros contra. inversion contra.
+right. intro.  intros contra. inversion contra.
+right. intro.  intros contra. inversion contra.
+right. intro.  intros contra. inversion contra.
+Qed.
+
 
 Theorem progress : forall t T sigma gamma CT s h, 
   sigma = SIGMA s h ->  wfe_heap CT gamma h -> wfe_stack CT gamma h s -> 
@@ -956,17 +957,24 @@ Proof with auto.
     exists NPE. exists sigma. apply ST_fieldReadException.
     (* label is primitive: calling field access is not valid *)
     rewrite <- H7 in H2. inversion H2.
-   + (* context rule *)
-    destruct H6 as [e']. destruct H6 as [sigma'].
+   
+     (* call field access on labeled value*)
+    {rewrite <- H8  in H2. inversion H2. }
+    
+     (* call field access on opaque label value*)
+    {rewrite <- H8  in H2. inversion H2. }
+
+     (* context rule *)
+    + { destruct H6 as [e']. destruct H6 as [sigma'].
     exists (FieldAccess e' f). exists sigma'.
-    apply ST_fieldRead1 with (sigma:=sigma) (sigma':=sigma') (e:=e) (e':=e') (f:=f). assumption.
+    apply ST_fieldRead1 with (sigma:=sigma) (sigma':=sigma') (e:=e) (e':=e') (f:=f). assumption. }
 
 (* method call *)
 - right.
    destruct IHhas_type1. auto. auto. auto. 
        + inversion H5. rewrite <- H6 in H2_. inversion H2_.
           (* case analysis for argument: if the argument is a value *)
-            destruct IHhas_type2. auto. auto. auto. subst. 
+             destruct IHhas_type2. auto. auto. auto. subst. 
             remember (sf_update (sf_update empty_stack_frame (Id "this") (ObjId o)) arg_id argu) as sf. 
             remember (SIGMA s h ) as sigma.
             remember (current_label sigma) as l.
@@ -978,7 +986,7 @@ Proof with auto.
                                        (v:=argu) (lx:=lo) (l:=l) 
                                        (theta:=lsf) (s':=s') (sf:=sf) (lsf:=lsf) (arg_id:=arg_id) 
                                         (cls_a:=cls_a) (body:=body) (meth:=meth) (returnT:=returnT); auto.
-            rewrite <- H12 in H2. inversion H2. rewrite <- H13; auto.
+            rewrite <- H12 in H2. inversion H2. rewrite <- H13; auto. 
           (* case analysis for argument, if the argument is not a value *)
             subst. 
                 destruct H14 as [t']. destruct H as [sigma'].
@@ -991,9 +999,11 @@ Proof with auto.
                   exists (sigma').
                   apply ST_MethodCall2 with (sigma:=(SIGMA s h)) (sigma':=sigma') 
                                             (v:=(ObjId o)) (e:=unlabelOpaque t) (e':=unlabelOpaque e') (id:=meth).
-                  intros. subst. intro contra. inversion contra. rewrite -> H8 in H. inversion H4. 
-                      rewrite <- H6 in H; subst; inversion H7. subst. inversion H7.  subst.  inversion H7.
-                      assumption. apply v_oid. subst. 
+                  intros. subst. intro contra. inversion contra. rewrite -> H9 in H. inversion H4.
+                      rewrite <- H8 in H; subst; inversion H7. auto.  subst. inversion H7.  subst.
+                      inversion H7. subst. inversion H7.   
+                      assumption. apply v_oid. 
+                      subst. 
                       remember (SIGMA s h ) as sigma.
                       remember (sf_update (sf_update empty_stack_frame (Id "this") (ObjId o)) arg_id t') as sf.
                       remember (join_label lb (current_label sigma)) as l'. 
@@ -1007,59 +1017,282 @@ Proof with auto.
                                            (meth:=meth) (returnT:=returnT).
                       auto. auto. auto. auto. auto. auto. subst. 
                       rewrite <- H12 in H2. inversion H2. rewrite <- H6. rewrite -> H3; auto. 
-                      auto. 
+                      auto.
+                  (*exception case *)
+                  subst. exists NPE. exists (SIGMA s h).
+                  apply ST_MethodCallOpaqueDataException with (sigma:=(SIGMA s h)) (o:=o).  
+
                   (* case for argu <> unlabelOpaque t *)
                   exists (MethodCall (ObjId o) meth t'). exists sigma'. 
                   apply ST_MethodCall2 with (sigma:=(SIGMA s h)) (sigma':=sigma') (v:=((ObjId o))) 
                                             (e:=argu) (e':=t') (id:=meth).
-                  intro. assert (argu <> unlabelOpaque t). apply (H4 t). intro. assumption. assumption. apply v_oid.
+                  intro. intro. intro. 
 
+                  assert (argu <> unlabelOpaque t).  apply (H4 t). apply (H4 t). auto. apply v_oid.
+                  (* case for argu <> unlabelOpaque t exception *)
                   subst. exists NPE. exists (SIGMA s h). 
               apply ST_MethodCallException with (sigma:=(SIGMA s h)) (v:=argu) (meth:=meth).
 
-                  subst. inversion H2_. 
+                  subst. inversion H2_.
+                rewrite <- H7 in H2_. inversion H2_.                 rewrite <- H7 in H2_. inversion H2_. 
       +  destruct H5 as [t']. destruct H5 as [sigma']. exists (MethodCall t' meth argu). exists (sigma').   
                   apply ST_MethodCall1 with (sigma:=sigma) (sigma':=sigma') (e2:=argu) (e:=e) (e':=t') (id:=meth). apply H5.
 
 (* new expression *)
-- right.
-destruct cls_def.
+- right. inversion H0. 
+    assert (exists o, empty_heap o = None). 
+      unfold empty_heap. auto. exists (OID 0). auto. 
+      destruct H6 as [o]. 
 
-                  
-       | ST_NewExp : forall sigma sigma' F o h cls h' s lb cn f_def m_def,
-      sigma = SIGMA s h->
-      h(o) = None -> 
-      F =  (init_field_map (find_fields cls) empty_field_map) ->
-      lb = (current_label sigma) -> 
-      cls = class_def cn f_def m_def->
-      h' = add_heap_obj h o (Heap_OBJ cls F lb) ->
-      sigma' = SIGMA s h' ->
-      NewExp cn / sigma ==> ObjId o / sigma'              
-                  
+      remember (init_field_map (find_fields cls_def) empty_field_map) as F.
+      remember (current_label sigma) as lb. 
+      remember  (add_heap_obj h o (Heap_OBJ cls_def F lb)) as h'.
+      remember (SIGMA s h') as sigma'.
+      exists (ObjId o). exists sigma'. apply ST_NewExp with (sigma:=sigma) (sigma':=sigma') (F:=F) (o:=o) (h:=h) (cls:=cls_def)
+                                                                                (h':=h') (s:=s) (lb:=lb) (cn:=cn0).
+      subst; auto. rewrite <- H5.  auto.  auto. auto. auto.  auto. 
+      
+      remember (current_label sigma) as lb. 
+      destruct H10. 
+      remember (init_field_map (find_fields cls_def) empty_field_map) as F'.
+      remember (add_heap_obj h x (Heap_OBJ cls_def F' lb)) as h''.
+      remember (SIGMA s h'') as sigma''.
+      exists (ObjId x). exists sigma''. 
 
+      apply ST_NewExp with (sigma:=sigma) (sigma':=sigma'') (F:=F') (o:=x) (h:=h) (cls:=cls_def)
+                                                                                (h':=h'') (s:=s) (lb:=lb) (cn:=cn0).
+      auto. auto.  auto.  auto. auto. auto. 
 
-
-
-
-
-                  apply ST_MethodCall2 with (sigma:=(SIGMA s h)) (sigma':=sigma') 
-                                            (v:=(ObjId o)) (e:=argu) (e':=t') (id:=meth).
-
-
-                  remember (sf_update (sf_update empty_stack_frame (Id "this") (ObjId o)) arg_id argu) as sf. 
-                  
-                  remember (current_label sigma) as l.
-                  remember (Labeled_frame l sf) as lsf. 
-                  remember (cons lsf s) as s'.
-                  remember (SIGMA s' (get_heap sigma)) as sigma'.
-                  exists body. exists sigma'. 
+(* label *)
+- left. apply  v_label.
 
 
+(* label Data *)
+- right. destruct IHhas_type2. auto. auto. auto. 
+            destruct IHhas_type1. auto. auto. auto. 
+            
+            (* subgoal #1 *)
+           exists  (v_l e lb). exists sigma.
+                apply ST_LabelData2 with (sigma:=sigma) (lb:=lb) (v:=e). subst. auto.  auto.
+
+            (*
+                  inversion H2. 
+                 (*subsubgoal #1*)
+                exists  (v_l (ObjId o) lb). exists sigma.
+                apply ST_LabelData3 with (sigma:=sigma) (lb:=lb) (v:=(ObjId o)). subst. auto.  auto.
+                 (*subsubgoal #2*)
+                exists NPE. exists sigma. apply ST_LabelDataException with (sigma:=sigma) (lb:=lb).
+                 (*subsubgoal #3*)
+                exists  (v_l (l lb0) lb). exists sigma.
+                apply ST_LabelData3 with (sigma:=sigma) (lb:=lb) (v:=(l lb0)). subst. auto.  auto.
+                 (*subsubgoal #4*)
+            *)
+
+            (* subgoal #2 *)  
+                destruct H3 as [t']. destruct H3 as [sigma']. inversion H3. 
+
+            (* subgoal #3 *)
+            destruct IHhas_type1. auto. auto. auto. 
+                   (* subgoal #4 *)
+                    destruct H2 as [t']. destruct H2 as [sigma'].
+                    exists (labelData t' lb). exists sigma'. 
+                    apply ST_LabelData1 with (sigma:=sigma) (sigma':=sigma') (e:=e) (e':=t') (lb:=lb).
+                    auto. 
+                   (* subgoal #5 *)
+                    destruct H2 as [t']. destruct H2 as [sigma']. 
+                    exists (labelData t' lb). exists sigma'.
+                    apply ST_LabelData1 with (sigma:=sigma) (sigma':=sigma') (e:=e) (e':=t') (lb:=lb).
+                    auto.
+
+(* unlabel : *)
+- right. 
+            destruct IHhas_type. auto. auto. auto. 
+             (* subgoal #1 *)
+                + inversion H3. rewrite <- H4 in H2. inversion H2. 
+                    exists NPE. exists sigma.  apply ST_unlabelDataException with (sigma:=sigma).
+                    rewrite <- H4 in H2.  inversion H2. 
+
+             (* subgoal #2 *)
+                remember ( join_label lb (current_label sigma)) as l'.
+                remember (update_current_label s l') as s'.
+                remember (SIGMA s' (get_heap sigma)) as sigma'.
+                exists v. exists sigma'. 
+                apply ST_unlabel2 with (sigma:=sigma) (s':=s') (sigma':=sigma') (l':=l') (s:=s) (h:=h) (lb:=lb) (v:=v). 
+                auto. auto. auto. auto. auto.
+
+            (* subgoal #3 *)
+                rewrite <- H5 in H2.  inversion H2. 
+
+             (* subgoal #4 *)
+                + destruct H3 as [t']. destruct H3 as [sigma']. 
+                    exists  (unlabel t'). exists sigma'. apply ST_unlabel1 with (sigma:=sigma) (sigma':=sigma') (e:=e) (e':=t'). auto. 
+          
+(* label Of *)
+(* same issue as above, we may need to add (v_l v lb) as a value*)
+- right. 
+         destruct IHhas_type. auto. auto. auto. 
+            (* subgoal #1 *)
+                + inversion H3. rewrite <- H4 in H2. inversion H2. 
+                    exists NPE. exists sigma.  apply ST_labelOfDataException with (sigma:=sigma).
+                    rewrite <- H4 in H2.  inversion H2.
+                    
+                   exists (l lb). exists (sigma). apply ST_labelof2 with (v:=v) (lb:=lb).
+
+                    rewrite <- H5 in H2. inversion H2. 
+             (* subgoal #2 *)
+                + destruct H3 as [t']. destruct H3 as [sigma']. 
+                    exists  (labelOf t'). exists sigma'. apply ST_labelof1 with (sigma:=sigma) (sigma':=sigma') (e:=e) (e':=t'). auto. 
+
+(* unlabel opaque *)
+- right. 
+         destruct IHhas_type. auto. auto. auto. 
+            (* subgoal #1 *)
+                + inversion H3. rewrite <- H4 in H2. inversion H2. 
+                    exists NPE. exists sigma.  apply ST_unlabel_opaqueDataException with (sigma:=sigma).
+                    rewrite <- H4 in H2.  inversion H2.
+              
+                     rewrite <- H5 in H2. inversion H2. 
+ 
+                remember ( join_label lb (current_label sigma)) as l'.
+                remember (update_current_label s l') as s'.
+                remember (SIGMA s' (get_heap sigma)) as sigma'.
+                exists v. exists sigma'. 
+                apply ST_unlabel_opaque2 with (sigma:=sigma) (s':=s') (sigma':=sigma') (l':=l') (s:=s) (h:=h) (lb:=lb) (v:=v). 
+                auto. auto. auto. auto. 
+
+             (* subgoal #2 *)
+                + destruct H3 as [t']. destruct H3 as [sigma']. 
+                    exists  (unlabelOpaque t'). exists sigma'. apply ST_unlabel_opaque1 with (sigma:=sigma) (sigma':=sigma') (e:=e) (e':=t'). auto. 
+
+(* opaque call *)
+- right.  destruct IHhas_type. auto. auto. auto.    
+            exists e. exists sigma. apply ST_opaquecall_val2 with (v:=e) (sigma:=sigma). auto.
+
+            subst. destruct H3 as [t']. destruct H as [sigma'].
+                pose proof (excluded_middle_returnT e).
+                destruct H3.
+                  (* case for argu = return t *)
+                  destruct H3 as [t].
+                  destruct t.
+                  rewrite -> H3 in H. 
+                  inversion H.  subst. 
+                  exists (opaqueCall(Return e')). exists sigma'.
+                  apply ST_opaquecall_return1 with (sigma:=(SIGMA s h)) (sigma':=sigma') (e:= (Tvar i)) (e':= e').
+                  auto. 
+
+                  rewrite <- H11 in H. inversion H5. 
+
+                  (* subgoal *)
+                  subst. exists NPE. exists (SIGMA s h). 
+                  apply ST_opaquecall_return3 with (sigma:=(SIGMA s h)).
+                  (* subgoal field access*)
+                  subst. 
+                  exists (opaqueCall(t') ). exists sigma'.
+                  apply ST_opaquecall1 with (sigma:=(SIGMA s h)) (sigma':=sigma') (e:= Return (FieldAccess t i) ) (e':= t').
+                  intros. intro contra. inversion contra. rewrite <- H5 in H3.  inversion H3.         auto.
+                  (* method call *)
+                  subst. 
+                  exists (opaqueCall(t') ). exists sigma'.
+                  apply ST_opaquecall1 with (sigma:=(SIGMA s h)) (sigma':=sigma') (e:= Return (MethodCall t1 i t2) ) (e':= t').
+                  intros. intro contra. inversion contra. rewrite <- H5 in H3.  inversion H3.         auto.
+                  (* new expression *)
+                  subst. 
+                  exists (opaqueCall(t') ). exists sigma'.
+                  apply ST_opaquecall1 with (sigma:=(SIGMA s h)) (sigma':=sigma') (e:= Return (NewExp c) ) (e':= t').
+                  intros. intro contra. inversion contra. rewrite <- H5 in H3.  inversion H3.         auto.
+                  (* return label *)
+                  subst. 
+                  exists (opaqueCall(t') ). exists sigma'.
+                  apply ST_opaquecall1 with (sigma:=(SIGMA s h)) (sigma':=sigma') (e:= Return (NewExp c) ) (e':= t').
+                  intros. intro contra. inversion contra. rewrite <- H5 in H3.  inversion H3.         auto.
+
+
+    destruct H3 as [t].
+                  destruct t.
+                  rewrite -> H3 in H. 
+                  inversion H.  subst. 
+                  exists (opaqueCall(Return e')). exists sigma'.
+                  apply ST_opaquecall_return1 with (sigma:=(SIGMA s h)) (sigma':=sigma') (e:= (Tvar i)) (e':= e').
+                  auto. 
+
+
+
+
+
+                  apply ST_var with (id:=i) (sigma:=sigma) (s:=s) (h:=h) (lb) sf lsf v s',
+
+                  rewrite -> H3 in H.
+                  case (value t).
+                  inversion t. 
+ 
+ inversion H. subst. 
+                  exists (opaqueCall(Return e')).
+                  exists (sigma').
+                  apply ST_opaquecall_return1 with (sigma:=(SIGMA s h)) (sigma':=sigma') 
+                                            (e:=t) (e':=e'). auto.
+      
+                  subst. 
+ 
+                  intros. subst. intro contra. inversion contra. rewrite -> H9 in H. inversion H4.
+                      rewrite <- H8 in H; subst; inversion H7. auto.  subst. inversion H7.  subst.
+                      inversion H7. subst. inversion H7.   
+                      assumption. apply v_oid. 
+                      subst. 
+                      remember (SIGMA s h ) as sigma.
+                      remember (sf_update (sf_update empty_stack_frame (Id "this") (ObjId o)) arg_id t') as sf.
+                      remember (join_label lb (current_label sigma)) as l'. 
+                      remember (Labeled_frame l' sf) as lsf. 
+                      remember (cons lsf s) as s'.
+                      remember (SIGMA s' (get_heap sigma)) as sigma''.
+                      exists body. exists sigma''. 
+                      apply ST_MethodCall_unlableOpaque with (sigma:=sigma) (sigma':=sigma'') (o:=o) (s:=s) (h:=h) 
+                                            (cls:=cls_def0) (fields:=F) (v:=t') (lx:=lo) (l':=l') (lb:=lb) (s':=s')
+                                           (sf:=sf) (lsf:=lsf) (arg_id:=arg_id) (cls_a:=cls_a) (body:=body) 
+                                           (meth:=meth) (returnT:=returnT).
+                      auto. auto. auto. auto. auto. auto. subst. 
+                      rewrite <- H12 in H2. inversion H2. rewrite <- H6. rewrite -> H3; auto. 
+                      auto.
+                  (*exception case *)
+                  subst. exists NPE. exists (SIGMA s h).
+                  apply ST_MethodCallOpaqueDataException with (sigma:=(SIGMA s h)) (o:=o).  
+
+                  (* case for argu <> unlabelOpaque t *)
+                  exists (MethodCall (ObjId o) meth t'). exists sigma'. 
+                  apply ST_MethodCall2 with (sigma:=(SIGMA s h)) (sigma':=sigma') (v:=((ObjId o))) 
+                                            (e:=argu) (e':=t') (id:=meth).
+                  intro. intro. intro. 
+
+                  assert (argu <> unlabelOpaque t).  apply (H4 t). apply (H4 t). auto. apply v_oid.
+                  (* case for argu <> unlabelOpaque t exception *)
+                  subst. exists NPE. exists (SIGMA s h). 
+              apply ST_MethodCallException with (sigma:=(SIGMA s h)) (v:=argu) (meth:=meth).
+
+                  subst. inversion H2_.
+                rewrite <- H7 in H2_. inversion H2_.                 rewrite <- H7 in H2_. inversion H2_. 
+            
+
+
+
+(*
+
+(* unlabel opaque*)
+  (* context rule *)
+  | ST_unlabel_opaque1 : forall sigma sigma' e e',
+       e / sigma ==>  e' / sigma' -> 
+      (unlabelOpaque e) / sigma ==> (unlabelOpaque e') / sigma'
+  (* unlabel opaque *)
+  | ST_unlabel_opaque2 : forall sigma v lb l' sigma' s h,
+      sigma = SIGMA s h ->
+      l' = join_label lb (current_label sigma) ->
+      value (v_opa_l v (l lb)) ->
+      (unlabelOpaque ((v_opa_l v (l lb)))) / sigma ==> v / sigma'
+*)
 
 Theorem preservation : forall t t' T sigma sigma', 
     gamma |- t \in T ->
     t / st ==> t' / st' ->
     gamma |- t' \in T.
+
 
 Proof.
 Qed.
