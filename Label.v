@@ -72,3 +72,8 @@ Definition flow_to (lb1 : Label) ( lb2 : Label) :=
                           | LB p2 => subset p2 p1
                   end
   end.
+
+Definition label_eq (lb1 : Label) (lb2 : Label) :=
+  if flow_to lb1 lb2 then flow_to lb2 lb1 else false. 
+
+

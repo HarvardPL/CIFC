@@ -656,15 +656,14 @@ Inductive wfe_heap : Class_table -> typing_context -> heap -> Prop :=
 
 Inductive wfe_heap : Class_table -> typing_context -> heap -> Prop :=
   | empty_heap_wfe : forall ct ctx, wfe_heap ct ctx empty_heap
-  | heap_wfe : forall h h' o cls_def F cn ct gamma fields ho lo,
+  | heap_wfe : forall h h' o cls_def F ct gamma cn ho lo method_defs field_defs,
         h(o) = None ->
         wfe_heap ct gamma h ->
         ho = Some (Heap_OBJ cls_def F lo) ->
         h' = (fun x' => if beq_oid o x' then ho else (h x')) ->
-        (* cls = class_def cn field_defs method_defs-> *)
         Some cls_def  = ct cn ->
-        fields = (find_fields cls_def) ->
-        (forall f cls', type_of_field fields f = Some cls' -> exists v, F(f) = Some v)->
+        cls_def = class_def cn field_defs method_defs ->
+        (forall f cls', type_of_field field_defs f = Some cls' -> exists v, F(f) = Some v)->
         (exists o', h' o' = None) ->
         wfe_heap ct gamma h'.
 
@@ -693,15 +692,18 @@ Proof with auto.
 Qed.
 
 (*
-Inductive wfe_heap : Class_table -> typing_context -> heap -> Prop :=
-  | empty_heap_wfe : forall ct ctx, wfe_heap ct ctx empty_heap
-  | heap_wfe : forall h o cls F cn field_defs method_defs ct ctx h' lo,
-      h(o) = Heap_OBJ cls F lo ->
-      cls = class_def cn field_defs method_defs->
-      Some cls  = ct cn ->
-      F (x) ->
-      h' = (add_heap_obj h o (Heap_OBJ cls F lo)) ->
-      wfe_heap ct ctx h'.
+Lemma field_val_of_heap_obj : forall cls_name h o gamma CT cls_def F lo cls' field_defs method_defs,
+  wfe_heap CT gamma h -> 
+  h(o) = Some (Heap_OBJ cls_def F lo) ->
+  cls_def =  (class_def cls_name field_defs method_defs) ->
+  CT cls_name = Some cls_def ->
+  (forall f, type_of_field field_defs f = Some cls' -> exists v, F(f) = Some v).
+Proof with auto.
+  intros. induction H. inversion H0. case_eq (beq_oid o0 o). intro.
+  rewrite -> H6 in H0. rewrite -> H11 in H0. subst. inversion H0. subst.
+  apply H9 with (f:=f) (cls':=cls'). assumption.
+  intros. rewrite -> H6 in H0. rewrite -> H11 in H0. apply IHwfe_heap. assumption. assumption.
+Qed.
 *)
 
 
@@ -713,21 +715,18 @@ Proof with auto.
   auto. destruct H. destruct H. destruct H. inversion H.
 Qed.
 
-Lemma heap_consist_ct : forall h o ct ctx cls F lo, 
+Lemma heap_consist_ct : forall h o ct ctx cls F lo ,
   wfe_heap ct ctx h -> 
   h(o) = Some (Heap_OBJ cls F lo) ->
-  exists cn cls_def, ct cn = Some (cls_def).
+  exists cn field_defs method_defs, ct cn = Some cls /\ cls = (class_def cn field_defs method_defs).
 Proof with auto.
-  intros. inversion H.  
-  - subst. inversion H0. 
-  - subst. exists cn0. exists cls_def. auto.
+  intros. induction H. 
+  - inversion H0.
+  - case_eq (beq_oid o0 o).  intros. rewrite -> H3 in H0. rewrite -> H8 in H0.  
+      exists cn0. exists  field_defs. exists method_defs. rewrite -> H0 in H2. inversion H2.
+      split.  auto.  auto. 
+    intro. rewrite ->H3 in H0. rewrite -> H8 in H0. apply IHwfe_heap. auto. 
 Qed.
-
-Lemma ct_consist_heap : forall h o ct ctx cls F lo, 
-  wfe_heap ct ctx h -> 
-  
-  h(o) = Some (Heap_OBJ cls F lo) ->
-  exists cn field_defs method_defs, ct cn = Some (class_def cn field_defs method_defs).
 
 Fixpoint variable_exists (s : stack) (x : id) :=
   match s with 
@@ -739,10 +738,10 @@ Fixpoint variable_exists (s : stack) (x : id) :=
   end.
 
 Inductive wfe_stack_frame : heap -> labeled_stack_frame -> Prop :=
-  | stack_frame_wfe : forall h lsf sf o lb cls_def F lo,
+  | stack_frame_wfe : forall h lsf sf o lb,
         lsf = Labeled_frame lb sf ->
         (forall x v, sf x = Some v ->
-        v = null \/ ((v = ObjId o) /\ h(o) = Some (Heap_OBJ cls_def F lo)) \/ v = l lb) ->
+        v = null \/ ( v = ObjId o /\ (exists F lo cls_def, h(o) = Some (Heap_OBJ cls_def F lo)) )) ->
         wfe_stack_frame h lsf. 
 
 
@@ -918,10 +917,14 @@ Proof with auto.
        apply wfe_oid with (o:=o) (ct:=CT) (gamma:=Gamma) (s:=s) (h:=h) 
                           (sigma:=sigma) (cls_def:=cls_def) (cn:=clsT). auto. auto. auto. auto. 
        destruct H8 as [F]. destruct H8 as [lb].
+
       assert (exists v, F(f) = Some v).
       apply field_val_of_heap_obj with (h:=h) (o:=o) (gamma:=Gamma) (CT:=CT) 
                               (cls_def:=cls_def) (F:=F) (lo:=lb) (cls':=cls') (fields:=fields_def).
       auto. auto. auto. auto. auto. 
+
+
+
       destruct H9 as [v].
       remember (join_label lb (current_label sigma)) as l'.
       remember (update_current_label s l') as s'.
@@ -1411,27 +1414,17 @@ Proof with auto.
                                 (s:=s) (h:=h) (lsf:=lsf) (s':=s') (lb:=lb) (sf:=sf) (id1:=id1) (id2:=id2). 
   auto. rewrite <- H24 in H4. assumption. auto. auto. auto. subst. auto. 
   destruct H28.
-  destruct H28.
 
   exists s2. exists sigma.
   apply ST_if_b2 with (sigma:=sigma) (s1:=s1) (s2:=s2) (v1:=v1) (v2:=v2)
                                 (s:=s) (h:=h) (lsf:=lsf) (s':=s') (lb:=lb) (sf:=sf) (id1:=id1) (id2:=id2). 
-  auto. rewrite <- H24 in H4. assumption. auto. auto. auto. intuition. 
+  auto. rewrite <- H24 in H4. assumption. auto. auto. auto. intuition.
   rewrite -> H25 in H30.  rewrite -> H28 in H30. inversion H30.
   rewrite -> H25 in H30.  rewrite -> H28 in H30. inversion H30.
   rewrite -> H25 in H30.  rewrite -> H28 in H30. inversion H30.
   rewrite -> H25 in H30.  rewrite -> H28 in H30. inversion H30.
 
-  exists s2. exists sigma.
-  apply ST_if_b2 with (sigma:=sigma) (s1:=s1) (s2:=s2) (v1:=v1) (v2:=v2)
-                                (s:=s) (h:=h) (lsf:=lsf) (s':=s') (lb:=lb) (sf:=sf) (id1:=id1) (id2:=id2). 
-  auto. rewrite <- H24 in H4. assumption. auto. auto. auto. intuition. 
-  rewrite -> H25 in H29.  rewrite -> H28 in H29. inversion H29.
-  rewrite -> H25 in H29.  rewrite -> H28 in H29. inversion H29.
-  rewrite -> H25 in H29.  rewrite -> H28 in H29. inversion H29.
-  rewrite -> H25 in H29.  rewrite -> H28 in H29. inversion H29.
 
-destruct H25. destruct H25. 
 
 destruct H22 with id2 v2.
   rewrite <- H27.  auto.
@@ -1439,51 +1432,17 @@ destruct H22 with id2 v2.
   apply ST_if_b2 with (sigma:=sigma) (s1:=s1) (s2:=s2) (v1:=v1) (v2:=v2)
                                 (s:=s) (h:=h) (lsf:=lsf) (s':=s') (lb:=lb) (sf:=sf) (id1:=id1) (id2:=id2). 
   auto. rewrite <- H24 in H4. assumption. auto. auto. auto. intuition. 
-  rewrite -> H25 in H30. rewrite -> H29 in H30. inversion H30.
-  rewrite -> H25 in H30.  rewrite -> H29 in H30. inversion H30.
-  rewrite -> H25 in H30.  rewrite -> H29 in H30. inversion H30.
-  rewrite -> H25 in H30.  rewrite -> H29 in H30. inversion H30.
+  rewrite -> H28 in H29. rewrite -> H30 in H29. inversion H29.
+  rewrite -> H28 in H29. rewrite -> H30 in H29. inversion H29.
+  rewrite -> H28 in H29. rewrite -> H30 in H29. inversion H29.
+  rewrite -> H28 in H29. rewrite -> H30 in H29. inversion H29.
 
-destruct H29. destruct H29. 
-  exists s1. exists sigma.
-  apply ST_if_b1 with (sigma:=sigma) (s1:=s1) (s2:=s2) (v1:=v1) (v2:=v2)
-                                (s:=s) (h:=h) (lsf:=lsf) (s':=s') (lb:=lb) (sf:=sf) (id1:=id1) (id2:=id2). 
-  auto. rewrite <- H24 in H4. assumption. auto. auto. auto. rewrite <- H29 in H25. auto.
-
-  exists s2. exists sigma.
-  apply ST_if_b2 with (sigma:=sigma) (s1:=s1) (s2:=s2) (v1:=v1) (v2:=v2)
-                                (s:=s) (h:=h) (lsf:=lsf) (s':=s') (lb:=lb) (sf:=sf) (id1:=id1) (id2:=id2). 
-  auto. rewrite <- H24 in H4. assumption. auto. auto. auto. intuition. 
-  rewrite -> H25 in H30. rewrite -> H29 in H30. inversion H30.
-  rewrite -> H25 in H30.  rewrite -> H29 in H30. inversion H30.
-  rewrite -> H25 in H30.  rewrite -> H29 in H30. inversion H30.
-  rewrite -> H25 in H30.  rewrite -> H29 in H30. inversion H30.
-
-destruct H22 with id2 v2.
-  rewrite <- H27.  auto.
-  exists s2. exists sigma.
-  apply ST_if_b2 with (sigma:=sigma) (s1:=s1) (s2:=s2) (v1:=v1) (v2:=v2)
-                                (s:=s) (h:=h) (lsf:=lsf) (s':=s') (lb:=lb) (sf:=sf) (id1:=id1) (id2:=id2). 
-  auto. rewrite <- H24 in H4. assumption. auto. auto. auto. intuition. 
-  rewrite -> H25 in H29. rewrite -> H28 in H29. inversion H29.
-  rewrite -> H25 in H29. rewrite -> H28 in H29. inversion H29.
-  rewrite -> H25 in H29. rewrite -> H28 in H29. inversion H29.
-  rewrite -> H25 in H29. rewrite -> H28 in H29. inversion H29.
-
-destruct H28. destruct H28. 
-  exists s2. exists sigma.
-  apply ST_if_b2 with (sigma:=sigma) (s1:=s1) (s2:=s2) (v1:=v1) (v2:=v2)
-                                (s:=s) (h:=h) (lsf:=lsf) (s':=s') (lb:=lb) (sf:=sf) (id1:=id1) (id2:=id2). 
-  auto. rewrite <- H24 in H4. assumption. auto. auto. auto. intuition.   
-  rewrite -> H25 in H30. rewrite -> H28 in H30. inversion H30.
-  rewrite -> H25 in H30. rewrite -> H28 in H30. inversion H30.
-  rewrite -> H25 in H30. rewrite -> H28 in H30. inversion H30.
-  rewrite -> H25 in H30. rewrite -> H28 in H30. inversion H30.
+destruct H28. destruct H25.  
 
 exists s1. exists sigma.
   apply ST_if_b1 with (sigma:=sigma) (s1:=s1) (s2:=s2) (v1:=v1) (v2:=v2)
                                 (s:=s) (h:=h) (lsf:=lsf) (s':=s') (lb:=lb) (sf:=sf) (id1:=id1) (id2:=id2). 
-  auto. rewrite <- H24 in H4. assumption. auto. auto. auto. rewrite -> H25. rewrite -> H28. auto. 
+  auto. rewrite <- H24 in H4. assumption. auto. auto. auto. rewrite -> H28. auto.
 
 (* sequence *)
 - right. destruct IHhas_type1. auto. auto. auto.
@@ -1523,24 +1482,73 @@ exists s1. exists sigma.
 Qed.
 
 (* reduction preserve well-form of stack and heap *)
-
+Theorem reduction_preserve_wfe : forall t t' T  sigma sigma' gamma CT s s' h h', 
+    sigma = SIGMA s h ->  wfe_heap CT gamma h -> wfe_stack CT gamma h s -> 
+    has_type CT gamma h t T -> 
+    t / sigma ==> t' / sigma' ->
+    sigma' = SIGMA s' h' ->
+    wfe_heap CT gamma h' /\ wfe_stack CT gamma h' s'.
+Proof with auto. 
+Admitted. 
 
 
 (* reduction preserve typing *)
 
-Theorem preservation : forall t t' T  sigma sigma' gamma CT s h h', 
+Theorem preservation : forall t t' T  sigma sigma' gamma CT s s' h h', 
     sigma = SIGMA s h ->  wfe_heap CT gamma h -> wfe_stack CT gamma h s -> 
     has_type CT gamma h t T -> 
     t / sigma ==> t' / sigma' ->
+    sigma' = SIGMA s' h' ->
     exists T', has_type CT gamma h' t' T'.
 Proof with auto.
+   intros. 
+   assert (wfe_heap CT gamma h' /\ wfe_stack CT gamma h' s').
+   apply reduction_preserve_wfe with (t:=t) (t':=t') (T:=T)  (sigma:=sigma) (sigma':=sigma') (gamma:=gamma) (CT:=CT) (s:=s) (s':=s') (h:=h) (h':=h').
+   auto. auto. auto. auto. auto. auto.  
     intros. induction H3.
 - (* Tvar *)
-   inversion H2. inversion H1. rewrite -> H15 in H11. inversion H11. 
-   inversion H16. 
-Qed.
+   inversion H2. inversion H1. rewrite -> H17 in H13. inversion H13. 
+   inversion H18.   destruct H30 with id0 v. inversion H29. inversion H3. 
+      subst. inversion H33. intuition.
+
+   exists (classTy T1). rewrite -> H33.
+   apply T_null  with (Gamma:=gamma) (h:=h') (T:= (classTy T1)) (CT:=CT).
+
+   destruct H33.  subst. 
+
+    destruct H34 as [F]. destruct H as [lx]. destruct H as [cls_def0].
+
+assert  (exists cn cls_def, CT cn = Some (cls_def)).
+exists T1. exists cls_def. auto.
+
+assert (exists cn field_defs method_defs, CT cn = Some cls_def0 /\ cls_def0 = (class_def cn field_defs method_defs)).
 
 
+apply heap_consist_ct with (h:=h) (o:=o) (ct:=CT) 
+     (ctx:=(fun x' : id => if beq_id x0 x' then Some (classTy T1) else gamma0 x0))
+     (cls:=cls_def0) (F:=F) (lo:=lx).
+auto.  auto.
+
+destruct H7 as [cls_name]. destruct H7 as [field_defs].  destruct H7 as [method_defs].  destruct H7.  
+
+induction cls_def0.
+exists (classTy c). 
+apply T_ObjId with (h:=h') 
+(Gamma:=((fun x' : id => if beq_id x0 x' then Some (classTy T1) else gamma0 x0))) (CT:=CT) (o:=o) 
+                                          (cls_name:=c) (F:=F) (lo:=lx) (cls_def:=(class_def c l0 l1)).
+auto. inversion H9. rewrite <- H9.  auto. 
+inversion H4. rewrite <- H12. auto. 
+
+- (* FieldAccess *)
+inversion H2. 
+
+
+  | T_FieldAccess : forall Gamma e f cls_def CT clsT cls' h fields_def,
+      has_type CT Gamma h e (classTy clsT) ->       
+      Some cls_def = CT(clsT) ->
+      fields_def = (find_fields cls_def) ->
+      type_of_field fields_def f = Some cls' ->
+      has_type CT Gamma h (FieldAccess e f) (classTy cls')
 
 
 

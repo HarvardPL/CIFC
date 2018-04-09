@@ -1,4 +1,4 @@
-DIGEST a73ee5546d2c0324cb3d71ff695475c4
+DIGEST 42da4c4fe00b7ff71101710f1c18e892
 FLabel
 R15:18 Coq.Lists.List <> <> lib
 R36:53 Coq.Strings.String <> <> lib
@@ -130,3 +130,13 @@ R1956:1957 Label <> LB constr
 R1972:1974 Label <> lb2 var
 R2010:2011 Label <> LB constr
 R2019:2024 Label <> subset def
+def 2073:2080 <> label_eq
+R2089:2093 Label <> Label ind
+R2103:2107 Label <> Label ind
+R2118:2124 Label <> flow_to def
+R2130:2132 Label <> lb2 var
+R2126:2128 Label <> lb1 var
+R2160:2164 Coq.Init.Datatypes <> false constr
+R2139:2145 Label <> flow_to def
+R2151:2153 Label <> lb1 var
+R2147:2149 Label <> lb2 var
