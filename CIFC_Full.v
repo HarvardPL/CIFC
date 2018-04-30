@@ -3289,5 +3289,163 @@ generalize dependent s.  generalize dependent h.
 Qed.
 
 
+Lemma normal_form_prime : forall v sigma ct, value v->
+(forall v' sigma', Config ct v sigma ==> Config ct v' sigma' -> False).
+Proof. 
+  intros v sigma ct. intro H_v. intros.
+  inversion H_v; try (rewrite <-H0 in H; inversion H; fail); 
+  try (rewrite <-H1 in H; inversion H).
+Qed.
+
+
+Theorem deterministic: forall ct t sigma t1 sigma1 t2 sigma2, 
+     reduction (Config ct t sigma) (Config ct t1 sigma1) ->
+     reduction (Config ct t sigma) (Config ct t2 sigma2) -> 
+      t1 = t2 /\ sigma1 = sigma2. 
+Proof.
+     intros ct t sigma t1 sigma1 t2 sigma2 Hy1 Hy2.
+
+     remember (Config ct t1 sigma1) as t1_config. 
+     generalize dependent t2.      generalize dependent t1.
+     induction Hy1; intro t1; intro; intro t2; intro Hy2; inversion Heqt1_config; subst.
+      (*Tvar *)
+     - inversion Hy2. subst. inversion H5. rewrite <- H1 in H8. rewrite <- H2 in H8.
+        inversion H8.
+          split. auto. auto. 
+     (*field access*)
+    - inversion Hy2. subst. destruct IHHy1 with e' e'0. subst.
+       auto. auto. subst. auto.
+       subst. inversion Hy1.  
+    - inversion Hy2. subst. inversion H2.
+      subst. inversion H7. rewrite <- H3 in H8. rewrite <- H8 in H0. inversion H0.
+       subst. rewrite <- H1 in H9.  inversion H9.  split; auto.
+    - inversion Hy2. subst.  destruct IHHy1 with e' e'0; auto. split; subst; auto.
+       subst. apply normal_form_prime in Hy1. intuition. auto.
+        
+       subst.  inversion Hy1. subst. inversion Hy1.
+    - inversion Hy2. 
+          subst. apply normal_form_prime in H2. intuition. auto.
+          subst. destruct IHHy1 with e' e'0; auto. split; auto. rewrite H1. auto.
+          subst. apply normal_form_prime in Hy1. intuition. auto.
+          subst. destruct H with (v_opa_l v0 lb). apply v_opa_labeled. auto.
+                intuition. inversion H1. auto.
+    - inversion Hy2.
+          subst. inversion H3. 
+          subst. apply normal_form_prime in H10. intuition. auto.
+          subst. inversion H9. rewrite <- H4 in H10. rewrite <-H10 in H0.
+              inversion H0. rewrite <- H5 in H11. rewrite <-H11 in H1. 
+              inversion H1. subst. auto.
+          subst.  inversion H9. rewrite <- H4 in H10. rewrite <-H10 in H0.
+              inversion H0. rewrite <- H5 in H16. rewrite <-H16 in H1. 
+              inversion H1. subst. auto. inversion H2. 
+    - inversion Hy2. 
+          subst. inversion H1.
+          subst. destruct H3 with  (v_opa_l v lb).  apply v_opa_labeled; auto. 
+              intuition. inversion H. auto.
+          subst. inversion H12. 
+          subst. inversion H10. rewrite <- H2 in H11. rewrite <- H11 in H0.
+              inversion H0. rewrite <- H3 in H17. rewrite <- H17 in H6. 
+              inversion H6.  subst. auto.
+      - inversion Hy2. 
+          subst. inversion H6. rewrite H5 in H. inversion H. subst.  auto.
+      - inversion Hy2. 
+          subst. destruct IHHy1 with  e' e'0; auto. rewrite H. auto.
+          subst. apply normal_form_prime in Hy1. intuition. auto.
+      - inversion Hy2. 
+          subst. apply normal_form_prime in H1. intuition. auto. auto.
+      - inversion Hy2.
+          subst. destruct IHHy1 with  e' e'0; auto. rewrite H. auto.
+          subst. inversion Hy1.
+      - inversion Hy2.
+          subst. inversion H0. 
+          subst.  inversion H6. subst. auto.
+      - inversion Hy2.
+          subst. destruct IHHy1 with  e' e'0; auto.  rewrite H. auto.
+          subst. inversion Hy1.
+      - inversion Hy2. 
+          subst.  inversion H0. 
+          subst.  auto.
+      - inversion Hy2.
+          subst.  destruct IHHy1 with  e' e'0; auto.  rewrite H. auto.
+          subst. inversion Hy1.
+      - inversion Hy2.
+          subst. inversion H0.
+          subst. inversion H4. rewrite <-H0. auto.
+      - inversion Hy2.
+          subst. destruct IHHy1 with  e' e'0; auto.  rewrite H0. auto.
+          subst. destruct IHHy1 with e' (Return e'0); auto.
+              apply ST_return1 in H1. auto. 
+          subst.  auto.
+          subst. apply normal_form_prime in Hy1. intuition. auto.
+          subst. destruct H with v; auto.
+      - inversion Hy2.
+          subst. inversion H5. subst.
+              destruct IHHy1 with  e' e'1; auto.  
+              apply ST_return1 in H0. rewrite <- H. auto.
+          subst.   apply normal_form_prime in Hy1. intuition. auto.
+          subst. destruct IHHy1 with e' e'0; auto. rewrite H. auto.
+          subst. inversion H1.
+          subst.  apply normal_form_prime in Hy1. intuition. auto.
+       - inversion Hy2.
+          subst.   apply normal_form_prime in H6. intuition. auto.
+          subst. inversion H.
+          subst. auto.
+          subst. inversion H.
+       - inversion Hy2.
+          subst. destruct H2 with v. auto. auto.
+          subst.  apply normal_form_prime in H0. intuition. auto.
+          subst. inversion H2.
+          subst. inversion H6. subst. auto.
+       - inversion Hy2.
+          subst. destruct IHHy1 with e' e'0; auto. rewrite H. auto.
+          subst.  apply normal_form_prime in Hy1. intuition. auto.
+       - inversion Hy2.
+          subst. apply normal_form_prime in H1. intuition. auto.
+          subst.  inversion H7. auto.
+       - inversion Hy2.   
+          subst. destruct IHHy1 with e1' e1'0; auto. rewrite H. auto.
+          subst. apply normal_form_prime in Hy1. intuition. auto.
+          subst. inversion Hy1.
+          subst. inversion Hy1.
+       - inversion Hy2.
+          subst. apply normal_form_prime in H2. intuition. auto.
+          subst. destruct IHHy1 with e2' e2'0; auto. rewrite H1. auto.
+          subst. apply normal_form_prime in Hy1. intuition. auto.
+          subst. destruct H with (v_opa_l v0 lb).
+              apply v_opa_labeled. auto. intuition. inversion H1.
+          subst.  auto.
+       - inversion Hy2.
+          subst. inversion H1.
+          subst. apply normal_form_prime in H10. intuition. auto.
+          subst. inversion H8. subst. rewrite <-H9 in H0. inversion H0.
+              subst. auto.
+          subst. inversion H5.
+      - inversion Hy2.
+          subst. inversion H0.
+          subst.  destruct H3 with (v_opa_l v lb).
+              apply v_opa_labeled. auto. intuition. inversion H.
+          subst. auto.
+          subst. inversion H14.
+          subst. inversion H9. subst. rewrite <- H10 in H1. 
+            inversion H1. inversion H8. subst. auto.
+      - inversion Hy2. 
+          subst.  destruct IHHy1 with e' e'0; auto. rewrite H. auto.
+          subst. apply normal_form_prime in Hy1. intuition. auto. 
+      - inversion Hy2. 
+          subst. apply normal_form_prime in H1.  intuition. auto. 
+          subst. inversion H7. auto. 
+      - inversion Hy2.
+          subst. auto. 
+          subst. inversion H2.  inversion H4. subst. intuition. 
+      - inversion Hy2. 
+          subst. inversion H11. inversion H4. subst. intuition. 
+          subst. inversion H4. subst. auto. 
+      - inversion Hy2. 
+          subst. destruct IHHy1 with s1' s1'0; auto. rewrite H. auto.
+          subst. apply normal_form_prime in Hy1.  intuition. auto.
+      - inversion Hy2. 
+          subst. apply normal_form_prime in H1.  intuition. auto.
+          subst. auto. 
+Qed. 
 
 
