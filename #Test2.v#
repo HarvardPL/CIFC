@@ -761,6 +761,7 @@ Definition compare_oid (o1 : oid) (o2 : oid) :=
       | OID n1, OID n2 => if (gt_dec n1  n2) then true else false
   end.
 
+
 Inductive wfe_heap : Class_table -> typing_context -> heap -> Prop :=
   | empty_heap_wfe : forall ct ctx, 
         wfe_heap ct ctx empty_heap
@@ -775,11 +776,67 @@ Inductive wfe_heap : Class_table -> typing_context -> heap -> Prop :=
                 exists v, F(f) = Some v
                  /\ (v= null  \/ 
                           ( exists o' F' lx field_defs0 method_defs0, v = ObjId o' 
-                                  /\ lookup_heap_obj h' o' = Some (Heap_OBJ (class_def cls' field_defs0 method_defs0) F' lx)
+                                  /\ lookup_heap_obj h o' = Some (Heap_OBJ (class_def cls' field_defs0 method_defs0) F' lx)
                                     /\ ct cls' = Some (class_def cls' field_defs0 method_defs0)
                           ) ) 
         )->
         wfe_heap ct gamma h'.
+
+
+(*
+(*heap space is well aligned*)
+Inductive well_aligned_heap : Class_table -> typing_context -> heap -> Prop :=
+  | empty_heap_well_aligned : forall ct ctx, 
+        well_aligned_heap ct ctx empty_heap
+  | heap_well_aligned : forall h h' o  ct gamma ho,
+        h' = (o , ho) :: h ->
+        (h = nil \/ (exists o' ho' h'', h = (o' , ho') :: h'' /\ compare_oid o o' = true) ) ->
+        well_aligned_heap ct gamma h ->
+        well_aligned_heap ct gamma h'.
+
+
+(* heap is well formed is every field pointing to null of  a valid object identifer *)
+Inductive wfe_heap : Class_table -> typing_context -> heap -> Prop :=
+  | heap_wfe : forall h o ho cls_def F lo ct gamma field_defs method_defs cls_name,
+        lookup_heap_obj h o = Some ho ->
+        ho = (Heap_OBJ cls_def F lo) ->
+        Some cls_def  = ct cls_name ->
+        cls_def = class_def cls_name field_defs method_defs ->
+        (forall f cls', type_of_field field_defs f = Some cls' -> 
+                exists v, F(f) = Some v
+                 /\ (v= null  \/ 
+                          ( exists o' F' lx field_defs0 method_defs0, v = ObjId o' 
+                                  /\ lookup_heap_obj h o' = Some (Heap_OBJ (class_def cls' field_defs0 method_defs0) F' lx)
+                                    /\ ct cls' = Some (class_def cls' field_defs0 method_defs0)
+                          ) ) 
+        )->
+        well_aligned_heap ct gamma h ->
+        wfe_heap ct gamma h. 
+
+Lemma extend_heap_preserve_heap_wfe : forall gamma CT h h' o c field_defs method_defs lb,
+    wfe_heap CT gamma h -> 
+    o = get_fresh_oid h ->
+    lookup_heap_obj h o = None -> 
+    Some (class_def c field_defs method_defs) = CT c ->  
+     h' = add_heap_obj h o (Heap_OBJ (class_def c field_defs method_defs)
+          (init_field_map field_defs empty_field_map)
+          lb) -> wfe_heap CT gamma h'.
+  Proof. 
+    intros. 
+    remember (class_def c field_defs method_defs) as cls_def.
+    remember  (init_field_map field_defs empty_field_map) as F.
+    apply heap_wfe with (h:=h) (o:=o) (ct:=CT) (gamma:=gamma) 
+        (cls_def:=cls_def) (F:=F)  (ho:=(Heap_OBJ cls_def F lb))
+        (lo:=lb) (method_defs:=method_defs) (field_defs:=field_defs) ;auto.
+        intros. induction h. left. auto. right.
+        unfold  get_fresh_oid in H0. 
+        induction a. induction o0. 
+        exists (OID n). exists h0. exists h. 
+        rewrite H0. split. auto. apply nat_compare_oid. intuition. 
+ exists null. split. 
+        apply empty_fields with (fields:=field_defs) (cls':=cls'). auto. auto. 
+        left.  auto.  
+*)
 
 Theorem beq_nat_true: forall n m,
   beq_nat n m = true -> n = m.
@@ -1412,7 +1469,21 @@ inversion H.  apply beq_oid_equal in H9.  rewrite H9. rewrite H14. auto.
  (*o <> o2*)
 intro. unfold update_heap_obj in H_h'. rewrite H9 in H_h'. fold update_heap_obj in H_h'. 
 inversion H_h'. inversion H.
-destruct H0. rewrite H0. left. auto.
+destruct H0. rewrite H0. left. auto. destruct H0 as [o']. destruct H0 as [ho'].
+right. admit.
+apply IHh' with (h:=h1).
+
+
+
+  unfold update_heap_obj. rewrite H in Hy.
+  fold update_heap_obj in Hy. inversion wfe_h. inversion Hy. subst.
+
+  apply heap_wfe with (h:=(update_heap_obj h1 o (Heap_OBJ cls (fields_update F i v) lb') )) 
+               (h':= ((o1, h) :: update_heap_obj h1 o (Heap_OBJ cls (fields_update F i v) lb')))
+               (o:=o1) (cls_def:=(class_def cn0 field_defs0 method_defs0) )
+               (F:=F0) (ct:=CT) (gamma:=gamma) (cn0:=cn0) (ho:=h) (lo:=lo) 
+                (method_defs:=method_defs0) (field_defs:=field_defs0).
+  auto. inversion H0. destruct H1. rewrite H1. left. auto. 
 
 right. admit. 
 
@@ -1428,16 +1499,6 @@ fold update_heap_obj in H_h'. inversion H_h'.
 rewrite <- H23. apply IHh' with (h:=h1).
 
 
-
-wfe_heap_obj ho ct ((o0, h0) :: h')
-
-
-
-
-
-
-
-  admit. 
 
 Admitted.  
 
@@ -1722,227 +1783,10 @@ Proof.
     (*subgoal 3*)
     inversion typing. rewrite <- H3 in H19. inversion H19. subst.  
     inversion H19. 
-
-
-
-
-
-
-    
-      inversion H0.
-
-      intro. admit. induction a. 
-
-      case_eq (beq_oid o o1). intro. unfold  update_heap_obj in H.
-      rewrite H2 in H. inversion H. unfold lookup_heap_obj.
-      assert (beq_oid o o=true). apply beq_oid_same. rewrite H3.  auto.
-      
-      intro. unfold update_heap_obj in H. rewrite H2 in H. fold update_heap_obj in H.
-
-      unfold lookup_heap_obj. rewrite  H1.  
-
-      unfold update_heap_obj in H. 
-
-
-apply beq_oid_equal in H1.        rewrite H1 in H. 
-    apply IHh'. induction h. admit.
-    induction a. induction a0.
-    case_eq (beq_oid o1 o).
-    intro. 
-                  
-      
-
-admit. -
- induction H. 
-    - apply nil_heap_no_obj in H. rewrite H in H0. inversion H0.
-    - induction a. case_eq (beq_oid o o0).  
-      intro.  apply beq_oid_equal in H1. rewrite H1.
-      unfold update_heap_obj.  assert (beq_oid o0 o0= true). apply beq_oid_same.
-      unfold lookup_heap_obj.  rewrite H2. auto.
-      intro.       unfold update_heap_obj.  rewrite H1. fold update_heap_obj.
-      unfold lookup_heap_obj. rewrite H1. fold lookup_heap_obj.
-      apply IHh. unfold update_heap_obj in H.  rewrite H1 in H. fold update_heap_obj in H.
-lookup_heap_obj
-  Qed. 
-
-  rewrite H_h'. unfold lookup_heap_obj. 
-  case_eq (beq )
-
-Qed. 
-
-
-Lemma update_field_preserve_heap_wfe : 
-  forall CT o gamma s h h' i F cls_def cls' cls lb lb' v clsT field_defs method_defs,
-  wfe_heap CT gamma h ->
-(*  wfe_stack CT gamma h s -> *)
-  value v ->
-  Some (Heap_OBJ cls F lb) = lookup_heap_obj h o ->
-  type_of_field (find_fields cls_def) i = Some cls' ->
-  cls_def = class_def clsT field_defs method_defs ->
-  has_type CT gamma s h v (classTy cls') ->
-  has_type CT gamma s h (ObjId o) (classTy clsT) ->
-  Some cls_def = CT clsT ->
-  h' = (update_heap_obj h o
-           (Heap_OBJ cls (fields_update F i v) lb')) ->
-  wfe_heap CT gamma h'.
-Proof with auto. 
-  intros CT o gamma s h h' i F cls_def cls' cls lb lb' v clsT field_defs method_defs.
-  intro wfe_h. (*intro wfe_s. *) intro Hv. intro Ho. intro Htyf. intro Hcls_def. intro typing_v. 
-  intro typing_o. intro Hct.
-  intro Hy. 
-  induction h. 
-- inversion Ho.
-
-- 
-(* beq_oid o o0 = true *)
-  induction a.  
-  case_eq (beq_oid o o0). 
- (*
-  intro. rewrite H5 in Hy.
-  apply beq_oid_equal in H5.
-  rewrite <- H5 in H0. 
-  unfold fields_update in Hy.
-  remember (fun x' : id => if beq_id i x' then Some v else F x') as F'. 
-  inversion typing_o. destruct H13 as [F1]. destruct H13 as [lo1].
-  rewrite H13 in Ho. inversion Ho. rewrite <- Hct in H8. inversion H8.
-  rewrite H19 in H16. 
-  apply heap_wfe with (h:=h) (o:=o) (cls_def:=cls) (F:=F') 
-            (cn0:=clsT) (ho:=(Heap_OBJ cls F' lb')) 
-            (lo:=lb') (method_defs:=method_defs)  (field_defs:=field_defs); auto.
-  rewrite <- H16 in Hct. auto. rewrite H16. auto.  
-  rewrite H in H13.  unfold lookup_heap_obj in H13. 
-  rewrite <- H5 in H13. 
-  assert (beq_oid o o = true). apply beq_oid_same. rewrite H15 in H13. 
-  rewrite H1 in H13.  inversion H13. 
-  rewrite <- H22 in H17.  rewrite <- H17 in H4.
-
-  intro f.  intro cls_name'. rewrite HeqF'.
-  case_eq (beq_id i f). intro.
-  apply beq_equal in H20. 
-  rewrite Hcls_def in Htyf. unfold find_fields in Htyf. 
-   intro. rewrite H20 in H24. rewrite Htyf in H24.
-  inversion H24. 
-  exists v.  rewrite <- H26. split. auto.
-  inversion Hv.  right. 
-  rewrite <- H25 in typing_v. inversion typing_v. 
-  rewrite Hy.
-  destruct H34 as [F2]. destruct H34 as [lo2].
-  destruct H35 as [field_defs2]. destruct H35 as [method_defs2]. 
-  rewrite H in H34. 
-  (* beq_oid o2 o = true; the field is pointing to an object of the same type as the current object*)
-  case_eq (beq_oid o2 o). intro. 
-  exists o2. exists F'. exists lb'. exists field_defs2. exists method_defs2. 
-  split; auto. 
-   unfold lookup_heap_obj. rewrite H36. 
-  apply beq_oid_equal in H36.  rewrite H5 in H36. 
-  rewrite H36 in H34 . unfold lookup_heap_obj in H34. 
-  assert (beq_oid o0 o0 = true). apply beq_oid_same. rewrite H37 in H34. 
-  rewrite H1 in H34.  inversion H34. 
-  split.  rewrite <- H39 in H35. rewrite H21 in H35. rewrite H19 in H35. 
-  rewrite <- H16 in H35. rewrite H35. auto. 
-  rewrite H35 in H29. auto. 
-
-  (* beq_oid o2 o = false*)
-  intro. exists o2. exists F2. exists lo2. exists field_defs2. exists method_defs2. 
-   split. auto. split. rewrite <- H5 in H34. 
-    unfold lookup_heap_obj.     unfold lookup_heap_obj in H34. 
-   rewrite H36. rewrite H36 in H34. fold lookup_heap_obj. fold lookup_heap_obj in H34.
-   rewrite H34. rewrite H35. auto. rewrite H35 in H29. auto. 
-  
-  (*other possible values do not fit the typing*)
-  rewrite <- H25 in typing_v. inversion typing_v. 
-  left. auto. 
-  rewrite <- H25 in typing_v. inversion typing_v. 
-  rewrite <- H25 in typing_v. inversion typing_v. 
-  rewrite <- H25 in typing_v. inversion typing_v.
-
-  (*beq_id i f = false*)
-  intro. rewrite H21 in H3. rewrite H19 in H3. rewrite Hcls_def in H3. inversion H3. 
-  intro. 
-  destruct H4 with (f:=f) (cls':=cls_name'). auto. 
-  destruct H28. exists x.  split. auto. 
-  destruct H29. left. auto.
-  right. destruct H29 as [o']. destruct H29 as [F2]. destruct H29 as [lo2]. destruct H29 as [field_defs2].
-  destruct H29 as [method_defs2]. destruct H29.  rewrite H in H30.
-  rewrite Hy. rewrite <- H5 in H30.
-  exists o'.
-  (* o = o' *) 
-  case_eq (beq_oid o' o). intro. 
-  unfold lookup_heap_obj. rewrite H31. exists F'. exists lb'.
-  destruct H30.  exists field_defs2. exists method_defs2. 
-  unfold lookup_heap_obj in H30. rewrite H31 in H30. rewrite H1 in H30.
-  inversion H30. rewrite H21 in H34. rewrite H19 in H34. rewrite <- H16 in H34.
-  split. auto. split. rewrite H34. auto. auto. 
-
-   (* o <> o' *) 
-  intro. 
-      unfold lookup_heap_obj.     unfold lookup_heap_obj in H30.
-      rewrite H31. rewrite H31 in H30.  
-      fold lookup_heap_obj.     fold lookup_heap_obj in H30.
-      exists F2. exists lo2. exists field_defs2. exists method_defs2. auto.
-*)
-admit.
-(* beq_oid o o0 = false *)
-  
-  
-
-  induction h'. admit.
-
-
-  intro. apply IHh.  admit. admit.
-  inversion Hv. rewrite <- H0 in typing_v. inversion typing_v.
-  apply T_ObjId with (cls_def:=cls_def0). auto.
-  unfold lookup_heap_obj in H8. rewrite H in H8.
-
- 
-
- rewrite H in Hy. fold update_heap_obj in Hy. 
-  rewrite H in Ho. unfold lookup_heap_obj in Ho. rewrite H5 in Ho.
-  fold lookup_heap_obj in Ho.
-  
-  apply IHwfe_h. auto. 
-  inversion Hv. rewrite <- H6 in typing_v. inversion typing_v.
-  apply T_ObjId with (cls_def:=cls_def1). auto.
-  rewrite H in H14.
-  subst. ` 
-
-
-  rewrite H in H14. rewrite H5 in Hy. 
-  fold lookup_heap_obj in Hy. fold update_heap_obj in Hy.
-
-
-
-   forall (f : id) (cls' : cn),
-     type_of_field field_defs0 f = Some cls' ->
-     exists v : tm,
-       F f = Some v /\
-       (v = null \/
-        (exists
-           (o' : oid) (F' : FieldMap) (lx : Label) (field_defs0 : list field) 
-         (method_defs0 : list method_def),
-           v = ObjId o' /\
-           lookup_heap_obj h'0 o' =
-           Some (Heap_OBJ (class_def cls' field_defs0 method_defs0) F' lx) /\
-           ct cls' = Some (class_def cls' field_defs0 method_defs0)))
-  
-  
-
-
-
- split; auto.
-  
-  
-
-  
-   
- rewrite H in Hy.
-Qed.. 
-  
-  
-
+admit. admit.
 
 (* if *)
-+ intro T.. intro typing. intro t'.  intro step. 
++ intro T. intro typing. intro t'.  intro step. 
     inversion step. rewrite H in H10. rewrite H2 in H10.
     inversion H10. rewrite <- H15. rewrite <- H16.
     split; auto.
@@ -2011,7 +1855,7 @@ Proof with auto.
 (* null *)
 -  left. apply v_null.
 (* field access *)
-- right. 
+- (*right. 
     destruct IHhas_type. auto. auto. apply H1. 
     + inversion H6. rewrite <- H7 in H2. 
       assert (exists F lb, h(o) = Some (Heap_OBJ cls_def F lb)).
@@ -2053,10 +1897,10 @@ Proof with auto.
     apply ST_fieldRead1 with (sigma:=sigma) (sigma':=s0) (e:=e) (e':=t) (f:=f). assumption.
 
     exists Error_state. apply ST_fieldRead3. auto. 
-    
+    *)admit. 
 
 (* method call *)
-- right.
+- (*right.
    destruct IHhas_type1. auto. auto. auto. 
        + inversion H6. rewrite <- H7 in H2_. inversion H2_.
           (* case analysis for argument: if the argument is a value *)
@@ -2137,9 +1981,9 @@ Proof with auto.
                   apply ST_MethodCall1 with (sigma:=sigma) (sigma':=s0) (e2:=argu) (e:=e) (e':=t) (id:=meth). apply H6.
 
             exists Error_state. apply ST_MethodCall4 with (sigma:=sigma) (e:=e) (e2:=argu) (id:=meth). auto. 
-
+*) admit. 
 (* new expression *)
-- right. inversion H0. 
+- (*right. inversion H0. 
     assert (exists o, empty_heap o = None). 
       unfold empty_heap. auto. exists (OID 0). auto. 
       destruct H7 as [o]. 
@@ -2170,13 +2014,13 @@ Proof with auto.
                                           (h':=h'') (s:=s) (lb:=lb) (cls_name:=cls_name)
                                           (field_defs:=field_defs') (method_defs:=method_defs').
       auto. auto.  auto.  auto. auto. auto.  auto.
-
+*) admit. 
 (* label *)
 - left. apply  v_label.
 
 
 (* label Data *)
-- right. destruct IHhas_type2. auto. auto. auto. 
+- (*right. destruct IHhas_type2. auto. auto. auto. 
             destruct IHhas_type1. auto. auto. auto. 
             
             (* subgoal #1 *)
@@ -2195,9 +2039,9 @@ Proof with auto.
            (* subgoal #4*)
                exists Error_state. 
                   apply ST_LabelDataError with (e:=e) (sigma:=sigma) (lb:=lb). auto. 
-
+*) admit. 
 (* unlabel : *)
-- right.
+- (* right.
  
             destruct IHhas_type. auto. auto. auto. 
              (* subgoal #1 *)
@@ -2223,12 +2067,12 @@ Proof with auto.
                  exists (Config (unlabel t) s0). 
                  apply ST_unlabel1 with (sigma:=sigma) (sigma':=s0) (e:=e) (e':=t). auto. 
                  exists Error_state. apply ST_unlabelContextError with (sigma:=sigma) (e:=e). auto. 
-  
+  *) admit. 
 
 
 (* label Of *)
 (* same issue as above, we may need to add (v_l v lb) as a value*)
-- right. 
+- (* right. 
          destruct IHhas_type. auto. auto. auto. 
             (* subgoal #1 *)
                 + inversion H3. rewrite <- H4 in H2. inversion H2. 
@@ -2245,9 +2089,10 @@ Proof with auto.
     
              (*error state *)
                  exists Error_state. apply ST_labelofCtxError with (e:=e) (sigma:=sigma). auto. 
-
+*) admit. 
 (* unlabel opaque *)
-- right. 
+- 
+(*right. 
          destruct IHhas_type. auto. auto. auto. 
             (* subgoal #1 *)
                 + inversion H3. rewrite <- H4 in H2. inversion H2. 
@@ -2269,9 +2114,10 @@ Proof with auto.
                     exists (Config (unlabelOpaque t) s0). apply ST_unlabel_opaque1 with (sigma:=sigma) (sigma':=s0) (e:=e) (e':=t). auto.
 
                 exists Error_state. apply ST_unlabel_opaque_ctx_error with (sigma:=sigma) (e:=e).  auto. 
-
+*)admit. 
 (* opaque call *)
-- right.  destruct IHhas_type. auto. auto. auto.
+- (*
+  right.  destruct IHhas_type. auto. auto. auto.
             (* opaquecall won't be applied on values  *)
 
             remember (current_label sigma) as lb. 
@@ -2311,12 +2157,13 @@ Proof with auto.
                   intros. apply H3. auto. 
 
                   exists Error_state. apply ST_opaquecall_ctx_error with (sigma:=(SIGMA s h)) (e:=e). auto. 
-
+*) admit. 
 (* Skip *)
   - left. apply v_none. 
 
 (* assignment *)
-- right. destruct IHhas_type. auto. auto. auto.
+- 
+(*right. destruct IHhas_type. auto. auto. auto.
                   remember (update_stack_top s x e) as s0.
                   remember (SIGMA s0 h) as sigma'.
                   exists (Config Skip sigma').
@@ -2330,9 +2177,9 @@ Proof with auto.
 
                   exists Error_state. 
                   apply ST_assignment_ctx_error with (sigma:=sigma) (e:=e) (id:=x). auto.  
-
+*)admit. 
 (* FieldWrite *)
--right. 
+-(*right. 
       destruct IHhas_type1. auto. auto. auto. 
        + inversion H4. 
           (* case analysis for argument: if the argument is a value *)
@@ -2428,13 +2275,13 @@ Proof with auto.
         
               exists Error_state. 
               apply ST_fieldWrite_ctx_error1 with (sigma:=sigma) (f:=f) (e1:=x) (e2:=e). auto. 
-
+*) admit. 
 (* if *)
 - destruct IHhas_type1. auto. auto. auto. inversion H2. destruct H2. inversion H2. subst. 
    destruct IHhas_type2. auto. auto. auto. inversion H. destruct H. inversion H. subst. 
     rewrite H6 in H5. inversion H5. subst. 
     inversion H1. 
-    rewrite <- H14 in H6. inversion H6. rewrite <- H17 in H11.  inversion H11. 
+    rewrite <- H13 in H6. inversion H6. rewrite <- H16 in H11.  inversion H11. 
 
     inversion H10. 
     
