@@ -66,10 +66,10 @@ Fixpoint subset (p1 : list principal) (p2 : list principal) :=
     end. 
 
 
-Definition flow_to (lb1 : Label) ( lb2 : Label) :=
+ Definition flow_to (lb1 : Label) ( lb2 : Label) :=
   match lb1 with
     | (LB p1) => match lb2 with 
-                          | LB p2 => subset p2 p1
+                          | LB p2 => subset p1 p2
                   end
   end.
 
@@ -77,3 +77,50 @@ Definition label_eq (lb1 : Label) (lb2 : Label) :=
   if flow_to lb1 lb2 then flow_to lb2 lb1 else false. 
 
 
+(* unrestricted access L *)
+Definition L_Label := LB nil.
+(* unrestricted access L *)
+Definition H_Label := LB (cons (Principal "Jian") nil).
+
+
+Axiom flow_join_label : forall lb joined_lb lb' L,
+  flow_to lb L = false ->
+  lb' = join_label joined_lb lb ->
+  flow_to lb' L = false.
+
+Axiom flow_transitive : forall lb lb',
+  flow_to lb' L_Label = false ->
+  flow_to lb' lb = true ->
+  flow_to lb L_Label = false.
+
+
+Axiom flow_no_H_to_L : forall lb lb',
+  flow_to lb L_Label = true ->
+  flow_to lb' L_Label = false ->
+  flow_to lb lb' = false.
+
+
+Axiom join_label_commutative : forall l1 l2, 
+    join_label l1 l2 = join_label l2 l1. 
+
+
+Axiom H_Label_not_flow_to_L : forall lb, 
+   flow_to lb L_Label = false -> lb = H_Label.
+
+
+Axiom L_Label_flow_to_L : forall lb, 
+   flow_to lb L_Label = true -> lb = L_Label.
+
+
+Axiom join_L_label_flow_to_L : forall lb1 lb2, 
+  flow_to lb1 L_Label = true ->
+  flow_to lb2 L_Label = true ->
+  flow_to (join_label lb1 lb2) L_Label = true.
+
+Axiom join_L_Label_irrelevant : forall lb,
+    (join_label lb L_Label) = lb. 
+
+
+
+Compute flow_to H_Label L_Label.
+Compute flow_to H_Label H_Label.

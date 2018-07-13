@@ -41,7 +41,6 @@ Inductive tm : Type :=
   | unlabel : tm -> tm
   | labelOf : tm -> tm
   | unlabelOpaque : tm -> tm
-  | opaqueCall : tm -> tm
 
 (* statements *)
   | Skip : tm
@@ -55,7 +54,8 @@ Inductive tm : Type :=
   | ObjId: oid -> tm
   (* runtime labeled date*)
   | v_l : tm -> Label -> tm
-  | v_opa_l : tm -> Label -> tm.
+  | v_opa_l : tm -> Label -> tm
+  | dot : tm.
 
 Inductive method_def : Type :=
   | m_def : cn -> id -> cn -> id -> tm -> method_def.
@@ -80,19 +80,12 @@ Inductive value : tm -> Prop :=
       value (v_l v lb)
   | v_opa_labeled : forall v lb,
       value v->
-      value (v_opa_l v lb).
-
-
-
-Inductive ty : Type :=
-  | classTy : cn -> ty 
-  | LabelTy : ty
-  | LabelelTy : ty -> ty
-  | OpaqueLabeledTy : ty -> ty
-  | voidTy : ty. 
+      value (v_opa_l v lb)
+  | v_dot : 
+      value dot.  
 
 (* stack frame *)
-Definition stack_frame : Type := id -> (option (tm * cn)).
+Definition stack_frame : Type := id -> (option tm).
 
 Inductive labeled_stack_frame : Type := 
   | Labeled_frame : Label -> stack_frame -> labeled_stack_frame.
@@ -101,19 +94,14 @@ Definition get_stack_label (lsf : labeled_stack_frame) : Label :=
   match lsf with 
     | Labeled_frame lb sf => lb
   end. 
-  
-Definition get_stack_frame (lsf : labeled_stack_frame) : stack_frame :=
-  match lsf with 
-    | Labeled_frame lb sf => sf
-  end. 
 
-Definition sf_update (sf : stack_frame) (x : id) (v : tm) (c:cn) :=
-  fun x' => if beq_id x x' then (Some (v,c)) else sf x'.
+Definition sf_update (sf : stack_frame) (x : id) (v : tm) :=
+  fun x' => if beq_id x x' then (Some v) else sf x'.
 
 
-Definition labeled_frame_update (lsf : labeled_stack_frame) (x : id) (v : tm) (c:cn) :=
+Definition labeled_frame_update (lsf : labeled_stack_frame) (x : id) (v : tm) :=
   match lsf with
-    |  Labeled_frame lb sf  =>  Labeled_frame lb (fun x' => if beq_id x x' then (Some (pair v c) ) else sf x')
+    |  Labeled_frame lb sf  =>  Labeled_frame lb (fun x' => if beq_id x x' then (Some v) else sf x')
   end.
 
 Check sf_update.
@@ -122,6 +110,8 @@ Check sf_update.
 
 (* unrestricted access L *)
 Definition L_Label := LB nil.
+(* unrestricted access L *)
+Definition H_Label := LB (cons (Principal "Jian") nil).
 
 Definition empty_stack_frame : stack_frame := fun _ => None.
 Definition empty_labeled_stack_frame : labeled_stack_frame := (Labeled_frame L_Label empty_stack_frame).
@@ -130,14 +120,9 @@ Definition main_labeled_stack_frame : labeled_stack_frame := (Labeled_frame L_La
 (* stack *)
 Definition stack :Type := list labeled_stack_frame.
 
-Check stack. 
-
-Check labeled_frame_update.
-
-Definition update_stack_top (s : stack) (x : id) (v : tm) (c:cn):= 
+Fixpoint update_stack_top (s : stack) (x : id) (v : tm) := 
 match s with 
-  | cons lsf s' => cons (labeled_frame_update lsf x v c) s'
-                         
+  | cons lsf s' => cons (labeled_frame_update lsf x v) s'
   | nil => nil
 end.
 
@@ -214,6 +199,9 @@ Definition get_heap (sgm : Sigma) : heap :=
    | SIGMA s h => h
   end.
 
+
+
+
 Reserved Notation "c1 '/' st '==>' c1' '/' st'"
   (at level 40, st at level 39, c1' at level 39).
 
@@ -267,6 +255,7 @@ Fixpoint init_field_map (fields : list field) (fm : FieldMap) :=
 
 Check init_field_map.
 
+
 Lemma empty_fields : forall fields F cls', 
   F = init_field_map fields empty_field_map ->
   (forall f, type_of_field fields f = Some cls' ->
@@ -286,6 +275,7 @@ Proof.
 Qed.  
 
 
+
 Definition Class_table := cn -> option CLASS.
 Inductive config := 
   | Config : Class_table -> tm -> Sigma -> config
@@ -301,24 +291,25 @@ Reserved Notation "c '==>' c'"
 
 Inductive reduction : config -> config -> Prop :=
 (* variabel access *)
-  | ST_var : forall x sigma s h lb sf lsf v s' ct c,
+  | ST_var : forall id sigma s h lb sf lsf v s' ct,
       sigma = SIGMA s h ->
       s = cons lsf s' ->
       lsf = Labeled_frame lb sf ->
-      Some (pair v c) = sf x ->
-      Config ct (Tvar x) sigma ==> Config ct v sigma
+      Some v = sf(id) ->
+      Config ct (Tvar id) sigma ==> Config ct v sigma
+
 (* field read *)
   (* context rule *)
   | ST_fieldRead1 : forall sigma sigma' e e' f ct,
       Config ct e sigma ==>  Config ct e' sigma' -> 
       Config ct (FieldAccess e f) sigma ==> Config ct (FieldAccess e' f) sigma'
   (* normal field access *)
-  | ST_fieldRead2 : forall sigma sigma' o s h fname lb cls fields v l' s' ct,
+  | ST_fieldRead2 : forall sigma sigma' o s h fname lb cls fields v s' ct,
       sigma = SIGMA s h ->
       Some (Heap_OBJ cls fields lb) = lookup_heap_obj h o -> 
       Some v = fields(fname) -> 
-      l' = join_label lb (current_label sigma) ->
-      s' = update_current_label s l'-> 
+      flow_to lb (current_label sigma) = true ->
+      s' = update_current_label s lb-> 
       sigma' = SIGMA s' h ->
       Config ct (FieldAccess (ObjId o) fname) sigma ==> Config ct v sigma'
   (* null pointer exception for field access *)
@@ -339,19 +330,18 @@ Inductive reduction : config -> config -> Prop :=
   | ST_MethodCall2 : forall sigma sigma' v e e' id ct,
       (forall t, value t -> t<> null -> e <> unlabelOpaque t) ->
       Config ct e sigma ==>  Config ct e' sigma' -> 
-      value v ->
+      value v -> v <> null ->
       Config ct (MethodCall v id e) sigma ==> Config ct (MethodCall v id e') sigma'
   (* normal method call *)
-  | ST_MethodCall3 : forall sigma sigma' o s h cls fields v lx l theta s' sf lsf arg_id cls_a body meth returnT ct,
+  | ST_MethodCall3 : forall sigma sigma' o s h cls fields v lx l s' sf lsf arg_id cls_a body meth returnT ct,
       sigma = SIGMA s h ->
       Some (Heap_OBJ cls fields lx) = lookup_heap_obj h o -> 
       Some (m_def returnT meth cls_a arg_id (Return body)) = find_method cls meth -> 
       value v ->
-      sf = sf_update empty_stack_frame arg_id v cls_a->
+      sf = sf_update empty_stack_frame arg_id v ->
       l = (current_label sigma) ->
       lsf = Labeled_frame l sf ->
-      theta = lsf -> 
-      s' = cons theta s ->
+      s' = cons lsf s ->
       sigma' = SIGMA s' (get_heap sigma) ->
       Config ct (MethodCall (ObjId o) meth v) sigma ==>  Config ct (Return body) sigma'
   (* null pointer exception for method call *)
@@ -373,7 +363,7 @@ Inductive reduction : config -> config -> Prop :=
   | ST_MethodCall_unlableOpaque : forall sigma sigma' o s h cls fields v lx l' lb s' sf lsf arg_id cls_a body meth returnT ct,
       sigma = SIGMA s h ->
       Some (Heap_OBJ cls fields lx) =lookup_heap_obj h o -> 
-      sf = sf_update empty_stack_frame arg_id v cls_a->
+      sf = sf_update empty_stack_frame arg_id v ->
       l' = join_label lb (current_label sigma) ->
       lsf = Labeled_frame l' sf ->
       s' = cons lsf s ->
@@ -475,49 +465,6 @@ Inductive reduction : config -> config -> Prop :=
   | ST_unlabel_opaqueDataException : forall sigma ct, 
       Config ct (unlabelOpaque null) sigma ==> Error_state
 
-(* Opaque call *)
-  (* context rule *)
-  | ST_opaquecall1 : forall sigma sigma' e e' ct,
-       (forall v, value v -> e <> Return v) ->
-       Config ct e sigma ==>  Config ct e' sigma' -> 
-      Config ct (opaqueCall e) sigma ==> Config ct (opaqueCall e') sigma'
-  (* context rule error*)
-  | ST_opaquecall_ctx_error : forall sigma e ct,
-      Config ct e sigma ==>  Error_state -> 
-     Config ct (opaqueCall e) sigma  ==>  Error_state
-  (* return context rule*)
-  | ST_opaquecall_return1 : forall sigma sigma' e e' ct,
-       Config ct e sigma ==> Config ct e' sigma' -> 
-      Config ct (opaqueCall (Return e)) sigma ==> Config ct (opaqueCall (Return e')) sigma'
-  (* return context rule error*)
-  | ST_opaquecall_return_error : forall sigma e ct,
-       Config ct e sigma ==> Error_state -> 
-      Config ct (opaqueCall (Return e)) sigma ==> Error_state
-
-
-  (* opaque call with value, without method call inside *)
-  | ST_opaquecall_val2 : forall sigma v lb ct,
-      (value v) ->
-      lb = (current_label sigma) ->
-      Config ct (opaqueCall v) sigma ==>  Config ct (v_opa_l v lb) sigma  
-  (* opaque call with return statement *)
-  | ST_opaquecall_return2 : forall sigma sigma' s h lb s' lsf v ct,
-      sigma = SIGMA s h->
-      s = cons lsf s' ->
-      s' <> nil ->
-      lb = (current_label sigma) ->
-      sigma' = SIGMA s' h->
-      value v ->
-      Config ct (opaqueCall (Return v)) sigma ==> Config ct  (v_opa_l v lb) sigma'
-  | ST_opaquecall_return3 : forall sigma ct,
-      Config ct (opaqueCall (Return null)) sigma ==> Error_state
-  | ST_opaquecall_return4 : forall sigma v s h lsf ct, 
-      value v ->
-      sigma = SIGMA s h ->
-      s = cons lsf nil ->
-      Config ct (opaqueCall (Return v)) sigma ==> Error_state
-
-
 (* assignment *)
   (* context rule *)
   | ST_assignment1 : forall sigma sigma' e e' id ct,
@@ -528,13 +475,10 @@ Inductive reduction : config -> config -> Prop :=
       Config ct e sigma ==>  Error_state -> 
      Config ct  (Assignment id e) sigma  ==>  Error_state
   (* assignment *)
-  | ST_assignment2 : forall sigma sigma' id v s' s h ct s0 lsf lb sf v0 c,
+  | ST_assignment2 : forall sigma sigma' id v s' s h ct,
        value v ->
        sigma = SIGMA s h ->
-       s = cons lsf s0 ->
-       lsf = Labeled_frame lb sf ->
-       Some (pair v0 c) = sf id ->
-       s' = update_stack_top s id v c->
+       s' = update_stack_top s id v->
        sigma' = SIGMA s' h ->
        Config ct (Assignment id v) sigma ==> Config ct Skip sigma'
 
@@ -564,8 +508,9 @@ Inductive reduction : config -> config -> Prop :=
       sigma = SIGMA s h ->
       Some (Heap_OBJ cls F lb) = lookup_heap_obj h o -> 
       F' = fields_update F f v ->
+      flow_to lb (current_label sigma) = true ->
       l' = join_label lb (current_label sigma) ->
-      h' = update_heap_obj h o (Heap_OBJ cls F' l') ->
+      h' = update_heap_obj h o (Heap_OBJ cls F' lb) ->
       sigma' = SIGMA s h' ->
       value v->
       Config ct (FieldWrite (ObjId o) f v) sigma ==> Config ct Skip sigma'
@@ -578,8 +523,9 @@ Inductive reduction : config -> config -> Prop :=
       sigma = SIGMA s h ->
       Some (Heap_OBJ cls F lo) = lookup_heap_obj h o-> 
       F' = fields_update F f v ->
-      l' = join_label lo lb ->
-      h' = update_heap_obj h o (Heap_OBJ cls F' l') ->
+      l' = join_label lo (join_label (current_label sigma) lb) ->
+      flow_to lo (join_label (current_label sigma) lb)  = true ->
+      h' = update_heap_obj h o (Heap_OBJ cls F' lo) ->
       sigma' = SIGMA s h' ->
       value v ->
       Config ct (FieldWrite (ObjId o) f e2) sigma ==> Config ct Skip sigma'
@@ -596,15 +542,14 @@ Inductive reduction : config -> config -> Prop :=
         Config ct e sigma ==> Error_state -> 
         Config ct (Return e) sigma ==> Error_state
   (* return val *)
-  | ST_return2 : forall sigma sigma' v s s' s'' h lsf l' ct, 
+  | ST_return2 : forall sigma sigma' v s s' h lsf l' ct, 
       value v ->
       sigma = SIGMA s h ->
       s = cons lsf s' ->
       s' <> nil ->
-      l' = join_label (get_current_label s) (get_current_label s') ->
-      s'' = update_current_label s' l' ->
-      sigma' = SIGMA s'' h ->
-      Config ct (Return v) sigma ==> Config ct v sigma'
+      l' = (get_current_label s) ->
+      sigma' = SIGMA s' h ->
+      Config ct (Return v) sigma ==> Config ct (v_opa_l v l') sigma'
   | ST_return_terminal : forall sigma v s h lsf ct, 
       value v ->
       sigma = SIGMA s h ->
@@ -640,116 +585,228 @@ Inductive reduction : config -> config -> Prop :=
 
 where "c '==>' c'" := (reduction c c').
 
-Inductive has_type : Class_table -> stack -> heap -> tm -> ty -> Prop :=
+
+Fixpoint surface_syntax (t : tm) :=
+  match t with
+    | Tvar x => true
+    | null => true
+    | FieldAccess e f => (surface_syntax e)
+    | MethodCall e1 meth e2 => if (surface_syntax e1) then (surface_syntax e2) else false
+    | NewExp cls => true
+(* label related *)
+    | l lb => true
+    | labelData e lb => (surface_syntax e)
+    | unlabel e => (surface_syntax e)
+    | labelOf e => (surface_syntax e)
+    | unlabelOpaque e => (surface_syntax e)
+(* statements *)
+    | Skip => false
+    | Assignment x e => (surface_syntax e)
+    | FieldWrite e1 f e2 =>  if (surface_syntax e1) then (surface_syntax e2) else false
+    | If id0 id1 e1 e2 =>  if (surface_syntax e1) then (surface_syntax e2) else false
+    | Sequence e1 e2 =>  if (surface_syntax e1) then (surface_syntax e2) else false
+    | Return e => false
+
+(* special terms *)
+    | ObjId o =>  false
+  (* runtime labeled date*)
+    | v_l e lb => false
+    | v_opa_l e lb => false
+    | dot => false
+  end.
+
+Inductive ty : Type :=
+  | classTy : cn -> ty 
+  | LabelTy : ty
+  | LabelelTy : ty -> ty
+  | OpaqueLabeledTy : ty -> ty
+  | voidTy : ty. 
+
+Definition typing_context := id -> (option ty).
+Definition empty_context : typing_context := fun _ => None.
+
+Definition update_typing (gamma : typing_context) (x:id) (T : ty) : typing_context :=
+      fun x' => if beq_id x x' then (Some T) else gamma x. 
+
+Fixpoint dot_free (t : tm) :=
+  match t with
+    | Tvar x => true
+    | null => true
+    | FieldAccess e f => (dot_free e)
+    | MethodCall e1 meth e2 => if (dot_free e1) then (dot_free e2) else false
+    | NewExp cls => true
+(* label related *)
+    | l lb => true
+    | labelData e lb => (dot_free e)
+    | unlabel e => (dot_free e)
+    | labelOf e => (dot_free e)
+    | unlabelOpaque e => (dot_free e)
+(* statements *)
+    | Skip => true
+    | Assignment x e => (dot_free e)
+    | FieldWrite e1 f e2 =>  if (dot_free e1) then (dot_free e2) else false
+    | If id0 id1 e1 e2 =>  if (dot_free e1) then (dot_free e2) else false
+    | Sequence e1 e2 =>  if (dot_free e1) then (dot_free e2) else false
+    | Return e => (dot_free e)
+
+(* special terms *)
+    | ObjId o =>  true
+  (* runtime labeled date*)
+    | v_l e lb => (dot_free e)
+    | v_opa_l e lb => (dot_free e)
+    | dot => false
+  end.
+
+
+Fixpoint return_free (t : tm) :=
+  match t with
+    | Tvar x => true
+    | null => true
+    | FieldAccess e f => (return_free e)
+    | MethodCall e1 meth e2 => if (return_free e1) then (return_free e2) else false
+    | NewExp cls => true
+(* label related *)
+    | l lb => true
+    | labelData e lb => (return_free e)
+    | unlabel e => (return_free e)
+    | labelOf e => (return_free e)
+    | unlabelOpaque e => (return_free e)
+(* statements *)
+    | Skip => true
+    | Assignment x e => (return_free e)
+    | FieldWrite e1 f e2 =>  if (return_free e1) then (return_free e2) else false
+    | If id0 id1 e1 e2 =>  if (return_free e1) then (return_free e2) else false
+    | Sequence e1 e2 =>  if (return_free e1) then (return_free e2) else false
+    | Return e => false
+
+(* special terms *)
+    | ObjId o =>  true 
+  (* runtime labeled date*)
+    | v_l e lb => (return_free e)
+    | v_opa_l e lb => (return_free e)
+    | dot => true
+  end.
+
+
+Inductive has_type : Class_table -> typing_context -> heap -> tm -> ty -> Prop :=
 (*variable *)
-  | T_Var : forall s x CT h s' lsf lb sf v c, 
-       s = cons lsf s' ->
-       lsf = Labeled_frame lb sf ->
-      Some (pair v c) = sf x ->
-      has_type CT s h (Tvar x) (classTy c)
+  | T_Var : forall Gamma x T CT h , 
+      Gamma x = Some (classTy T) ->
+      has_type CT Gamma h (Tvar x) (classTy T)
 (* null *)
-  | T_null : forall s h T CT, 
-      has_type CT s h null T
+  | T_null : forall Gamma h T CT, 
+      has_type CT Gamma h null T
 (* Field read *)
-  | T_FieldAccess : forall s e f cls_def CT clsT cls' h fields_def,
-      has_type CT s h e (classTy clsT) ->
+  | T_FieldAccess : forall Gamma e f cls_def CT clsT cls' h fields_def,
+      has_type CT Gamma h e (classTy clsT) ->
       Some cls_def = CT(clsT) ->
       fields_def = (find_fields cls_def) ->
       type_of_field fields_def f = Some cls' ->
-      has_type CT s h (FieldAccess e f) (classTy cls')
+      has_type CT Gamma h (FieldAccess e f) (classTy cls')
 (* method call *)
-  | T_MethodCall : forall e meth argu CT s s' h T returnT cls_def body arg_id arguT,
-      has_type CT s h e (classTy T) ->
-      has_type CT s h argu (classTy arguT) ->
+  | T_MethodCall : forall Gamma Gamma' e meth argu CT h T returnT cls_def body arg_id arguT,
+      has_type CT Gamma h e (classTy T) ->
+      has_type CT Gamma h argu (classTy arguT) ->
       Some cls_def = CT(T) ->
       find_method cls_def meth = Some (m_def returnT meth arguT arg_id (Return body))  ->
-
-      (exists lsf l v sf, sf = sf_update empty_stack_frame arg_id v arguT->
-        lsf = Labeled_frame l sf ->
-        s' = cons lsf s ->
-        has_type CT s' h (body) (classTy returnT)) ->
-      has_type CT s h (MethodCall e meth argu) (classTy returnT)
+      Gamma' = update_typing empty_context arg_id (classTy arguT) ->
+      has_type CT Gamma' h (body) (classTy returnT) ->
+      surface_syntax body = true ->
+      has_type CT Gamma h (Return body) (OpaqueLabeledTy (classTy returnT)) ->
+      has_type CT Gamma h (MethodCall e meth argu) (OpaqueLabeledTy (classTy returnT))
 (* new exp *)
-  | T_NewExp : forall h s cls_name CT, 
+  | T_NewExp : forall h Gamma cls_name CT, 
       (exists cls_def field_defs method_defs, CT cls_name = Some cls_def /\
               cls_def = class_def cls_name field_defs method_defs) ->
-      has_type CT s h (NewExp cls_name) (classTy cls_name)
+      has_type CT Gamma h (NewExp cls_name) (classTy cls_name)
 (* label *)
-  | T_label : forall h s lb CT,
-      has_type CT s h (l lb) LabelTy
+  | T_label : forall h Gamma lb CT,
+      has_type CT Gamma h (l lb) LabelTy
 (* label data *)
-  | T_labelData : forall h s lb CT e T,
-      has_type CT s h (l lb) LabelTy ->
-      has_type CT s h e T ->
-      has_type CT s h (labelData e lb) (LabelelTy T)
+  | T_labelData : forall h Gamma lb CT e T,
+      has_type CT Gamma h (l lb) LabelTy ->
+      has_type CT Gamma h e T ->
+      has_type CT Gamma h (labelData e lb) (LabelelTy T)
 (* unlabel *)
-  | T_unlabel : forall h s CT e T,
-      has_type CT s h e (LabelelTy T) ->
-      has_type CT s h (unlabel e) T
+  | T_unlabel : forall h Gamma CT e T,
+      has_type CT Gamma h e (LabelelTy T) ->
+      has_type CT Gamma h (unlabel e) T
 (* labelOf *)
-  | T_labelOf : forall h s CT e T,
-      has_type CT s h e (LabelelTy T) ->
-      has_type CT s h (labelOf e) LabelTy
+  | T_labelOf : forall h Gamma CT e T,
+      has_type CT Gamma h e (LabelelTy T) ->
+      has_type CT Gamma h (labelOf e) LabelTy
 (* unlabel opaque *)
-  | T_unlabelOpaque : forall h s CT e T,
-      has_type CT s h e (OpaqueLabeledTy T) -> 
-      has_type CT s h (unlabelOpaque e) T
-(* opaque call *)
-  | T_opaqueCall : forall h s CT e T,
-      has_type CT s h e T ->
-      has_type CT s h (opaqueCall e) (OpaqueLabeledTy T)
+  | T_unlabelOpaque : forall h Gamma CT e T,
+      has_type CT Gamma h e (OpaqueLabeledTy T) -> 
+      has_type CT Gamma h (unlabelOpaque e) T
 (* Skip *)
-  | T_skip : forall h s CT,
-      has_type CT s h Skip voidTy
+  | T_skip : forall h Gamma CT,
+      has_type CT Gamma h Skip voidTy
 (* assignment *)
-  | T_assignment : forall h s sf lsf s' lb CT e x v c, 
-       s = cons lsf s' ->
-       lsf = Labeled_frame lb sf ->
-      Some (pair v c) = sf x ->
-      has_type CT s h e (classTy c) ->
-      has_type CT s h (Assignment x e) voidTy
+  | T_assignment : forall h Gamma CT e T x, 
+      Gamma x = Some T ->
+      has_type CT Gamma h e T ->
+      has_type CT Gamma h (Assignment x e) voidTy
 (* Field Write *)
-  | T_FieldWrite : forall h s x f cls_def CT clsT cls' e,
-      has_type CT s h x (classTy clsT) ->
-      has_type CT s h e (classTy cls') ->
+  | T_FieldWrite : forall h Gamma x f cls_def CT clsT cls' e,
+      has_type CT Gamma h x (classTy clsT) ->
+      has_type CT Gamma h e (classTy cls') ->
       Some cls_def = CT(clsT) ->
       type_of_field (find_fields cls_def) f = Some cls' ->
-      has_type CT s h (FieldWrite x f e) voidTy
+      has_type CT Gamma h (FieldWrite x f e) voidTy
 (* if *)
-  | T_if : forall s h CT id1 id2 s1 s2 T T' ,
-      has_type CT s h (Tvar id1) (classTy T) ->
-      has_type CT s h (Tvar id2) (classTy T) ->
-      has_type CT s h s1 T' ->
-      has_type CT s h s2 T' ->
-      has_type CT s h (If id1 id2 s1 s2) T'
+  | T_if : forall Gamma h CT id1 id2 s1 s2 T T' ,
+      has_type CT Gamma h (Tvar id1) (classTy T) ->
+      has_type CT Gamma h (Tvar id2) (classTy T) ->
+      has_type CT Gamma h s1 T' ->
+      has_type CT Gamma h s2 T' ->
+      has_type CT Gamma h (If id1 id2 s1 s2) T'
 (* sequence *)
-  | T_sequence : forall h s CT e1 e2 T T',
-      has_type CT s h e1 T ->
-      has_type CT s h e2 T' ->
-      has_type CT s h (Sequence e1 e2) T'
-(* return *)(*
-  | T_return : forall h s CT e T,
-      has_type CT s h e T ->
+  | T_sequence : forall h Gamma CT e1 e2 T T',
+      has_type CT Gamma h e1 T ->
+      has_type CT Gamma h e2 T' ->
+      has_type CT Gamma h (Sequence e1 e2) T'
+(* return *)
+  | T_return : forall h Gamma CT e T,
+      has_type CT Gamma h e T ->
       T <> voidTy ->
-      has_type CT s h (Return e) T*)
+      has_type CT Gamma h (Return e) (OpaqueLabeledTy T)
 (* ObjId *)
-  | T_ObjId : forall h s CT o cls_name cls_def,
+  | T_ObjId : forall h Gamma CT o cls_name cls_def,
       Some cls_def = CT(cls_name) ->
       (exists field_defs method_defs, cls_def = (class_def cls_name field_defs method_defs)) ->
       (exists F lo, lookup_heap_obj h o = Some (Heap_OBJ cls_def F lo)) ->
-      has_type CT s h (ObjId o) (classTy cls_name)
+      has_type CT Gamma h (ObjId o) (classTy cls_name)
 (* runtime labeled data *)
-  | T_v_l : forall h s lb CT v T,
-      has_type CT s h (l lb)  LabelTy ->
-      has_type CT s h v  T ->
+  | T_v_l : forall h Gamma lb CT v T,
+      has_type CT Gamma h (l lb)  LabelTy ->
+      has_type CT Gamma h v  T ->
       value v ->
-      has_type CT s h (v_l v lb) (LabelelTy T)
+      has_type CT Gamma h (v_l v lb) (LabelelTy T)
 (* runtime labeled data *)
-  | T_v_opa_l : forall h s lb CT v T,
-      has_type CT s h (l lb)  LabelTy ->
-      has_type CT s h v  T ->
+  | T_v_opa_l : forall h Gamma lb CT v T,
+      has_type CT Gamma h (l lb)  LabelTy ->
+      has_type CT Gamma h v  T ->
       value v ->
-      has_type CT s h (v_opa_l v lb) (OpaqueLabeledTy T).
+      has_type CT Gamma h (v_opa_l v lb) (OpaqueLabeledTy T)
+  | T_dot : forall h Gamma T CT,
+      has_type CT Gamma h dot T. 
+
+
+
+
+Inductive wfe_stack_frame : Class_table -> heap -> labeled_stack_frame -> Prop :=
+  | stack_frame_wfe : forall h lsf sf lb ct,
+        lsf = Labeled_frame lb sf ->
+         (forall x v, sf x = Some v  ->
+               (
+               v = null \/ 
+                 ( exists cls_name o, v = ObjId o 
+                              /\ (exists F lo field_defs method_defs , lookup_heap_obj h o = Some (Heap_OBJ (class_def cls_name field_defs method_defs) F lo)
+                                      /\ (ct cls_name = Some (class_def cls_name field_defs method_defs))
+                                   ) 
+                  )    )  ) ->
+        wfe_stack_frame ct h lsf. 
 
 Definition empty_heap : heap := nil.
 
@@ -786,38 +843,41 @@ Inductive field_wfe_heap : Class_table -> heap -> Prop :=
         ))->
         field_wfe_heap ct h.
 
+Inductive wfe_stack : Class_table -> heap -> stack -> Prop :=
+  | main_stack_wfe : forall ct s h lb,
+        wfe_heap ct h -> 
+        s = cons (Labeled_frame lb empty_stack_frame) nil ->
+        forall lb, wfe_stack ct h (cons (Labeled_frame lb empty_stack_frame) nil)
+  | stack_wfe : forall s ct s' lb sf h, 
+        s = cons (Labeled_frame lb sf) s'->
+        wfe_stack ct h s' ->
+        wfe_heap ct h ->
+        wfe_stack_frame ct h (Labeled_frame lb sf) ->
+        wfe_stack ct h s.
 
-Lemma beq_oid_equal : forall x x', beq_oid x x' = true -> x = x'.
-Proof.
-   intros. unfold beq_oid in H.
-   destruct x. destruct x'. f_equal. 
-   case_eq (n =? n0). intro. 
-   apply beq_nat_true with (n:=n) (m:=n0). auto. 
+Lemma wfe_stack_value : forall gamma CT s h sigma v clsT, 
+    sigma = SIGMA s h ->  wfe_heap CT h -> wfe_stack CT h s 
+      -> (has_type CT gamma h v (classTy clsT))
+      -> value v -> (v = dot \/ v = null \/ 
+                 ( exists o, v = ObjId o 
+                              /\ (exists F lo field_defs method_defs , 
+                                      lookup_heap_obj h o = Some (Heap_OBJ (class_def clsT field_defs method_defs) F lo)
+                                      /\ (CT clsT = Some (class_def clsT field_defs method_defs))
+                                   )
+                  )    ).
+Proof. 
+    intros gamma CT s h sigma v clsT. intro. intro. intro.  intro. intro. 
+    induction H3. right. right.  exists o. split. auto. inversion H2. 
+    destruct H10 as [F].     destruct H10 as [lo].    
+    destruct H9 as [field_defs].    destruct H9 as [method_defs]. 
+    exists F. exists lo. exists field_defs. exists method_defs.  
+    split. rewrite <-H9. rewrite <- H10. auto. rewrite <- H9. auto.
+    
+    inversion H2. 
 
-   intro. rewrite H0 in H. inversion H.
-Qed.
-
-Lemma beq_oid_same : forall o, beq_oid o o = true. 
-Proof with auto. 
-  intro o. unfold beq_oid. destruct o. induction n. reflexivity.
-  simpl. auto. 
-Qed. 
-
-Lemma beq_equal_oid : forall x x', x = x' -> beq_oid x x' = true.
-Proof.
-   intros. 
-   destruct x. destruct x'. rewrite H.
-  apply beq_oid_same.
-Qed.
-
-Lemma beq_equal : forall x x', beq_id x x' = true -> x' = x.
-Proof.
-   intros. unfold beq_id in H. 
-  destruct x. destruct x'.  f_equal.
- case_eq (string_dec s s0). 
-  - intros. rewrite -> e. auto.
-  - intro. intro. rewrite -> H0 in H. inversion H. 
-Qed.
+    right. left. auto. 
+    right. inversion H2. right.  inversion H2. right.  inversion H2. left. auto.
+Qed.   
 
 Lemma beq_OID_not_equal : forall n n1, n <> n1 -> beq_oid (OID n) (OID n1) = false.
 Proof. 
@@ -851,6 +911,7 @@ Proof.
     apply beq_OID_not_equal with (n:=n) (n1:=n0) .
     intro contra.  rewrite contra in H2. intuition. rewrite H1.  rewrite H3. auto.  
 Qed. 
+
 
 Lemma nat_compare_oid : forall n1 n2, 
   n1 > n2 -> compare_oid (OID n1) (OID n2) = true.
@@ -932,13 +993,306 @@ Proof. intros. generalize dependent h. induction h.
               auto. auto. intuition. 
 Qed. 
 
+(* reduction preserve well-form of stack and heap *)
+Theorem reduction_preserve_wfe : forall CT s s' h h' sigma sigma',
+    sigma = SIGMA s h ->  wfe_heap CT h -> wfe_stack CT h s ->     field_wfe_heap CT h -> 
+     sigma' = SIGMA s' h' -> 
+    forall t T, has_type CT empty_context h t T -> 
+     forall t',  Config CT t sigma ==> Config CT t' sigma' ->
+    wfe_heap CT h' /\ wfe_stack CT h' s' /\  field_wfe_heap CT h'.
+Proof with auto.
 
-Lemma some_eq : forall cls_def F lo cls_def' F' lo',
-  Some (Heap_OBJ cls_def F lo) = Some (Heap_OBJ cls_def' F' lo') ->
-  cls_def = cls_def' /\ F = F'.
-Proof with auto. 
-  intros. inversion H. auto. 
-Qed.  
+Admitted. 
+
+Lemma excluded_middle_label : forall lb, (flow_to lb L_Label = true) \/ (flow_to lb L_Label = false).
+Proof with eauto.
+  intros. case lb. intro principal. induction principal. unfold L_Label. 
+  unfold flow_to. left.  unfold subset. auto.
+     unfold L_Label.   unfold flow_to. right. unfold subset. auto.
+Qed. 
+
+Reserved Notation "c '=e=>' c'"
+  (at level 40, c' at level 39).
+
+
+
+Fixpoint erasure_L_fun (t : tm) :=
+  match t with
+    | Tvar x => Tvar x
+    | null => null
+    | FieldAccess e f => FieldAccess (erasure_L_fun e) f
+    | MethodCall e1 meth e2 => MethodCall (erasure_L_fun e1) meth (erasure_L_fun e2)
+    | NewExp cls => NewExp cls
+(* label related *)
+    | l lb => l lb
+    | labelData e lb => labelData (erasure_L_fun e) lb
+    | unlabel e => unlabel (erasure_L_fun e)
+    | labelOf e => labelOf (erasure_L_fun e)
+    | unlabelOpaque e => unlabelOpaque (erasure_L_fun e)
+(* statements *)
+    | Skip => Skip
+    | Assignment x e => Assignment x (erasure_L_fun e)
+    | FieldWrite e1 f e2 => FieldWrite (erasure_L_fun e1) f (erasure_L_fun e2)
+    | If id0 id1 e1 e2 => If id0 id1 (erasure_L_fun e1) (erasure_L_fun e2)
+    | Sequence e1 e2 => Sequence (erasure_L_fun e1) (erasure_L_fun e2)
+    | Return e => Return (erasure_L_fun e)
+
+(* special terms *)
+    | ObjId o =>  ObjId o
+  (* runtime labeled date*)
+    | v_l e lb => if (flow_to lb L_Label) then v_l (erasure_L_fun e) lb else v_l dot lb 
+    | v_opa_l e lb => if (flow_to lb L_Label) then v_opa_l (erasure_L_fun e) lb else v_opa_l dot lb 
+    | dot => dot
+  end.
+
+(* Notes: add a reduction rule for dot.f fieldAccess, 
+    so that it reduces to dot and changes the current label to high*)
+
+Fixpoint erasure_obj_null (t: option tm) (h:heap) : (option tm) :=
+  match t with 
+    | Some null => Some null
+    | Some (ObjId o) => match (lookup_heap_obj h o) with 
+                              | Some (Heap_OBJ cls fields lb) => if (flow_to lb L_Label) then Some (ObjId o) else Some dot
+                              | None => Some dot (*already deleted object*)
+                          end
+    | Some dot => Some dot
+    | None => None
+    | _ => None
+  end. 
+
+
+Fixpoint erasure_stack (s:stack) (h:heap): stack :=
+  match s with 
+    | nil => nil 
+    | cons (Labeled_frame lb sf) s'=>cons (Labeled_frame lb (fun x => (erasure_obj_null (sf x) h))) s'  (*if (flow_to lb L_Label) then cons (Labeled_frame lb (fun x => (erasure_obj_null (sf x) h))) (erasure_stack s' h)
+                                                                else erasure_stack s' h *)
+
+                (*cons (Labeled_frame lb (fun x => (erasure_obj_null (sf x) h))) s' *) 
+  end. 
+
+Fixpoint erasure_heap (h:heap) : heap := 
+    match h with 
+      | nil => nil
+      | h1 :: t => match h1 with 
+                            | ( o0 , ho ) => match ho with 
+                                                       | Heap_OBJ cls F lb => if (flow_to lb L_Label) then 
+                                                                              ( o0 , (Heap_OBJ cls (fun x => (erasure_obj_null (F x) h)) lb)) :: (erasure_heap t) 
+                                                                              else (erasure_heap t) 
+                                                      end
+                      end
+    end.
+
+
+
+Reserved Notation "c '=eH=>' c'"
+  (at level 40, c' at level 39).
+
+(* whenever there is a return statement, erasure the top container, then do erasure as normal*)
+
+Fixpoint erasure_top_container (t : tm) : tm := 
+match t with
+    | Tvar x => dot
+    | null => dot
+    | FieldAccess e f => if (return_free e) then dot else FieldAccess (erasure_top_container e) f
+    | MethodCall e1 meth e2 =>  if (return_free e1) then 
+                                                   ( if (return_free e2) then dot else MethodCall e1 meth (erasure_top_container e2) )
+                                                 else MethodCall (erasure_top_container e1) meth e2
+    | NewExp cls => dot
+(* label related *)
+    | l lb => dot
+    | labelData e lb => if (return_free e) then dot else labelData (erasure_top_container e) lb
+    | unlabel e => if (return_free e) then dot else unlabel (erasure_top_container e)
+    | labelOf e => if (return_free e) then dot else labelOf (erasure_top_container e) 
+    | unlabelOpaque e => if (return_free e) then dot else unlabelOpaque (erasure_top_container e)
+(* statements *)
+    | Skip => dot
+    | Assignment x e => if (return_free e) then dot else Assignment x (erasure_top_container e)
+    | FieldWrite e1 f e2 => if (return_free e1) then 
+                                                   ( if (return_free e2) then dot else FieldWrite e1 f (erasure_top_container e2) )
+                                                 else FieldWrite (erasure_top_container e1) f e2
+    | If id0 id1 e1 e2 => dot
+    | Sequence e1 e2 => if (return_free e1) then 
+                                                   ( if (return_free e2) then dot else (erasure_top_container e2) )
+                                                 else Sequence (erasure_top_container e1) e2
+    | Return e => if (return_free e) then  Return dot else Return (erasure_top_container e)
+
+(* special terms *)
+    | ObjId o =>  dot
+  (* runtime labeled date*)
+    | v_l e lb => if (return_free e) then dot else v_l (erasure_top_container e) lb
+    | v_opa_l e lb => if (return_free e) then dot else v_opa_l (erasure_top_container e) lb
+    | dot => dot
+  end.
+
+
+Fixpoint erasure_H_fun (t: tm  ) : tm :=
+match t with
+    | Tvar x => dot 
+    | null => dot
+    | FieldAccess e f => match (erasure_H_fun e) with
+                                    | dot => dot  
+                                    | e' => FieldAccess e' f
+                                    end
+    | MethodCall e1 meth e2 =>  match (erasure_H_fun e1) with 
+                                                    | dot => match (erasure_H_fun e2) with 
+                                                                      | dot => dot  
+                                                                      | e2' => MethodCall e1 meth e2'
+                                                                      end  
+                                                    | e1' => MethodCall e1' meth e2
+                                                    end
+    | NewExp cls => dot
+(* label related *)
+    | l lb => dot
+    | labelData e lb => match (erasure_H_fun e) with 
+                                    | dot => dot  
+                                    | e' => labelData e' lb
+                                    end
+    | unlabel e => match (erasure_H_fun e) with 
+                                    | dot => dot  
+                                    | e' => unlabel e'
+                                    end
+    | labelOf e => match (erasure_H_fun e) with 
+                                    | dot => dot  
+                                    | e' => labelOf e'
+                                    end
+    | unlabelOpaque e => match (erasure_H_fun e) with 
+                                    | dot => dot  
+                                    | e' => unlabelOpaque e'
+                                    end
+(* statements *)
+    | Skip => dot
+    | Assignment x e => match (erasure_H_fun e) with 
+                                    | dot => dot  
+                                    | e' => Assignment x e'
+                                    end
+    | FieldWrite e1 f e2 =>  match (erasure_H_fun e1) with 
+                                                    | dot => match (erasure_H_fun e2) with 
+                                                                      | dot => dot  
+                                                                      | e2' => FieldWrite e1 f e2'
+                                                                      end  
+                                                    | e1' => FieldWrite e1' f e2
+                                                    end
+    | If id0 id1 e1 e2 => dot
+    | Sequence e1 e2 => match (erasure_H_fun e1) with 
+                                                    | dot => match (erasure_H_fun e2) with 
+                                                                      | dot => dot  
+                                                                      | e2' => Sequence e1 e2'
+                                                                      end  
+                                                    | e1' => Sequence e1' e2
+                                                    end
+    | Return e => if (return_free e) then dot else Return (erasure_H_fun e)
+
+(* special terms *)
+    | ObjId o =>  dot
+  (* runtime labeled date*)
+    | v_l e lb => match (erasure_H_fun e) with 
+                                    | dot => dot  
+                                    | e' => v_l (erasure_H_fun e) lb
+                                    end
+    | v_opa_l e lb => match (erasure_H_fun e) with 
+                                    | dot => dot  
+                                    | e' => v_opa_l (erasure_H_fun e) lb
+                                    end
+    | dot => dot
+  end.
+
+
+Inductive valid_syntax :  tm -> Prop :=
+  (*variable *)
+  | Valid_var : forall x,
+      valid_syntax (Tvar x)
+(* null *)
+  | Valid_null : 
+      valid_syntax null
+(* Field read *)
+  | Valid_FieldAccess : forall e f,
+      valid_syntax e ->
+      valid_syntax (FieldAccess e f)
+
+(* method call *)
+  | Valid_MethodCall1 : forall e meth argu,
+      valid_syntax e ->
+      surface_syntax argu = true -> 
+      valid_syntax (MethodCall e meth argu)
+
+  | Valid_MethodCall2 : forall v meth argu,
+      value v -> 
+      valid_syntax argu ->
+      valid_syntax (MethodCall v meth argu)
+
+(* new exp *)
+  | Valid_NewExp : forall cls_name,
+      valid_syntax (NewExp cls_name)
+(* label *)
+  | Valid_label : forall lb,
+      valid_syntax (l lb)
+(* label data *)
+  | Valid_labelData : forall e lb,
+      valid_syntax e ->
+      valid_syntax (labelData e lb)
+(* unlabel *)
+  | Valid_unlabel : forall e,
+      valid_syntax e ->
+      valid_syntax (unlabel e) 
+(* labelOf *)
+  | Valid_labelOf : forall e,
+      valid_syntax e ->
+      valid_syntax (labelOf e)
+(* unlabel opaque *)
+  | Valid_unlabelOpaque : forall e,
+      valid_syntax e ->
+      valid_syntax (unlabelOpaque e)
+(* Skip *)
+  | Valid_skip : 
+      valid_syntax Skip
+(* assignment *)
+  | Valid_assignment : forall e x, 
+      valid_syntax e ->
+      valid_syntax (Assignment x e)
+(* Field Write *)
+  | Valid_FieldWrite1 : forall e1 f  e2,
+      valid_syntax e1 ->
+      surface_syntax e2 = true -> 
+      valid_syntax (FieldWrite e1 f e2)
+
+  | Valid_FieldWrite2 : forall v f  e2,
+      value v -> 
+      valid_syntax e2 ->
+      valid_syntax (FieldWrite v f e2)
+(* if *)
+  | Valid_if : forall id1 id2 e1 e2,
+      surface_syntax e1 = true ->
+      surface_syntax e2 = true ->
+      valid_syntax (If id1 id2 e1 e2)
+
+(* sequence *)
+  | Valid_sequence1 : forall e1 e2,
+      valid_syntax e1 ->
+      surface_syntax e2 = true -> 
+      valid_syntax (Sequence e1 e2)
+
+  | Valid_sequence2 : forall v e2,
+      value v -> 
+      valid_syntax e2 ->
+      valid_syntax (Sequence v e2)
+
+(* return *)
+  | Valid_return : forall e,
+      valid_syntax e ->
+      valid_syntax (Return e)
+(* ObjId *)
+  | Valid_ObjId : forall o,
+      valid_syntax (ObjId o)
+(* runtime labeled data *)
+  | Valid_v_l : forall lb v,
+      value v ->
+      valid_syntax (v_l v lb)
+(* runtime labeled data *)
+  | Valid_v_opa_l : forall lb v,
+      value v ->
+      valid_syntax (v_opa_l v lb)
+  | Valid_dot : 
+      valid_syntax dot. 
 
 Lemma heap_consist_ct : forall h o ct cls F lo ,
   wfe_heap ct h -> 
@@ -955,2361 +1309,983 @@ Proof with auto.
       fold lookup_heap_obj in H0. apply IHwfe_heap. auto. 
 Qed.
 
-Lemma field_val_of_heap_obj : forall h o CT cls_def F lo cls' fields,
-  field_wfe_heap CT h -> 
-  wfe_heap CT h ->
-  lookup_heap_obj h o  = Some (Heap_OBJ cls_def F lo) ->
-  fields = (find_fields cls_def) ->
-  forall f, type_of_field fields f = Some cls' -> exists v, F(f) = Some v.
+Reserved Notation "c '=e=' c'"
+  (at level 40, c' at level 39).
 
-Proof with auto.
-  intros. inversion H. 
-  assert (exists cn field_defs method_defs, CT cn = Some cls_def 
-                    /\ cls_def = (class_def cn field_defs method_defs)).
 
-apply heap_consist_ct with (h:=h) (o:=o) (ct:=CT) 
-        (cls:=cls_def) (F:=F) (lo:=lo). auto. auto.
-destruct H7 as [cls_name]. destruct H7 as [field_defs]. 
-destruct H7 as [method_defs]. destruct H7. 
+Definition erasure_sigma_fun (sigma :Sigma) : Sigma :=
+    match sigma with 
+     | (SIGMA s h) =>SIGMA (erasure_stack s h) (erasure_heap h)
+    end. 
 
-destruct H4 with (o:=o) (cls_def:=cls_def) (lo:=lo)
-    (method_defs:=method_defs) (field_defs:=field_defs) 
-    (f:=f) (cls':=cls') (F:=F) (cls_name:=cls_name).
-auto. auto. auto.  auto. rewrite H8 in H2. unfold find_fields in H2.
-rewrite H2 in H3. auto. exists x. apply H9.
+
+Definition erasure_fun (ct : Class_table) (s : stack)  (h : heap) (t : tm) := 
+  if (flow_to (current_label (SIGMA s h)) L_Label) then 
+        (Config ct (erasure_L_fun t) (erasure_sigma_fun (SIGMA s h)))    else 
+    (   match s with 
+        | lsf :: s' => if (return_free t) then (Config ct (erasure_H_fun t) (erasure_sigma_fun (SIGMA s h)))
+                            else  (  if (flow_to (current_label (SIGMA s' h)) L_Label) then 
+                                                                   (Config ct ( erasure_L_fun (erasure_top_container t)) (erasure_sigma_fun (SIGMA s' h)))
+                                                                  else 
+                                                                   (Config ct ( erasure_H_fun (erasure_top_container t)) (erasure_sigma_fun (SIGMA s' h)))
+                                                              )
+        | nil => Error_state
+      end
+    ).
+
+
+(* test cases 
+Definition t := unlabelOpaque (Return (unlabelOpaque (Return (unlabelOpaque (Return (ObjId (OID 0))))))).
+Definition s := (Labeled_frame H_Label empty_stack_frame ) :: (Labeled_frame H_Label empty_stack_frame ) 
+                :: (Labeled_frame H_Label empty_stack_frame ) :: (Labeled_frame L_Label empty_stack_frame :: nil).
+
+Compute (flow_to H_Label L_Label).
+
+Compute (erasure_H_fun t ).
+Compute (erasure_top_container t ).
+Compute (erasure_H_fun (erasure_top_container t ) ).
+Compute (erasure_H_fun (erasure_H_fun t ) ).
+
+Definition t' := unlabelOpaque (Return (unlabelOpaque (Return (unlabelOpaque (v_opa_l (ObjId (OID 0)) H_Label   ))))).
+Definition s' := (Labeled_frame H_Label empty_stack_frame ) 
+                :: (Labeled_frame H_Label empty_stack_frame ) :: (Labeled_frame L_Label empty_stack_frame :: nil).
+
+Definition t0 := unlabelOpaque (Return (unlabelOpaque (Return (unlabelOpaque ( MethodCall (ObjId (OID 0)) (Id "meth") (ObjId (OID 1))   ))))).
+
+Compute (erasure_H_fun (erasure_top_container t ) ).
+Compute (erasure_H_fun t' ).
+Compute (erasure_H_fun t0 ).
+Compute (erasure_top_container t' ).
+Compute (erasure_H_fun (erasure_top_container t' ) ).
+
+Compute (erasure_stack s' nil).
+Compute (erasure_stack (erasure_stack s' nil) nil ).
+
+*)
+
+
+Lemma multi_erasure_L_tm_equal : forall t, 
+   erasure_L_fun (erasure_L_fun t) = (erasure_L_fun t).
+  Proof. induction t; try (unfold erasure_L_fun; auto; fold erasure_L_fun;  rewrite IHt; auto; fail);
+ try (unfold erasure_L_fun; auto; fold erasure_L_fun; rewrite IHt1; rewrite IHt2; auto).
+ - fold erasure_L_fun. unfold erasure_L_fun. fold erasure_L_fun. 
+    case_eq (flow_to l0 L_Label ). intro. unfold erasure_L_fun. fold erasure_L_fun. rewrite H. rewrite IHt.  auto. 
+    intro. unfold erasure_L_fun. auto. rewrite H. auto.
+
+ - fold  erasure_L_fun. 
+    case_eq (flow_to l0 L_Label ). intro. unfold erasure_L_fun. fold erasure_L_fun. rewrite H.
+    unfold erasure_L_fun. fold erasure_L_fun.  rewrite IHt. rewrite H.  auto. 
+    intro. unfold erasure_L_fun. auto. rewrite H. rewrite H. auto. 
+Qed.  
+
+Lemma dot_free_if : forall t1 t2, 
+    (if dot_free t1 then dot_free t2 else false) = true -> dot_free t1 = true /\ dot_free t2 = true.
+    Proof.  intros. case_eq (dot_free t1). intro. case_eq (dot_free t2). intro. auto.
+      intro. rewrite H0 in H. rewrite H1 in H. intuition. intro. rewrite H0 in H. intuition.
 Qed.
 
-Lemma nil_heap_no_obj : forall ho h o,
-  nil = update_heap_obj h o ho ->
-  h = nil.
-Proof.
-  intros. induction h. auto. inversion H. 
-  case a in H1. 
-  case_eq (beq_oid o o0).  intro.  rewrite H0 in H1. inversion H1. 
-   intro.  rewrite H0 in H1. inversion H1. 
+Lemma return_free_if : forall t1 t2, 
+    (if return_free t1 then return_free t2 else false) = true -> return_free t1 = true /\ return_free t2 = true.
+    Proof.  intros. case_eq (return_free t1). intro. case_eq (return_free t2). intro. auto.
+      intro. rewrite H0 in H. rewrite H1 in H. intuition. intro. rewrite H0 in H. intuition.
+Qed.
+
+Lemma return_free_if_false : forall t1 t2, 
+    (if return_free t1 then return_free t2 else false) = false ->
+     return_free t1 = false \/ (return_free t1 = true /\ return_free t2 = false).
+    Proof.  intros. case_eq (return_free t1). intro. case_eq (return_free t2). intro. rewrite H0 in H. rewrite H1 in H. inversion H.
+      intro. right. auto. intro. left. auto. 
+Qed.
+
+
+Lemma erasure_H_fun_preserve_return_free_true : forall t, 
+  return_free t = true ->
+  return_free(erasure_H_fun (t)) = true.
+Proof. intros. induction t; 
+    try (unfold erasure_H_fun; unfold return_free; auto; fail); 
+    try (unfold return_free in H; fold return_free in H;
+      unfold erasure_H_fun; rewrite H; unfold return_free; auto);
+   try (unfold return_free in H; fold return_free in H; apply return_free_if in H; destruct H;
+  unfold erasure_H_fun; rewrite H; rewrite H0;  unfold return_free; auto).
+
+  unfold return_free in H. inversion H.
+Qed.
+
+
+Hint Constructors valid_syntax.
+Lemma value_is_valid_syntax : forall v, 
+  value v -> valid_syntax v.
+Proof with eauto. intros. inversion H. apply Valid_ObjId. apply Valid_skip. apply Valid_null. apply Valid_label. apply Valid_v_l.
+        auto. apply Valid_v_opa_l. auto. apply Valid_dot. Qed. 
+
+Lemma surface_syntax_if : forall t1 t2, 
+    (if surface_syntax t1 then surface_syntax t2 else false) = true -> surface_syntax t1 = true /\ surface_syntax t2 = true.
+    Proof.  intros. case_eq (surface_syntax t1). intro. case_eq (surface_syntax t2). intro. auto.
+      intro. rewrite H0 in H. rewrite H1 in H. intuition. intro. rewrite H0 in H. intuition.
+Qed.
+
+Lemma surface_syntax_is_dot_free : forall t, 
+  surface_syntax t = true -> dot_free t = true.
+Proof. intros. induction t; auto; try (apply surface_syntax_if in H; destruct H; apply IHt1 in H; apply IHt2 in H0; 
+        unfold dot_free; fold dot_free); try (rewrite H); auto; try (unfold surface_syntax in H; inversion H).
 Qed. 
 
-(*well organized heap is preserved when the heap is extended with a fresh oid*)
-Lemma extend_heap_preserve_order : forall CT h h' o c field_defs method_defs lb,
-    wfe_heap CT h->
-    o = get_fresh_oid h ->
-    lookup_heap_obj h o = None -> 
-    Some (class_def c field_defs method_defs) = CT c ->
-     h' = add_heap_obj h o (Heap_OBJ (class_def c field_defs method_defs)
-          (init_field_map field_defs empty_field_map)
-          lb) ->  wfe_heap CT h'.
-  Proof.
-    intros. 
-    remember (class_def c field_defs method_defs) as cls_def.
-    remember  (init_field_map field_defs empty_field_map) as F.
-    apply heap_wfe with (h:=h) (o:=o) 
-        (cls_def:=cls_def) (F:=F) (cn:=c) (ho:=(Heap_OBJ cls_def F lb))
-        (lo:=lb) (method_defs:=method_defs) (field_defs:=field_defs) ;auto.
-        intros. induction h. left. auto. right.
-        unfold  get_fresh_oid in H0. 
-        induction a. induction o0. 
-        exists (OID n). exists h0. exists h. 
-        rewrite H0. split. auto. apply nat_compare_oid. intuition. 
-  Qed.  
-
-Lemma extend_heap_preserve_field_wfe : forall CT h h' o c field_defs method_defs lb,
-    field_wfe_heap CT h -> 
-    o = get_fresh_oid h ->
-    lookup_heap_obj h o = None -> 
-    Some (class_def c field_defs method_defs) = CT c ->  
-     h' = add_heap_obj h o (Heap_OBJ (class_def c field_defs method_defs)
-          (init_field_map field_defs empty_field_map)
-          lb) ->  field_wfe_heap CT h'.
-  Proof. 
-    intros. 
-    remember (class_def c field_defs method_defs) as cls_def.
-    remember  (init_field_map field_defs empty_field_map) as F.
-    auto.
-
-    assert (        (forall o cls_def F cls_name lo method_defs field_defs,
-        lookup_heap_obj  h' o = Some (Heap_OBJ cls_def F lo) ->
-        Some cls_def  = CT cls_name ->
-        cls_def = class_def cls_name field_defs method_defs ->
-        (forall f cls', type_of_field field_defs f = Some cls' -> 
-                exists v, F(f) = Some v
-                 /\ (v= null  \/ 
-                          ( exists o' F' lx field_defs0 method_defs0, v = ObjId o' 
-                                  /\ lookup_heap_obj  h' o' = Some (Heap_OBJ (class_def cls' field_defs0 method_defs0) F' lx)
-                                    /\ CT cls' = Some (class_def cls' field_defs0 method_defs0)
-                          ) ) 
-        ))).
-      intros. 
-   destruct h'. intros. inversion H4. 
-   induction h0. 
-    unfold add_heap_obj in H3.  inversion H3. 
-  case_eq (beq_oid o0 o1).
-  intro. 
-  unfold  lookup_heap_obj in H4. rewrite H8 in H4. inversion H4. 
-  rewrite H10 in H13. inversion H13. rewrite <-H15. 
-  exists null. split. 
-  assert (forall f, type_of_field field_defs f = Some cls' ->
-  F f = Some null).
-  apply empty_fields. auto. apply H12. 
-  rewrite <- H14 in H6.  rewrite Heqcls_def in H6. inversion H6. auto. 
-  left. auto. 
-  intro.  
-     unfold  lookup_heap_obj in H4. rewrite H8 in H4. fold  lookup_heap_obj in H4.
-
-    inversion H. destruct H12 with (o:=o0) (cls_def:=cls_def0) (F:=F0) (cls_name:=cls_name)
-          (lo:=lo) (method_defs:=method_defs0) (field_defs:=field_defs0) (f:=f) (cls':=cls').
-   rewrite <- H11. auto. auto. auto. auto. auto. exists x.
-   destruct H15. split. auto. destruct H16. auto. right. 
-   destruct H16 as [o'].    destruct H16 as [F'].    destruct H16 as [lx]. 
-   destruct H16 as [field_defs'].    destruct H16 as [method_defs']. 
-   exists o'. exists F'. exists lx. exists field_defs'. exists method_defs'.
-  destruct H16. split. auto. destruct H17. 
-   assert (o' <> o). intro contra. rewrite <- contra in H1. 
-   rewrite H1 in H17. inversion H17.  apply beq_oid_not_equal  in H19.
-  unfold lookup_heap_obj.  rewrite H19. fold lookup_heap_obj. auto. auto.
-  apply heap_wfe_fields. auto.
+Lemma surface_syntax_is_return_free : forall t, 
+  surface_syntax t = true -> return_free t = true.
+Proof. intros. induction t; auto; try (apply surface_syntax_if in H; destruct H; apply IHt1 in H; apply IHt2 in H0; 
+        unfold return_free; fold return_free); try (rewrite H); auto; try (unfold surface_syntax in H; inversion H).
 Qed. 
 
+Lemma surface_syntax_is_valid_syntax : forall t,
+  surface_syntax t = true -> valid_syntax t.
+Proof with eauto. Admitted. 
 
-Lemma object_write_preserve_heap_order : 
-  forall CT o h h' h'' F F' cls_def lb lb'  o0 ho0,
-  wfe_heap CT h ->
-  h = (o0 , ho0) :: h' ->
-  Some (Heap_OBJ cls_def F lb) = lookup_heap_obj h' o ->
-  h'' = (update_heap_obj h' o
-           (Heap_OBJ cls_def F' lb')) ->
-  (h'' = nil \/ (exists o1 ho1 h1, h'' = (o1 , ho1) :: h1 /\ compare_oid o0 o1= true) ).
-Proof. 
-  intros. generalize dependent ho0. generalize dependent o0.  generalize dependent h'.
-generalize dependent h''.
-induction h. 
-  intros. inversion H0.
-  destruct h'. intros. 
-  unfold update_heap_obj in H2.  left. auto. 
-  right. 
-  induction a. induction h0. 
+Lemma value_is_return_free : forall v,
+(*    forall T, has_type CT empty_context h e T -> *)
+    value v ->
+    return_free v = true.
+Proof. intro v. intro H_v. induction H_v; subst; auto. Qed.  
 
-case_eq (beq_oid o o2).
-admit.
-
-intro. unfold update_heap_obj in H2. rewrite H3 in H2. fold update_heap_obj in H2. 
-unfold lookup_heap_obj in H1.  rewrite H3 in H1. fold lookup_heap_obj in H1. 
-
-destruct IHh with (h'':=update_heap_obj h' o (Heap_OBJ cls_def F' lb')) 
-    (h':=h') (o0:= o2) (ho0:=h0). inversion H. inversion H4. auto. 
-auto. auto.  inversion H0. auto. exists o2. exists h0. exists (update_heap_obj h' o (Heap_OBJ cls_def F' lb')).
-split. auto. admit.  
-exists  o2. exists h0. exists (update_heap_obj h' o (Heap_OBJ cls_def F' lb')). split. auto. 
-inversion H0. rewrite <- H6. inversion H.  inversion H5. destruct H9.
-rewrite H19 in H8.  rewrite H9 in H8. inversion H8. 
-
-destruct H9 as [o']. destruct H9 as [ho']. destruct H9. destruct H9.
-rewrite H19 in H8. rewrite H8 in H9.  inversion H9. auto. 
-Admitted. 
+Lemma value_erasure_to_dot : forall v,
+(*    forall T, has_type CT empty_context h e T -> *)
+    value v ->
+    erasure_H_fun v = dot.
+Proof. intros.  induction H; unfold erasure_H_fun; auto. fold erasure_H_fun.
+ pose proof (value_is_return_free v).    apply H0 in H. rewrite H. auto.
+ pose proof (value_is_return_free v).   apply H0 in H. rewrite H. auto.
+Qed.
 
 
-Lemma field_write_preserve_wfe_heap : 
-  forall CT o h h' i F F' cls_def cls' lb lb' clsT field_defs method_defs,
-  wfe_heap CT h ->
-(*  wfe_stack CT gamma h s -> *)
-  Some (Heap_OBJ cls_def F lb) = lookup_heap_obj h o ->
-  type_of_field (find_fields cls_def) i = Some cls' ->
-  cls_def = class_def clsT field_defs method_defs ->
-  Some cls_def = CT clsT ->
-  h' = (update_heap_obj h o
-           (Heap_OBJ cls_def F' lb')) ->
-  wfe_heap CT h'.
+Lemma erasure_H_fun_preserve_return_free_false : forall t, 
+  valid_syntax t ->
+  return_free t = false ->
+  return_free(erasure_H_fun (t)) = false.
+Proof. intro t.  intro H_valid_syntax. intros. induction t; 
+    try (unfold erasure_H_fun; unfold return_free; auto; fail);
+    try (unfold return_free in H;  fold return_free in H;
+      unfold erasure_H_fun; rewrite H; fold erasure_H_fun; unfold return_free;
+      fold return_free; inversion H_valid_syntax; apply IHt; auto).
+    apply return_free_if_false in H. destruct H.
+    unfold erasure_H_fun. rewrite H. fold erasure_H_fun. unfold return_free. fold return_free. 
+    inversion H_valid_syntax. assert (return_free (erasure_H_fun t1) = false). apply IHt1; auto.
+    rewrite H5.  auto. assert (return_free (erasure_H_fun t1) = false). apply IHt1; auto. apply value_is_valid_syntax. auto. 
+    rewrite H5.  auto.
 
-Proof.
-  intros CT o h h' i F F' cls_def cls' lb lb' clsT field_defs method_defs.
-  intro wfe_h.  intro Ho. intro Htyf. intro Hcls_def. intro Hct.
-  intro Hy.
+   destruct H. inversion H_valid_syntax. assert (valid_syntax t2). apply surface_syntax_is_valid_syntax. auto. subst. 
+    unfold erasure_H_fun. rewrite H. fold erasure_H_fun. unfold return_free. fold return_free. rewrite H0.
+    unfold return_free. fold return_free. rewrite H. apply IHt2; auto.  subst. 
+    unfold erasure_H_fun. rewrite H. fold erasure_H_fun. unfold return_free. fold return_free. rewrite H0.
+    unfold return_free. fold return_free. rewrite H. apply IHt2; auto. 
 
-generalize dependent h.  induction h'. 
-intros. 
-apply nil_heap_no_obj with (ho:=(Heap_OBJ cls_def F' lb')) (h:=h) (o:=o) in Hy.
-rewrite Hy in Ho. inversion Ho.
+    apply return_free_if_false in H. destruct H.
+    unfold erasure_H_fun. rewrite H. fold erasure_H_fun. unfold return_free. fold return_free. 
+    inversion H_valid_syntax. assert (return_free (erasure_H_fun t1) = false). apply IHt1; auto.
+    rewrite H5.  auto. assert (return_free (erasure_H_fun t1) = false). apply IHt1; auto. apply value_is_valid_syntax. auto. 
+    rewrite H5.  auto.
 
-intros. destruct h.  inversion Ho. 
-induction a. induction h.
-case_eq (beq_oid o o1). 
-(*beq_oid o o1 = true  *)
-unfold update_heap_obj in Hy. intro. rewrite H in Hy. inversion Hy. 
-inversion wfe_h.
-apply heap_wfe with (h':= ((o, (Heap_OBJ cls_def F' lb')) :: h0)) 
-        (o:=o) (cls_def:=cls_def0) (F:=F') (cn:=cn0) 
-        (h:=h0) 
-        (ho:=(Heap_OBJ cls_def F' lb'))
-        (lo:=lb') (method_defs:=method_defs0) (field_defs:=field_defs0); auto.
-inversion H0. auto. apply beq_oid_equal in H. rewrite H. rewrite H12. auto.
-inversion H0. auto.
-unfold lookup_heap_obj in Ho. rewrite H in Ho. fold lookup_heap_obj in Ho. inversion Ho.
-inversion H0. rewrite <- H12 in H14. rewrite H6 in H14. inversion H14. auto.
-(*beq_oid o o1 = false  *)
-unfold update_heap_obj in Hy. intro. rewrite H in Hy. fold update_heap_obj in Hy.  inversion Hy. 
-inversion wfe_h.
-apply heap_wfe with (h':=((o1, h) :: update_heap_obj h0 o (Heap_OBJ cls_def F' lb'))) 
-        (o:=o1) (cls_def:=cls_def0) (F:=F0) (cn:=cn0) 
-        (h:=update_heap_obj h0 o (Heap_OBJ cls_def F' lb')) 
-        (ho:=h) (lo:=lo) (method_defs:=method_defs0) (field_defs:=field_defs0).
-auto. inversion H0. destruct H4. rewrite H4. left. auto. right.
-destruct H4 as [o']. destruct H4 as [ho']. destruct H4 as [h'']. destruct H4. 
-remember (update_heap_obj h2 o (Heap_OBJ cls_def F' lb')) as h3. 
-assert (  (h3 = nil \/ (exists o1 ho1 h1, h3 = (o1 , ho1) :: h1 /\ compare_oid o0 o1= true) )).
-rewrite H1.  rewrite H12. 
-apply object_write_preserve_heap_order with (CT:=CT) (o:=o) 
-    (h:=(o2, ho) :: h2) (h':=h2) (h'':=h3) (F:=F) (F':=F') 
-    (cls_def:=cls_def) (lb:=lb) (lb':=lb')  (o0:=o2) (ho0:=ho).
-rewrite <-H0. auto. auto. 
-unfold  lookup_heap_obj in Ho. rewrite H in Ho. fold  lookup_heap_obj in Ho. 
-rewrite <- H14. auto. auto. destruct H15.  rewrite H15 in  Heqh3.
-apply nil_heap_no_obj in Heqh3. 
-unfold  lookup_heap_obj in Ho. rewrite H in Ho. fold  lookup_heap_obj in Ho. 
-rewrite H14 in Ho. rewrite Heqh3 in Ho. inversion Ho. auto. 
-rewrite <- H12. rewrite <- H1. auto.   
+   destruct H. inversion H_valid_syntax. assert (valid_syntax t2). apply surface_syntax_is_valid_syntax. auto. subst. 
+    unfold erasure_H_fun. rewrite H. fold erasure_H_fun. unfold return_free. fold return_free. rewrite H0.
+    unfold return_free. fold return_free. rewrite H. apply IHt2; auto.  subst. 
+    unfold erasure_H_fun. rewrite H. fold erasure_H_fun. unfold return_free. fold return_free. rewrite H0.
+    unfold return_free. fold return_free. rewrite H. apply IHt2; auto. 
 
-rewrite <- H3. 
-apply IHh' with (h:=h0). inversion H0. auto. 
-unfold lookup_heap_obj in Ho. rewrite H in Ho. fold lookup_heap_obj in Ho. auto.
-auto. inversion H0. auto. auto. auto. 
+    inversion H_valid_syntax. unfold return_free in H. fold return_free in H. apply surface_syntax_is_return_free in H2. 
+    apply surface_syntax_is_return_free in H5. rewrite H2 in H. rewrite H5 in H. inversion H. 
+
+    apply return_free_if_false in H. destruct H.
+    unfold erasure_H_fun. rewrite H. fold erasure_H_fun. unfold return_free. fold return_free. 
+    inversion H_valid_syntax. assert (return_free (erasure_H_fun t1) = false). apply IHt1; auto.
+     rewrite H4.  auto. assert (return_free (erasure_H_fun t1) = false). apply IHt1; auto. apply value_is_valid_syntax. auto. 
+    rewrite H4.  auto.
+    destruct H. inversion H_valid_syntax. assert (valid_syntax t2). apply surface_syntax_is_valid_syntax. auto. subst. 
+    unfold erasure_H_fun. rewrite H. fold erasure_H_fun. unfold return_free. fold return_free. rewrite H0.
+    unfold return_free. fold return_free. apply surface_syntax_is_return_free in H4. rewrite H4 in H0. inversion H0. 
+    unfold erasure_H_fun. rewrite H. rewrite H0. fold erasure_H_fun.
+    apply IHt2; auto.  subst. 
+
+    unfold erasure_H_fun. case (return_free t). unfold return_free. auto. 
+    fold erasure_H_fun. unfold return_free. auto.  subst. 
+    apply value_is_valid_syntax. auto.      apply value_is_valid_syntax. auto. 
 Qed.  
 
 
-Lemma  lookup_updated : forall o ho h h' ho',
-    h' = update_heap_obj h o ho ->
-    Some ho' = lookup_heap_obj h o ->
-    Some ho = lookup_heap_obj h' o. 
-  Proof. 
-    intros. generalize dependent h. induction h'.
-   - intros. apply nil_heap_no_obj in H. rewrite H in H0. inversion H0.
-   - intro h. intro.  intro. induction a.
-      destruct h. inversion H0. 
-      induction h. 
-      case_eq (beq_oid o o1).  intro.  
-      unfold  update_heap_obj in H. rewrite H1 in H. inversion H.
-      unfold lookup_heap_obj.       
-      assert (beq_oid o o=true). apply beq_oid_same. rewrite H2.  auto.
-
-      intro. unfold  update_heap_obj in H. rewrite H1 in H. fold update_heap_obj in H.  
-      inversion H. 
-      unfold lookup_heap_obj.        rewrite H1.  fold lookup_heap_obj.
-      rewrite <- H5.  apply IHh' with (h:=h1). auto. 
-      unfold lookup_heap_obj in H0.        rewrite H1 in H0.  fold lookup_heap_obj in H0. auto.
-Qed. 
-
-Lemma  lookup_updated_not_affected : forall o ho h h' o' ho',
-    h' = update_heap_obj h o ho ->
-    o' <> o ->
-    Some ho' = lookup_heap_obj h o' ->
-    Some ho' = lookup_heap_obj h' o'.
-  Proof. 
-    intros. generalize dependent h. induction h'.
-   - intros. apply nil_heap_no_obj in H. rewrite H in H1. inversion H1.
-   - intro h. intro.  intro. induction a.
-      destruct h. inversion H. 
-      induction h. 
-      case_eq (beq_oid o o1).  intro.  
-      unfold  update_heap_obj in H. rewrite H2 in H. inversion H.
-      unfold lookup_heap_obj.
-      assert (beq_oid o' o = false).  apply beq_oid_not_equal. auto. 
-      rewrite H3.       fold lookup_heap_obj. 
-      unfold  lookup_heap_obj in H1. apply beq_oid_equal in H2. rewrite H2 in H3. 
-      rewrite H3 in H1. fold lookup_heap_obj in H1. auto.  
-
-      intro. unfold update_heap_obj in H. rewrite H2 in H. fold update_heap_obj in H.  
-      case_eq (beq_oid o' o1).
-      intro. unfold lookup_heap_obj in H1. rewrite H3 in H1.  
-      inversion H. unfold lookup_heap_obj. rewrite H3. auto. 
-
-      intro. unfold lookup_heap_obj in H1. rewrite H3 in H1.  fold lookup_heap_obj in H1.
-      inversion H.   unfold lookup_heap_obj. rewrite H3.  fold lookup_heap_obj.
-   
-      rewrite <- H7. apply IHh' with (h:=h1). auto. auto.  
-Qed. 
-
-Lemma  lookup_updated_not_affected_reverse : forall o ho h h' o' ho',
-    h' = update_heap_obj h o ho ->
-    o' <> o ->
-    Some ho' = lookup_heap_obj h' o' ->
-    Some ho' = lookup_heap_obj h o'.
-  Proof. 
-    intros. generalize dependent h. induction h'.
-   - intros. apply nil_heap_no_obj in H. inversion H1.
-   - intro h. intro.  induction a.
-      destruct h. inversion H. 
-      induction h. 
-      case_eq (beq_oid o o1).  intro.  
-      unfold  update_heap_obj in H. rewrite H2 in H. inversion H.
-      unfold lookup_heap_obj.
-      assert (beq_oid o' o = false).  apply beq_oid_not_equal. auto.
-      apply beq_oid_equal in H2. rewrite H2 in H3.   
-      rewrite H3.       fold lookup_heap_obj. 
-      unfold  lookup_heap_obj in H1. rewrite <-H2 in H3. rewrite H4 in H1. 
-      rewrite H3 in H1. fold lookup_heap_obj in H1. rewrite <-H6. auto.  
-
-      intro. unfold update_heap_obj in H. rewrite H2 in H. fold update_heap_obj in H.  
-      case_eq (beq_oid o' o1).
-      intro. unfold lookup_heap_obj in H1. 
-       inversion H. rewrite H5 in H1.  rewrite H3 in H1.    
-       unfold lookup_heap_obj. rewrite H3. rewrite <- H6. auto. 
-
-      intro. unfold lookup_heap_obj in H1. inversion H. rewrite H5 in H1. rewrite H3 in H1.  fold lookup_heap_obj in H1.
-      unfold lookup_heap_obj. rewrite H3.  fold lookup_heap_obj.
-   
-      apply IHh' with (h:=h1). auto. auto.  
+Lemma exclude_middle_return_t : forall t, 
+    (return_free t = true \/ return_free t = false). 
+Proof. intro t. induction t; unfold return_free; try (left; auto; fail);
+  try (fold return_free; auto); try (destruct IHt1; rewrite H; auto). 
 Qed. 
 
 
-Lemma field_write_preserve_field_wfe : forall CT gamma h h' o field_defs method_defs lb lb' v i F cls_def clsT cls',
-    field_wfe_heap CT h -> 
-    value v ->
-    Some (Heap_OBJ cls_def F lb) = lookup_heap_obj h o ->
-    type_of_field (find_fields cls_def) i = Some cls' ->
-    cls_def = class_def clsT field_defs method_defs ->
-    has_type CT gamma h v (classTy cls') ->
-    Some cls_def = CT clsT ->
-    h' = (update_heap_obj h o
-           (Heap_OBJ cls_def (fields_update F i v) lb')) ->
-    field_wfe_heap CT h'.
-Proof. 
-(*
-    intros. 
-    remember  (fields_update F i v) as F'. 
 
-    assert (        (forall o cls_def F cls_name lo method_defs field_defs,
-        lookup_heap_obj  h' o = Some (Heap_OBJ cls_def F lo) ->
-        Some cls_def  = CT cls_name ->
-        cls_def = class_def cls_name field_defs method_defs ->
-        (forall f cls', type_of_field field_defs f = Some cls' -> 
-                exists v, F(f) = Some v
-                 /\ (v= null  \/ 
-                          ( exists o' F' lx field_defs0 method_defs0, v = ObjId o' 
-                                  /\ lookup_heap_obj  h' o' = Some (Heap_OBJ (class_def cls' field_defs0 method_defs0) F' lx)
-                                    /\ CT cls' = Some (class_def cls' field_defs0 method_defs0)
-                          ) ) 
-        ))).
-      intros. 
-   destruct h'. intros. apply nil_heap_no_obj in H6. rewrite H6 in H1.  inversion H1.
-  destruct h. inversion H1. induction h. induction h0. 
-
-   assert (Some (Heap_OBJ cls_def F' lb') = lookup_heap_obj ((o2, h0) :: h') o).
-   apply lookup_updated with (o:=o) (ho':= (Heap_OBJ cls_def F lb))
-                                (ho:=(Heap_OBJ cls_def F' lb')) (h:=((o1, h) :: h1)) 
-                                (h':=(o2, h0) :: h' ).
-   auto. auto.
-  (*if this is the element we updated*)
-   case_eq (beq_oid o0 o). intro. apply beq_oid_equal in H12. 
-   rewrite H12 in H7. 
-   rewrite <- H11 in H7. inversion H7. rewrite <- H15. 
-   unfold fields_update in HeqF'. rewrite HeqF'.
-   (*If this is the field we updating*)
-   case_eq (beq_id i f).  intro. 
-   exists v. split. auto.
-   inversion H0.
-   rewrite <- H17 in H4. inversion H4. 
-   right. 
-   exists o3. 
-   destruct H26 as [F'']. destruct H26 as [lx]. 
-  destruct H25 as [field_defs''].   destruct H25 as [method_defs''].
-  case_eq (beq_oid o3 o).  intro.
-  apply beq_oid_equal in H27. rewrite H27.
-  exists F'. exists lb'.  exists field_defs0. exists method_defs0.
-  split. auto. split. auto. 
-  inversion H7.  rewrite <- H29 in H9. rewrite H3 in H9. inversion H9.
-  rewrite <- H33 in H10. rewrite H3 in H2. unfold find_fields in H2.
-  apply beq_equal in H13. rewrite H13 in H10. rewrite H10 in H2.
-  inversion H2. 
-  rewrite H27 in H26. rewrite <- H1 in H26. inversion H26.
-  rewrite <- H36 in H25. rewrite H3 in H25. inversion H25.
-  rewrite <- H11. rewrite H3. rewrite H39. rewrite H34. 
-  rewrite H33. rewrite H30. rewrite <- H31.  auto.
-
-  inversion H7. rewrite <- H29 in H9. rewrite H3 in H9. inversion H9.
-  rewrite <- H33 in H10. rewrite H3 in H2. unfold find_fields in H2.
-  apply beq_equal in H13. rewrite H13 in H10. rewrite H10 in H2.
-  inversion H2.
-  rewrite H27 in H26. rewrite <- H1 in H26. inversion H26.
-  rewrite <- H36 in H25. rewrite H3 in H25. inversion H25.
-  rewrite <- H39. rewrite H3 in H5. 
-  rewrite <- H33. rewrite <- H34. auto.
-
-  intro.
-  assert (Some (Heap_OBJ cls_def1 F'' lx) = lookup_heap_obj ((o2, h0) :: h') o3).
-  apply lookup_updated_not_affected with (h:=((o1, h) :: h1)) 
-                  (h':=((o2, h0) :: h')) (ho:= (Heap_OBJ cls_def F' lb'))
-                  (o':=o3) (o:=o) (ho':=(Heap_OBJ cls_def1 F'' lx)).
-  auto.
-  intro contra. rewrite contra in H27. 
-   assert (beq_oid o o = true). apply beq_oid_same. rewrite H28 in H27.
-  inversion H27. auto.
-  exists F''. exists lx. exists field_defs''. exists method_defs''. split; auto.
-
-  rewrite <- H14 in H9. rewrite H3 in H9.  inversion H9.
-  apply beq_equal in H13. rewrite H13 in H10. 
-  rewrite <- H31 in H10.  rewrite H3 in H2. unfold find_fields in H2. 
-  rewrite H10 in H2. inversion H2. rewrite H25 in H28. 
-  split; auto. rewrite H25 in H20. auto.
-
-  rewrite <-H17 in H4. inversion H4.
-  left. auto.
-  rewrite <-H17 in H4. inversion H4.
-  rewrite <-H18 in H4. inversion H4.
-  rewrite <-H18 in H4. inversion H4.
-   (*If this is not the field we updating*)
-  intro. 
-
-  inversion H. destruct H17 with (o:=o) (cls_def:=cls_def) (F:=F)
-                      (cls_name:=clsT) (lo:=lb) (method_defs:=method_defs)
-                      (field_defs:=field_defs) (f:=f) (cls':=cls'0); auto. 
-  rewrite <- H14  in H9. rewrite H3 in H9. inversion H9. auto.
-  exists x. destruct H20. split; auto. destruct H21. left. auto. right.
-  destruct H21 as [o'].   destruct H21 as [F'']. destruct H21 as [lx]. 
-  destruct H21 as [field_defs''].   destruct H21 as [method_defs''].
-
-  exists o'.
-  case_eq (beq_oid o' o).  intro.
-  destruct H21. destruct H23.
-  apply beq_oid_equal in H22. rewrite H22 in H23. rewrite H23 in H1.
-  inversion H1.
-  exists F'. exists lb'. exists field_defs''. exists method_defs''. split; auto. 
-  split. rewrite <- H26. rewrite H22. auto. auto.
-
-  intro.
-  assert (Some (Heap_OBJ (class_def cls'0 field_defs'' method_defs'') F'' lx)
-                 = lookup_heap_obj ((o2, h0) :: h') o').
-   apply lookup_updated_not_affected with (h:=((o1, h) :: h1)) 
-                  (h':=((o2, h0) :: h')) (ho:= (Heap_OBJ cls_def F' lb'))
-                  (o':=o') (o:=o) (ho':=(Heap_OBJ (class_def cls'0 field_defs'' method_defs'') F'' lx) ); auto.
-   intro contra. rewrite contra in H22. assert (beq_oid o o = true). apply beq_oid_same.
-   rewrite H23 in H22. inversion H22. destruct H21. destruct H23. auto.
-
-  exists F''. exists lx. exists field_defs''. exists method_defs''. destruct H21.
-  split; auto. destruct H24. auto. 
-
-  (*if this is not the element we updated*)
-  intro. inversion H. destruct H13 with (o:=o0) (cls_def:=cls_def0) (F:=F0)
-                      (cls_name:=cls_name) (lo:=lo) (method_defs:=method_defs0)
-                      (field_defs:=field_defs0) (f:=f) (cls':=cls'0); auto.
-  assert (Some (Heap_OBJ cls_def0 F0 lo) = lookup_heap_obj ((o1, h) :: h1) o0).
-  apply lookup_updated_not_affected_reverse with (o:=o) (o':=o0) (ho:=(Heap_OBJ cls_def F' lb'))
-                    (h:=((o1, h) :: h1)) (h':=(o2, h0) :: h') (ho':=(Heap_OBJ cls_def0 F0 lo)). 
-  auto. intro contra. rewrite contra in H12. assert (beq_oid o o = true). apply beq_oid_same. 
-  rewrite H16 in H12. inversion H12. auto.  auto. 
-  exists x. destruct H16.  destruct H17. split; auto.  split; auto. right. 
-
-  destruct H17 as [o'].   destruct H17 as [F'']. destruct H17 as [lx]. 
-  destruct H17 as [field_defs''].   destruct H17 as [method_defs'']. 
-
-  exists o'.
-  case_eq (beq_oid o' o).  intro.
-  destruct H17. destruct H19.
-  apply beq_oid_equal in H18. rewrite H18 in H19. rewrite H19 in H1.
-  inversion H1.
-  exists F'. exists lb'. exists field_defs''. exists method_defs''. split; auto. 
-  split. rewrite <- H22. rewrite H18. auto. auto.
-
-  intro.
-  assert (Some (Heap_OBJ (class_def cls'0 field_defs'' method_defs'') F'' lx)
-                 = lookup_heap_obj ((o2, h0) :: h') o').
-   apply lookup_updated_not_affected with (h:=((o1, h) :: h1)) 
-                  (h':=((o2, h0) :: h')) (ho:= (Heap_OBJ cls_def F' lb'))
-                  (o':=o') (o:=o) (ho':=(Heap_OBJ (class_def cls'0 field_defs'' method_defs'') F'' lx) ); auto.
-   intro contra. rewrite contra in H18. assert (beq_oid o o = true). apply beq_oid_same.
-   rewrite H19 in H18. inversion H18. destruct H17. destruct H19. auto.
-  exists F''. exists lx. exists field_defs''. exists method_defs''. destruct H17.
-  split; auto. destruct H20. auto.   
-
-   apply heap_wfe_fields. apply H7.
-*)
-Admitted. 
-
-
-
-
-
-Theorem beq_nat_true: forall n m,
-  beq_nat n m = true -> n = m.
-Proof.
-  intros n. induction n.
-    intros. destruct m. 
-      reflexivity.  inversion H.
-    intros. destruct m. 
-      inversion H. simpl in H. apply f_equal. apply IHn in H. apply H.
-Qed. 
-
-
-Inductive wfe_stack_frame : Class_table -> heap -> labeled_stack_frame -> Prop :=
-  | stack_frame_wfe : forall h lsf sf lb ct,
-        lsf = Labeled_frame lb sf ->
-         (forall x v c, sf x = Some (pair v c) ->  
-               ( v = null \/ 
-                 ( exists o, v = ObjId o 
-                              /\ (exists F lo field_defs method_defs , lookup_heap_obj h o = Some (Heap_OBJ (class_def c field_defs method_defs) F lo)
-                                      /\ (ct c = Some (class_def c field_defs method_defs))
-                                   ) 
-                  )    )  ) ->
-        wfe_stack_frame ct h lsf. 
-
-
-Inductive wfe_stack : Class_table -> heap -> stack -> Prop :=
-  | main_stack_wfe : forall ct s h lb,
-        wfe_heap ct h -> 
-        s = cons (Labeled_frame lb empty_stack_frame) nil ->
-        forall lb, wfe_stack ct h (cons (Labeled_frame lb empty_stack_frame) nil)
-  | stack_wfe : forall s ct s' lb sf h, 
-        s = cons (Labeled_frame lb sf) s'->
-        wfe_stack ct h s' ->
-        wfe_heap ct h ->
-        wfe_stack_frame ct h (Labeled_frame lb sf) ->
-        wfe_stack ct h s.
-
-
-Lemma string_eq : forall n1 n2, n1 = n2 -> Id n1 = Id n2.
-Proof with eauto.
-  intros. rewrite -> H. auto.
-Qed. 
-
-Lemma wfe_oid : forall o ct s h sigma cls_def cn, 
-  sigma = SIGMA s h ->
-  wfe_stack ct h s ->
-  (has_type ct s h (ObjId o) (classTy cn)) -> ct cn = Some cls_def 
-    -> exists fieldsMap lb, lookup_heap_obj h o = Some (Heap_OBJ cls_def fieldsMap lb).
-Proof with auto. 
-  intros. inversion H1. rewrite H2 in H5. inversion H5. 
-  rewrite <- H12. auto.
-Qed.
-
-Lemma excluded_middle_opaqueLabel : forall e, (exists t, e = unlabelOpaque t) \/ (forall t, ~ (e = unlabelOpaque t)).
-Proof with eauto.
-  intros. case e; try (right; intro;  intros contra; inversion contra; fail). left. exists t. auto. 
-Qed.
-
-Lemma excluded_middle_returnT : forall e, (exists t, e = Return t) \/ (forall t, ~ (e = Return t)).
-Proof with eauto.
-  intros. case e; try (right; intro;  intros contra; inversion contra; fail). left. exists t.  auto. 
-Qed.
-
-
-Lemma stack_not_nil : forall sigma CT s h, 
-  sigma = SIGMA s h ->  wfe_heap CT h -> wfe_stack CT h s -> exists lsf s', s = cons lsf s'.
-Proof with auto.
-  intros. inversion H1. exists (Labeled_frame lb0 empty_stack_frame). exists nil. auto. 
-  exists (Labeled_frame lb sf). exists s'. auto. 
-Qed.
-
-(* every value in the stack should be well-formed, which means that all values should point to null or valid Obj Id*)
-Lemma wfe_stack_value : forall CT s h sigma v clsT, 
-    sigma = SIGMA s h ->  wfe_heap CT h -> wfe_stack CT h s 
-      -> (has_type CT s h v (classTy clsT))
-      -> value v -> (v = null \/ 
-                 ( exists o, v = ObjId o 
-                              /\ (exists F lo field_defs method_defs , 
-                                      lookup_heap_obj h o = Some (Heap_OBJ (class_def clsT field_defs method_defs) F lo)
-                                      /\ (CT clsT = Some (class_def clsT field_defs method_defs))
-                                   )
-                  )    ).
-Proof. 
-    intros CT s h sigma v clsT. intro. intro. intro.  intro. intro. 
-    induction H3. right. exists o. split. auto. inversion H2.  
-    destruct H10 as [F].     destruct H10 as [lo].    
-    destruct H9 as [field_defs].    destruct H9 as [method_defs]. 
-    exists F. exists lo. exists field_defs. exists method_defs.  
-    split. rewrite <-H9. rewrite <- H10. auto. rewrite <- H9. auto.
-    
-    inversion H2. 
-
-    left. auto. 
-    inversion H2. inversion H2.  inversion H2. 
-Qed.   
-
-
-Lemma change_label_preserve_wfe : forall s CT h lb,
-    wfe_heap CT h -> wfe_stack CT h s ->
-    wfe_stack CT h (update_current_label s lb).
-Proof. 
-   intros. inversion H0. 
-    - unfold update_current_label. apply main_stack_wfe with (s:=s) (lb:=lb1); auto.
-    - subst.  unfold update_current_label. apply stack_wfe with (s':=s') (lb:=lb) (sf:=sf); auto.
-        inversion H4.  apply stack_frame_wfe with (sf:=sf) (lb:=lb); auto. inversion H1. auto.
-Qed.
-
-
-Lemma extend_heap_preserve_heap_wfe : forall CT h h' o c field_defs method_defs lb,
-    wfe_heap CT h -> 
-    o = get_fresh_oid h ->
-    lookup_heap_obj h o = None -> 
-    Some (class_def c field_defs method_defs) = CT c ->  
-     h' = add_heap_obj h o (Heap_OBJ (class_def c field_defs method_defs)
-          (init_field_map field_defs empty_field_map)
-          lb) -> wfe_heap CT h'.
-  Proof. 
-    intros. 
-    remember (class_def c field_defs method_defs) as cls_def.
-    remember  (init_field_map field_defs empty_field_map) as F.
-    apply heap_wfe with (h:=h) (o:=o) 
-        (cls_def:=cls_def) (F:=F) (cn:=c) (ho:=(Heap_OBJ cls_def F lb))
-        (lo:=lb) (method_defs:=method_defs) (field_defs:=field_defs) ;auto.
-        intros. induction h. left. auto. right.
-        unfold  get_fresh_oid in H0. 
-        induction a. induction o0. 
-        exists (OID n). exists h0. exists h. 
-        rewrite H0. split. auto. apply nat_compare_oid. intuition. 
-Qed.
-
-
-Lemma extend_heap_preserve_stack_wfe : forall CT s h h' o heap_obj,
-    wfe_heap CT h -> 
-    wfe_stack CT h s ->
-    o = get_fresh_oid h ->
-    h' = add_heap_obj h o heap_obj -> 
-    wfe_heap CT h' -> 
-    wfe_stack CT h' s.
-Proof. 
-  intros. induction H0.
-
-  apply main_stack_wfe with (s:=s) (lb:=lb). 
-  auto.  auto. 
-  apply stack_wfe with (s:=s) (ct:=ct)
-                  (s':=s') (lb:=lb) (sf:=sf) (h:=h').
-  auto. auto. auto. 
-  apply stack_frame_wfe with (sf:=sf) (lb:=lb).  auto. 
-  inversion H6. auto. inversion H7.
-  intros. destruct H8 with (x:=x) (v:=v) (c:=c).
-  auto. left. auto.    
-  right. destruct H15 as [o']. destruct H15.
-  destruct H16 as [F].   destruct H16 as [lo]. 
-  destruct H16 as [field_defs].     destruct H16 as [method_defs].
-  destruct H16.
-  exists o'. split. auto. 
-  exists F. exists lo. exists field_defs. exists method_defs.
-  split. 
-
-  rewrite H2. unfold add_heap_obj. 
-  assert (o' <> o). intro contra. 
-  rewrite contra in H16. rewrite H1 in H16. 
-  assert (lookup_heap_obj h (get_fresh_oid h) = None).
-  apply fresh_oid_heap with (CT:=ct).
-  auto. auto.  rewrite H16 in H18. inversion H18.
-  assert (beq_oid o' o = false).  apply beq_oid_not_equal.
-  auto. unfold lookup_heap_obj. rewrite H19. 
-  fold lookup_heap_obj. auto. auto. 
-Qed. 
-
-(*change the values residing on the top of the stack does preserves the well-formness of stack*)
-(*
-Lemma update_stack_preserve_wfe : forall gamma ctx gamma' CT s s' h i v T, 
-    wfe_stack CT h s ->
-    s' =  update_stack_top s i v -> 
-    value v ->
-   has_type CT s h v T ->
-    wfe_stack CT h s'.
-Proof.
-   intros gamma ctx gamma' CT s s' h i v T. intro. intro. intro Hv. intro typing. intro H_gamma. intro.
-
-  inversion H. rewrite H4 in H_gamma. inversion H_gamma.
-
-  rewrite H2 in H0.    unfold update_stack_top in H0. 
-
-   unfold labeled_frame_update in H0. 
-  remember (fun x' : id => if beq_id i x' then Some v else sf x') as sf'.
-
-   apply stack_wfe with (s:=s') (ct:=CT) (gamma:=gamma) (s':=s'0) 
-                      (ctx:=ctx) (gamma':=gamma')
-                      (lb:=lb) (sf:=sf') (h:=h); auto.  
-  rewrite H_gamma in H3. inversion H3. auto. 
-
-  inversion H6. 
-  apply stack_frame_wfe with (sf:=sf') (lb:=lb). auto. 
-
-  intros. rewrite Heqsf'.
-  case_eq (beq_id i x). intro.
-  apply beq_equal in H18. rewrite  H18 in H17. 
-  rewrite H17 in H1. inversion H1. 
-  exists v. split; auto.
-   inversion Hv. right. exists o. split; auto.
-  rewrite <- H19 in typing. inversion typing.
-  destruct H27 as [F].   destruct H27 as [lo].  
-  destruct H23 as [field_defs].   destruct H23 as [method_defs].
-  exists F. exists lo. exists field_defs. exists method_defs.
-  split.  rewrite H23 in H27.
-  rewrite <- H20     in H28. inversion H28. rewrite <- H30.  auto. 
-
-  inversion H1. rewrite <- H28 in H30. inversion H30. rewrite <- H31. 
-  rewrite <- H31 in H22. rewrite <- H22. 
-  f_equal. rewrite <- H31 in H23. auto. 
-  
-  rewrite <- H20 in typing. rewrite <- H19 in typing.  inversion typing. 
-  left. auto. 
-  rewrite <- H20 in typing. rewrite <- H19 in typing.  inversion typing. 
-  rewrite <- H21 in typing. rewrite <- H20 in typing.  inversion typing. 
-  rewrite <- H21 in typing. rewrite <- H20 in typing.  inversion typing.
+Lemma multi_erasure_H_tm_equal : forall t, 
+    valid_syntax t ->
+   erasure_H_fun (erasure_H_fun t) = (erasure_H_fun t).
+  Proof with eauto.  induction t; try (unfold erasure_H_fun; auto;fail); try (fold erasure_H_fun; rewrite IHt; auto; fail);
+ try (fold erasure_H_fun; rewrite IHt1; rewrite IHt2; auto; fail).
+ - assert (return_free t = true \/ return_free t = false). apply exclude_middle_return_t. destruct H.
+  + unfold erasure_H_fun. rewrite H. auto. 
+  +  unfold erasure_H_fun. rewrite H. fold erasure_H_fun. intro. 
+      assert (return_free(erasure_H_fun (t)) = false). apply erasure_H_fun_preserve_return_free_false; auto. 
+      inversion H0;  auto. rewrite H1. assert (erasure_H_fun (erasure_H_fun t) = erasure_H_fun t). apply IHt.
+      inversion H0. auto. rewrite H2.  auto. 
+ -  intro. unfold erasure_H_fun. fold erasure_H_fun.
+    assert (return_free t1 = true \/ return_free t1= false). apply exclude_middle_return_t. destruct H0.
+    rewrite H0.
+    assert (return_free t2 = true \/ return_free t2= false). apply exclude_middle_return_t. destruct H1.
+    rewrite H1. auto. rewrite H1. unfold erasure_H_fun.  fold erasure_H_fun. rewrite H0. 
+    assert (return_free(erasure_H_fun (t2)) = false). apply erasure_H_fun_preserve_return_free_false; auto. 
+    inversion H. apply surface_syntax_is_valid_syntax. auto. auto. rewrite H2.  inversion H.  
+    apply  surface_syntax_is_valid_syntax in H7. apply IHt2 in H7. rewrite H7. auto. 
+    apply IHt2 in H7. rewrite H7. auto. rewrite H0. 
+    unfold erasure_H_fun. fold erasure_H_fun.
  
-  intro. inversion H11. destruct H12 with  (x:=x) (cls_name:=cls_name). 
-  auto. auto. 
-  rewrite H_gamma in H3. inversion H3.  rewrite <- H22. auto. 
-  destruct H19. exists x0. auto. 
- Qed. 
-*)
+   assert (return_free(erasure_H_fun (t1)) = false). apply erasure_H_fun_preserve_return_free_false; auto. 
+    inversion H. auto.  apply value_is_valid_syntax. auto.  rewrite H1. 
+    inversion H. apply IHt1 in H4.  rewrite H4.  auto. apply value_is_valid_syntax in H4. 
+    apply IHt1 in H4.  rewrite H4. auto.  
+ - assert (return_free t = true \/ return_free t = false). apply exclude_middle_return_t. destruct H.
+  + unfold erasure_H_fun. rewrite H. auto. 
+  +  unfold erasure_H_fun. rewrite H. fold erasure_H_fun. intro. 
+      assert (return_free(erasure_H_fun (t)) = false). apply erasure_H_fun_preserve_return_free_false; auto. 
+      inversion H0;  auto. rewrite H1. assert (erasure_H_fun (erasure_H_fun t) = erasure_H_fun t). apply IHt.
+      inversion H0. auto. rewrite H2.  auto. 
+ - assert (return_free t = true \/ return_free t = false). apply exclude_middle_return_t. destruct H.
+  + unfold erasure_H_fun. rewrite H. auto. 
+  +  unfold erasure_H_fun. rewrite H. fold erasure_H_fun. intro. 
+      assert (return_free(erasure_H_fun (t)) = false). apply erasure_H_fun_preserve_return_free_false; auto. 
+      inversion H0;  auto. rewrite H1. assert (erasure_H_fun (erasure_H_fun t) = erasure_H_fun t). apply IHt.
+      inversion H0. auto. rewrite H2.  auto. 
+ - assert (return_free t = true \/ return_free t = false). apply exclude_middle_return_t. destruct H.
+  + unfold erasure_H_fun. rewrite H. auto. 
+  +  unfold erasure_H_fun. rewrite H. fold erasure_H_fun. intro. 
+      assert (return_free(erasure_H_fun (t)) = false). apply erasure_H_fun_preserve_return_free_false; auto. 
+      inversion H0;  auto. rewrite H1. assert (erasure_H_fun (erasure_H_fun t) = erasure_H_fun t). apply IHt.
+      inversion H0. auto. rewrite H2.  auto. 
+ - assert (return_free t = true \/ return_free t = false). apply exclude_middle_return_t. destruct H.
+  unfold erasure_H_fun. rewrite H. auto.   unfold erasure_H_fun. rewrite H. fold erasure_H_fun. intro. 
+      assert (return_free(erasure_H_fun (t)) = false). apply erasure_H_fun_preserve_return_free_false; auto. 
+      inversion H0;  auto. rewrite H1. assert (erasure_H_fun (erasure_H_fun t) = erasure_H_fun t). apply IHt.
+      inversion H0. auto. rewrite H2.  auto. 
+ - assert (return_free t = true \/ return_free t = false). apply exclude_middle_return_t. destruct H.
+  + unfold erasure_H_fun. rewrite H. auto. 
+  +  unfold erasure_H_fun. rewrite H. fold erasure_H_fun. intro. 
+      assert (return_free(erasure_H_fun (t)) = false). apply erasure_H_fun_preserve_return_free_false; auto. 
+      inversion H0;  auto. rewrite H1. assert (erasure_H_fun (erasure_H_fun t) = erasure_H_fun t). apply IHt.
+      inversion H0. auto. rewrite H2.  auto. 
+ -  intro. unfold erasure_H_fun. fold erasure_H_fun.
+    assert (return_free t1 = true \/ return_free t1= false). apply exclude_middle_return_t. destruct H0.
+    rewrite H0.
+    assert (return_free t2 = true \/ return_free t2= false). apply exclude_middle_return_t. destruct H1.
+    rewrite H1. auto. rewrite H1. unfold erasure_H_fun.  fold erasure_H_fun. rewrite H0. 
+    assert (return_free(erasure_H_fun (t2)) = false). apply erasure_H_fun_preserve_return_free_false; auto. 
+    inversion H. apply surface_syntax_is_valid_syntax. auto. auto. rewrite H2.  inversion H.  
+    apply  surface_syntax_is_valid_syntax in H7. apply IHt2 in H7. rewrite H7. auto. 
+    apply IHt2 in H7. rewrite H7. auto. rewrite H0. 
+    unfold erasure_H_fun. fold erasure_H_fun.
+ 
+   assert (return_free(erasure_H_fun (t1)) = false). apply erasure_H_fun_preserve_return_free_false; auto. 
+    inversion H. auto.  apply value_is_valid_syntax. auto.  rewrite H1. 
+    inversion H. apply IHt1 in H4.  rewrite H4.  auto. apply value_is_valid_syntax in H4. 
+    apply IHt1 in H4.  rewrite H4. auto.  
+ -  intro. unfold erasure_H_fun. fold erasure_H_fun.
+    assert (return_free t1 = true \/ return_free t1= false). apply exclude_middle_return_t. destruct H0.
+    rewrite H0.
+    assert (return_free t2 = true \/ return_free t2= false). apply exclude_middle_return_t. destruct H1.
+    rewrite H1. auto. rewrite H1. unfold erasure_H_fun.  fold erasure_H_fun.  apply IHt2. 
+    inversion H.   apply surface_syntax_is_valid_syntax. auto. auto.
+rewrite H0. 
+    unfold erasure_H_fun. fold erasure_H_fun.
+ 
+   assert (return_free(erasure_H_fun (t1)) = false). apply erasure_H_fun_preserve_return_free_false; auto. 
+    inversion H. auto.  apply value_is_valid_syntax. auto.  rewrite H1. 
+    inversion H. apply IHt1 in H4.  rewrite H4.  auto. apply value_is_valid_syntax in H4. 
+    apply IHt1 in H4.  rewrite H4. auto.
+-   unfold erasure_H_fun.  fold erasure_H_fun. intro.  
 
-(*field write changes the objects in the heap, such field write should preserve the wfe of stack *)
-Lemma update_field_preserve_stack_wfe : 
-  forall CT o s h h' F F' cls_def lb lb' clsT field_defs method_defs,
-  wfe_stack CT h s ->
-  wfe_heap CT h ->
-  wfe_heap CT h' ->
-  Some (Heap_OBJ cls_def F lb) = lookup_heap_obj h o ->
-  cls_def = class_def clsT field_defs method_defs ->
-  Some cls_def = CT clsT ->
-  h' = (update_heap_obj h o
-           (Heap_OBJ cls_def F' lb')) ->
-  wfe_stack CT h' s.
-Proof with auto. 
-  intros CT o s h h' F F' cls_def lb lb' clsT field_defs method_defs.
-  intro wfe_s. intro wfe_h. intro wfe_h'. intro Ho. intro Hcls_def. intro Hct.
-  intro Hy. 
-
-  induction wfe_s. 
-
-  (*s=nil*)
-  apply main_stack_wfe with (s:=(Labeled_frame lb1 empty_stack_frame :: nil)) (lb:=lb1). 
-  auto.  auto. auto. 
-
-  apply stack_wfe with (s':=s')  (lb:=lb0) (sf:=sf) ; auto.
-  inversion H1. 
-  apply stack_frame_wfe with (h:=h') (lsf:= (Labeled_frame lb0 sf)) (sf:=sf) (lb:=lb0) (ct:=ct).
-  auto. intros.  destruct H3 with (x:=x) (c:=c) (v:=v). auto. inversion H2. 
-  rewrite <- H10. auto. auto. 
-
-  destruct H8 as [o']. right. exists o'. destruct H8. split. auto. 
-  case_eq (beq_oid o' o).   intro. 
-  apply beq_oid_equal in H10. rewrite H10. 
-exists F'. exists lb'. exists field_defs. exists method_defs. split;auto.  
-  destruct H9 as [F0]. destruct H9 as [lo0]. destruct H9 as [field_defs0].
-  destruct H9 as [method_defs0]. destruct H9.
-  rewrite H10 in H9. rewrite H9 in Ho. inversion Ho. rewrite Hcls_def in H13.
-  inversion H13.   
-  assert (Some (Heap_OBJ cls_def F' lb') = lookup_heap_obj h' o).
-  apply lookup_updated with (o:=o) (ho:=(Heap_OBJ cls_def F' lb')) 
-          (ho':=(Heap_OBJ (class_def c field_defs0 method_defs0) F0 lo0))
-          (h':=h') (h:=h); auto. rewrite <-Hcls_def in H13. rewrite <- H13. auto.  
-
-  destruct H9 as [F0]. destruct H9 as [lo0]. destruct H9 as [field_defs0].
-  destruct H9 as [method_defs0]. destruct H9.
-  rewrite H10 in H9. rewrite H9 in Ho. inversion Ho. rewrite Hcls_def in H13.
-  inversion H13.   auto.
-
-  intro.   
-  destruct H9 as [F0]. destruct H9 as [lo0]. destruct H9 as [field_defs0].
-  destruct H9 as [method_defs0]. destruct H9.
-  exists F0. exists lo0. exists field_defs0. exists method_defs0. split;auto.  
-  assert (Some (Heap_OBJ (class_def c field_defs0 method_defs0) F0 lo0) = lookup_heap_obj h' o').
-  apply lookup_updated_not_affected with (o:=o) 
-        (ho':=(Heap_OBJ (class_def c field_defs0 method_defs0) F0 lo0))
-        (h:=h) (h':=h') (o':=o') (ho:=(Heap_OBJ cls_def F' lb') ); auto. 
-  intro contra. rewrite contra in H10. 
-  assert (beq_oid o o = true). apply beq_oid_same. rewrite H12 in H10. inversion H10.
-  auto.  
+assert (return_free t = true \/ return_free t = false). apply exclude_middle_return_t. destruct H0.
+  + rewrite H0. unfold erasure_H_fun.  auto. 
++ rewrite H0. unfold erasure_H_fun. fold erasure_H_fun. 
+      assert (return_free(erasure_H_fun (t)) = false). apply erasure_H_fun_preserve_return_free_false; auto. 
+      inversion H;  auto. rewrite H1. assert (erasure_H_fun (erasure_H_fun t) = erasure_H_fun t). apply IHt. 
+      inversion H. auto. rewrite H2.  auto.
+ - assert (return_free t = true \/ return_free t = false). apply exclude_middle_return_t. destruct H.
+  + unfold erasure_H_fun. rewrite H. auto. 
+  +  unfold erasure_H_fun. rewrite H. fold erasure_H_fun. intro. 
+      assert (return_free(erasure_H_fun (t)) = false). apply erasure_H_fun_preserve_return_free_false; auto. 
+      inversion H0;  auto. apply value_is_valid_syntax. auto. 
+      rewrite H1. assert (erasure_H_fun (erasure_H_fun t) = erasure_H_fun t). apply IHt.
+      inversion H0. auto.  apply value_is_valid_syntax. auto.  rewrite H2.  auto.
+  - assert (return_free t = true \/ return_free t = false). apply exclude_middle_return_t. destruct H.
+  + unfold erasure_H_fun. rewrite H. auto. 
+  +  unfold erasure_H_fun. rewrite H. fold erasure_H_fun. intro. 
+      assert (return_free(erasure_H_fun (t)) = false). apply erasure_H_fun_preserve_return_free_false; auto. 
+      inversion H0;  auto. apply value_is_valid_syntax. auto. 
+      rewrite H1. assert (erasure_H_fun (erasure_H_fun t) = erasure_H_fun t). apply IHt.
+      inversion H0. auto.  apply value_is_valid_syntax. auto.  rewrite H2.  auto.
 Qed. 
 
 
+Lemma lookup_erasure_heap : forall h o cls F lb, 
+   lookup_heap_obj h o = Some (Heap_OBJ cls F lb) -> 
+   flow_to lb L_Label = true -> 
+   exists F', lookup_heap_obj (erasure_heap h) o = Some (Heap_OBJ cls F' lb) .
+Proof.      intros. induction h. unfold lookup_heap_obj in H. inversion H. 
+      induction a. 
+      case_eq ( beq_oid o o0). unfold lookup_heap_obj.  intro. 
+      unfold erasure_heap. rename h0 into ho. induction ho. unfold  lookup_heap_obj in H. rewrite H1 in H. 
+      inversion H. subst. rewrite H0. rewrite H1. exists (fun x : id => erasure_obj_null (F x) ((o0, Heap_OBJ cls F lb) :: h)). auto.
+      intro. unfold  lookup_heap_obj in H. rewrite H1 in H. fold  lookup_heap_obj in H. 
+      unfold erasure_heap. induction h0. fold erasure_heap.  unfold lookup_heap_obj. 
+      case_eq (flow_to l0 L_Label). intro. rewrite H1. fold lookup_heap_obj.  apply IHh. auto. 
+      intro. fold lookup_heap_obj. apply IHh. auto. 
+Qed. 
 
-(* reduction preserve well-form of stack and heap *)
-Theorem reduction_preserve_wfe : forall CT s s' h h' sigma sigma',
-    sigma = SIGMA s h ->  wfe_heap CT h -> wfe_stack CT h s -> field_wfe_heap CT h -> 
-     sigma' = SIGMA s' h' -> 
-    forall t T, has_type CT s h t T -> 
-     forall t',  Config CT t sigma ==> Config CT t' sigma' ->
-    wfe_heap CT h' /\ wfe_stack CT h' s' /\  field_wfe_heap CT h'.
-Proof. 
 
-    intros CT s s' h h' sigma sigma'. 
-    intro H_sigma. intro H_wfe_heap. intro H_wfe_stack. intro H_field_wfe.  
-    induction t. (*induction on the terms *)
-  (* (Tvar i) *)
-  + intro T. intro typing. intro t'.  intro step. inversion step.
-      rewrite H_sigma in H4. rewrite H in H4. inversion H4. 
-      rewrite <- H10. rewrite <- H11.
-      split; auto. 
+Lemma lookup_erasure_heap_none : forall h o, 
+   lookup_heap_obj h o = None -> 
+   lookup_heap_obj (erasure_heap h) o = None.
+Proof. induction h. intros. auto. unfold lookup_heap_obj. unfold erasure_heap. induction a. intro o0. 
+  case_eq (beq_oid o0 o). intros. inversion H0. intro. fold lookup_heap_obj. fold erasure_heap. induction h0.  
+   case_eq (flow_to l0 L_Label). intro. unfold lookup_heap_obj. rewrite H. fold lookup_heap_obj. apply IHh.
+  intro. apply IHh. 
+Qed.  
 
-  (* null *)
-  + intro T. intro typing. intro t'.  intro step. inversion step.
-  (* field access *)
-  + intro T. intro typing. intro t'.  intro step. 
-      inversion step.  inversion typing.
-      apply IHt with (T:=(classTy clsT)) (t':=e'). auto. auto.
-      (*subgoal#2 *)      
-      inversion typing. subst. inversion H11. inversion H6. 
-      split. rewrite <- H3. auto.
-      split. rewrite <- H3. rewrite <- H2. 
-      remember (join_label lb (current_label (SIGMA s h))) as lb'.
-      unfold update_current_label.
-      inversion H_wfe_stack. apply main_stack_wfe with (s:=s1) (lb:=lb0). auto. auto. auto. auto.  
-      rewrite H. 
+Lemma erasure_heap_no_H_label : forall h cls F lb,
+  forall o, lookup_heap_obj (erasure_heap h) o = Some (Heap_OBJ cls F lb) -> 
+     flow_to lb L_Label = true.
+Proof. induction h. intros. unfold  erasure_heap in H. unfold lookup_heap_obj in H. inversion H.
+   induction a. intros. unfold  erasure_heap in H. unfold lookup_heap_obj in H. induction h0.  
+    case_eq (flow_to l0 L_Label). intro. rewrite H0 in H. case_eq (beq_oid o0 o). intro. rewrite H1 in H. inversion H.
+    rewrite H5 in H0. auto. intro. rewrite H1 in H. fold erasure_heap in H.  fold lookup_heap_obj in H.
+    apply IHh with cls F o0; auto.  intro. rewrite H0 in H.  fold erasure_heap in H.  fold lookup_heap_obj in H.
+    apply IHh with cls F o0; auto.
+Qed. 
 
-      apply stack_wfe with (s':=s'0) 
-                                                      (lb:=lb') (sf:=sf); auto.
-      inversion H9. apply stack_frame_wfe with (lb:=lb') (sf:=sf); auto.
-      inversion H16. apply H17. 
-    
-      rewrite <- H3. auto.  
-
-  (* method call *)
-  + 
-      intro T. intro typing. intro t'.  intro step. 
-      inversion step.  
-      (*subgoal 1*)
-      inversion typing. apply IHt1 with (T:=(classTy T0)) (t':=e'); auto.
-     
-      (*subgoal 2*)
-      inversion typing. apply IHt2 with (T:=(classTy arguT)) (t':=e'); auto.
-      (*subgoal 3*)
-      subst. inversion H16. split. auto. split.
-      inversion H7. rewrite <- H3. rewrite <- H2.
-apply stack_wfe with (s':=s) (lb:=(current_label (SIGMA s h)))
-         (sf:=(sf_update empty_stack_frame arg_id t2 cls_a)); auto.
-apply stack_frame_wfe with (sf:=(sf_update empty_stack_frame arg_id t2 cls_a)) 
-          (lb:= (current_label (SIGMA s h))); auto.
-      unfold  sf_update. intros. 
-
-      case_eq (beq_id arg_id x).  intro.
-     rewrite H4 in H. inversion H. rewrite <- H6. 
-      inversion H10.
-      right.  exists o0. split; auto.     
-      inversion typing. inversion H15. subst.
-      admit. 
-
-      inversion typing. rewrite <- H5 in H17. inversion H17. 
-      left. auto.
-      inversion typing. rewrite <- H5 in H17. inversion H17. 
-      inversion typing. rewrite <- H12 in H18. inversion H18.
-      inversion typing. rewrite <- H12 in H18. inversion H18. 
-admit. auto. admit.
-
-(* new expression *)
-+ intro T. intro typing. intro t'.  intro step. inversion step. 
-    subst. inversion typing. 
-    remember (class_def c field_defs method_defs) as cls_def.
-(*
-    assert (CT c = Some cls_def).
-    apply H5 with (field_defs:=field_defs) (method_defs:=method_defs) (cls_def:=cls_def).
-    auto. 
-*)
-    inversion H6. inversion H12.
-    rewrite <- H11. split.  
-    remember (current_label (SIGMA s h)) as lb. 
-    apply extend_heap_preserve_heap_wfe with (h:=h) (o:=(get_fresh_oid h0))
-                          (c:=c) (field_defs:=field_defs)
-                          (method_defs:=method_defs) (lb:=lb).
-   auto.  rewrite H9. auto. apply fresh_oid_heap with (CT:=CT) .
-   auto. rewrite H9. auto. rewrite <- Heqcls_def. auto. auto.
-   rewrite  H9. auto. rewrite  Heqcls_def in H11. auto.
-  split. 
- (* extend heap with new object preserve wfe *) 
-    rewrite <- H8.
-    remember (Heap_OBJ cls_def
-           (init_field_map (find_fields cls_def) empty_field_map)
-           (current_label (SIGMA s h))) as heap_obj.
-    apply extend_heap_preserve_stack_wfe with (h:=h0) (o:= (get_fresh_oid h0))
-                         (heap_obj:=heap_obj).
-     rewrite <- H9.  auto.       rewrite <- H9.  auto.  auto. auto. 
-     
-     apply extend_heap_preserve_heap_wfe with (h:=h0) (o:=(get_fresh_oid h0)) 
-                (c:=c) (field_defs:=field_defs) (method_defs:=method_defs) (lb:=(current_label (SIGMA s h))).
-     rewrite <- H9.  auto.       rewrite <- H9.  auto.
-     apply fresh_oid_heap with (CT:=CT).  
-     rewrite <- H9.  auto.       rewrite <- H9.  auto.
-     (*destruct H5 with (field_defs:=field_defs) (method_defs:=method_defs) (cls_def:= (class_def c field_defs method_defs)).*)
-     auto. auto. 
-     rewrite <- Heqcls_def. auto.
-    rewrite Heqheap_obj in H11. 
-      rewrite Heqcls_def in H11. unfold find_fields in H11. auto. 
-
-    
-    apply extend_heap_preserve_field_wfe with (CT:=CT) (h:=h0) (h':=h') (o:=(get_fresh_oid h0))   
-                      (c:=c) (field_defs:=field_defs) (method_defs:=method_defs) (lb:=(current_label (SIGMA s h))).
-
-    rewrite <- H9. auto.  auto. rewrite <- H9. auto. apply fresh_oid_heap with (CT:=CT) . 
-    auto. auto.  rewrite Heqcls_def in H5. auto. rewrite <-Heqcls_def. 
-    rewrite Heqcls_def in H11.  rewrite Heqcls_def. unfold find_fields in H11.  auto. 
-
-(* label value*)
-+ intro T. intro typing. intro t'.  intro step. inversion step. 
-
-(* label data *)
-+ intro T. intro typing. intro t'.  intro step. 
-    inversion step. inversion typing.
-    apply IHt with (T:=T0) (t':=e'); auto.
-
-    subst. inversion H6. rewrite <- H0. rewrite <- H2.
-    intuition.
-
-(* unlabel *)
-+ intro T. intro typing. intro t'.  intro step. 
-    inversion step. inversion typing.
-    apply IHt with (T:=(LabelelTy T)) (t':=e'); auto.
-
-    subst. inversion H8. split. auto. 
-    inversion H5. rewrite <- H2. rewrite <- H3.
-    split.  
-    apply change_label_preserve_wfe; auto.
-    auto. 
-
-(* label of *)
-+ intro T. intro typing. intro t'.  intro step. 
-    inversion step. inversion typing.
-    apply IHt with (T:=(LabelelTy T0)) (t':=e'); auto.
-
-    subst. inversion H5. rewrite <- H0. rewrite <- H1. 
-    split; auto.
-
-(* unlabelopaque *)
-+ intro T. intro typing. intro t'.  intro step. 
-    inversion step. inversion typing.
-    apply IHt with (T:=(OpaqueLabeledTy T)) (t':=e'); auto.
-
-    rewrite H_sigma in H8. rewrite H in H8. unfold get_heap in H8.
-    inversion H8. split. auto.
-   split.
-    rewrite H7.
-    rewrite H_sigma in H5. inversion H5. rewrite <- H12. rewrite <- H13.
-    apply change_label_preserve_wfe; auto. 
-    auto.
-
-(* opaque call *)
-+ intro T. intro typing. intro t'.  intro step. 
-    inversion step. 
-    (*subgoal 1*)
-    inversion typing. apply IHt with (T:=T0) (t':=e'); auto.
-     
-    (*subgoal 2*)
-    inversion typing. apply ST_return1 in H1. 
-    apply IHt with (T:=T0) (t':=Return e'); auto.
-    rewrite <- H2. auto. 
-     (*subgoal 3*)
-      rewrite H_sigma in H5. rewrite H in H5.  inversion H5.
-      rewrite <- H8 . rewrite <- H9. auto. 
-     (*subgoal 4*)
-    
-     rewrite H in H9. inversion H9. rewrite H_sigma in H5. 
-     inversion H5. rewrite <- H15. split. auto.
-    split. 
-     rewrite H14 in H_wfe_stack. inversion H_wfe_stack. 
-     rewrite <- H19 in H6.  inversion H6. rewrite H22 in H7. intuition. 
-
-     rewrite H6 in H11. inversion H11. auto.
-    auto. 
-(* skip *)
-+ intro T. intro typing. intro t'.  intro step. 
-    inversion step.
-
-(* assignment *)
-+ intro T. intro typing. intro t'.  intro step. 
-    inversion step. inversion typing.
-    apply IHt with (T:=T0) (t':=e'). auto. auto.
-
-   rewrite H_sigma in H7. rewrite H in H9.  inversion H7. inversion H9. 
-    rewrite <- H12. split. auto. 
-    rewrite H11 in H_wfe_stack.    inversion typing. split. 
-    apply update_stack_preserve_wfe with (s:=s0) (i:=i) (v:=t) (T:=T0) (ctx:=ctx) (gamma':=Gamma').
-    auto. auto. auto. auto.  auto. auto.
-   auto. 
-
-(* field write *)
-+ intro T. intro typing. intro t'.  intro step. 
-  (*
-    inversion step. 
-     (*subgoal 1*)
-    inversion typing.    apply IHt1 with (T:=(classTy clsT)) (t':=e1'); auto.
-    (*subgoal 2*)
-    inversion typing.    apply IHt2 with (T:=(classTy cls')) (t':=e2'); auto.  
-    (*subgoal 3*)
-    (*wfe_stack CT gamma h *)
-    assert (wfe_heap CT gamma h' ).
-    inversion typing. rewrite H_sigma in H7. inversion H7. 
-    rewrite <- H1 in H17. inversion H17. 
-    rewrite <- H27 in H7.
-    destruct H35 as [F0]. destruct H35 as [lo0].
-    rewrite H35 in H7. inversion H7. rewrite <- H23 in H29. inversion H29.
-    destruct H34 as [field_defs]. destruct H34 as [method_defs].
-    apply field_write_preserve_wfe_heap with (CT:=CT) (o:=o) 
-            (gamma:=gamma) (h:=h0) (h':=h') (i:=i) (F:=F) (F':=F') (cls_def:=cls)
-              (cls':=cls') (lb:=lb) (lb':=l')  (clsT:=clsT) (field_defs:=field_defs) (method_defs:=method_defs).
-   rewrite <- H27. auto. rewrite <- H35 in H7. rewrite <- H27. auto.
-   rewrite H37. rewrite H40. auto.
-   rewrite <- H37 in H34. auto.
-   rewrite H37. rewrite H40. auto.
-   rewrite H in H11. inversion H11. auto. 
-   split; auto. 
-
-   (*wfe_stack CT gamma h' s'*)
-   split. rewrite H in H11. inversion H11. rewrite <- H16. 
-   inversion typing. rewrite H_sigma in H6. inversion H6. rewrite <- H29. 
-    rewrite <- H0 in H19. inversion H19. 
-   destruct H38 as [F0]. destruct H38 as [lo0]. 
-   destruct H37 as [field_defs0]. destruct H37 as [method_defs0].
-   rewrite <- H26 in  H32. inversion H32. 
-   apply update_field_preserve_stack_wfe with (CT:=CT) (o:=o) (gamma:=gamma) 
-          (s:=s) (h:=h) (h':=h') (F:=F) (F':=F') (cls_def:=cls_def) (lb:=lb) (lb':=l') 
-          (clsT:=clsT) (field_defs:=field_defs0) (method_defs:=method_defs0); auto.
-  rewrite <- H30 in H7. rewrite H38 in H7. inversion H7. rewrite <- H40. auto. 
-  rewrite <- H40. auto.  rewrite <- H16 in H10. rewrite <- H30 in H10.
-  rewrite <- H30 in H7. rewrite H38 in H7. inversion H7.
-  rewrite <- H40. rewrite <- H41. auto.  
-  assert (field_wfe_heap CT h').
-  rewrite H in H11. inversion H11. rewrite <- H16. 
-   inversion typing. rewrite H_sigma in H6. inversion H6. 
-    rewrite <- H0 in H19. inversion H19. 
-   destruct H38 as [F0]. destruct H38 as [lo0]. 
-   destruct H37 as [field_defs0]. destruct H37 as [method_defs0].
-
-    apply field_write_preserve_field_wfe with (CT:=CT) (gamma:=gamma) (s:=s) (h:=h) 
-          (h':=h') (o:=o) (field_defs:=field_defs0) (method_defs:=method_defs0) 
-          (lb:=lo0) (lb':=l') (v:=v) (i:=i) (F:=F0) (cls_def:=cls_def0) (clsT:=clsT) 
-          (cls':=cls'); auto. 
-   rewrite H2. auto.
-   assert (cls_def=cls_def0). 
-   rewrite <- H32 in H26. inversion H26.  rewrite <- H40.  auto. 
-  rewrite <- H39. auto. 
-   rewrite <- H2 in H24. auto. 
-  
-  rewrite <- H30 in H7. rewrite H38 in H7. inversion H7.
-  rewrite <- H40. rewrite <- H41. rewrite H2. rewrite <-H8. 
-  rewrite <- H30 in H10. rewrite <- H16 in H10.  auto.  auto. 
-(*subgoal 4 v=unlabelOpaque (v_opa_l v lb)*)
-    (*wfe_stack CT gamma h *)
-    assert (wfe_heap CT gamma h' ).
-    inversion typing. rewrite H_sigma in H7. inversion H7. 
-    rewrite <- H0 in H17. inversion H17. 
-    rewrite <- H28 in H8.
-    destruct H36 as [F0]. destruct H36 as [lo0].
-    rewrite H36 in H8. inversion H8. rewrite <- H24 in H30. inversion H30.
-    destruct H35 as [field_defs]. destruct H35 as [method_defs].
-    apply field_write_preserve_wfe_heap with (CT:=CT) (o:=o) 
-            (gamma:=gamma) (h:=h0) (h':=h') (i:=i) (F:=F) (F':=F') (cls_def:=cls)
-              (cls':=cls') (lb:=lo) (lb':=l')  (clsT:=clsT) (field_defs:=field_defs) (method_defs:=method_defs).
-   rewrite <- H28. auto. rewrite <- H36 in H8. rewrite <- H28. auto.
-   rewrite H38. rewrite H41. auto.
-   rewrite <- H38 in H35. auto.
-   rewrite H38. rewrite H41. auto.
-   rewrite H in H12. inversion H12. auto. 
-   split; auto. 
-
-   (*wfe_stack CT gamma h' s'*)
-   split. rewrite H in H12. inversion H12. rewrite <- H17. 
-   inversion typing. rewrite H_sigma in H7. inversion H7. rewrite <- H30. 
-    rewrite <- H0 in H20. inversion H20. 
-   destruct H39 as [F0]. destruct H39 as [lo0]. 
-   destruct H38 as [field_defs0]. destruct H38 as [method_defs0].
-   rewrite <- H27 in  H33. inversion H33. 
-   apply update_field_preserve_stack_wfe with (CT:=CT) (o:=o) (gamma:=gamma) 
-          (s:=s) (h:=h) (h':=h') (F:=F) (F':=F') (cls_def:=cls_def) (lb:=lo) (lb':=l') 
-          (clsT:=clsT) (field_defs:=field_defs0) (method_defs:=method_defs0); auto.
-  rewrite <- H31 in H8. rewrite H39 in H8. inversion H8. rewrite <- H41. auto. 
-  rewrite <- H41. auto.  rewrite <- H17 in H11. rewrite <- H31 in H11.
-  rewrite <- H31 in H8. rewrite H39 in H8. inversion H8.
-  rewrite <- H41. rewrite <- H42. auto.  
-  assert (field_wfe_heap CT h').
-  rewrite H in H12. inversion H12. rewrite <- H17. 
-   inversion typing. rewrite H_sigma in H7. inversion H7. 
-    rewrite <- H0 in H20. inversion H20. 
-   destruct H39 as [F0]. destruct H39 as [lo0]. 
-   destruct H38 as [field_defs0]. destruct H38 as [method_defs0].
-
-    apply field_write_preserve_field_wfe with (CT:=CT) (gamma:=gamma) (s:=s) (h:=h) 
-          (h':=h') (o:=o) (field_defs:=field_defs0) (method_defs:=method_defs0) 
-          (lb:=lo) (lb':=l') (v:=v) (i:=i) (F:=F0) (cls_def:=cls_def0) (clsT:=clsT) 
-          (cls':=cls'); auto. 
-  rewrite H6 in H25. inversion H25. inversion H45.  rewrite <- H31 in H8. 
-    rewrite <-H8 in H39. inversion H39. rewrite <- H39. auto. 
-   rewrite <- H33 in H27. inversion H27.  rewrite <- H41.  auto.
-   rewrite H6 in H25. inversion H25. inversion H45.  auto.  
-    
-  
-  rewrite <- H31 in H8. rewrite H39 in H8. inversion H8.
-  rewrite <- H41. rewrite <- H42. rewrite <- H9. 
-  rewrite <- H17 in H11. rewrite <- H31 in H11. auto. auto. 
-
-  *) admit. 
-(* if *)
-+ intro T. intro typing. intro t'.  intro step. 
-    inversion step. rewrite H_sigma in H8. rewrite H in H8.
-    inversion H8. rewrite <- H13. rewrite <- H14.
-    split; auto.
-    rewrite H_sigma in H8. rewrite H in H8.
-    inversion H8. rewrite <- H13. rewrite <- H14.
-    split; auto. 
-
-(* sequence *)
-+ intro T. intro typing. intro t'.  intro step. 
-    inversion step. inversion typing.
-    apply IHt1 with (T:=T0) (t':=s1'); auto.
-
-    rewrite H_sigma in H6. rewrite H in H6. inversion H6.
-    rewrite <- H8. rewrite <- H9.
-    split;auto.
-
-(* return *)
-+ intro T. intro typing. intro t'.  intro step. 
-    inversion step. inversion typing.
-    apply IHt with (T:=T) (t':=e'); auto.
-
-(*
-inversion H10.
-    rewrite <- H1. split. auto.
-    remember (join_label (get_stack_label lsf) (get_current_label s'0)) as lb'.
-
-    inversion H_wfe_stack.  rewrite <- H12 in H0.  
-    inversion H0. rewrite H15 in H4.
-    intuition. inversion typing. 
-
-    rewrite <-H12 in H18. inversion H18. rewrite H27 in H23. intuition.
-
-    split. subst. inversion H. 
-    apply change_label_preserve_wfe; auto. auto.
-*)admit. 
-
-(* obj id *)
-+ intro T. intro typing. intro t'.  intro step. 
-    inversion step.
-
-(* runtime labeled *)
-+ intro T. intro typing. intro t'.  intro step. 
-    inversion step. 
-
-(* runtime opaque labeled *)
-+ intro T. intro typing. intro t'.  intro step. 
-    inversion step. 
-
+Lemma beq_oid_equal : forall o o0, 
+      beq_oid o o0 = true -> o = o0. 
 Admitted. 
 
-Lemma ct_consist : forall CT CT' t t' sigma sigma', 
-  Config CT t sigma ==> Config CT' t' sigma' -> CT = CT'. 
- Proof.
-   intros. induction t; inversion H; auto. 
+Lemma heap_lookup : forall h h' CT o ho, 
+    wfe_heap CT h ->
+    h = (o, ho) :: h' ->
+    lookup_heap_obj h' o = None.
+  Proof.
+    intros. induction o. inversion H. rewrite <- H2 in H0. inversion H0.
+    subst.  inversion H1. subst. rename h0 into h. destruct H2. 
+    rewrite H0. auto. 
+    destruct H0 as [o']. destruct H0 as [ho']. destruct H0 as [h'']. destruct H0.  induction o'. 
+    apply compare_oid_nat in H2. apply fresh_heap with h'' CT n0 ho'; auto. 
+Qed. 
+
+Lemma lookup_none_in_erasured_heap : forall o h, 
+    lookup_heap_obj h o = None ->
+    lookup_heap_obj (erasure_heap h) o = None.
+Proof. induction h. unfold erasure_heap. auto.
+    intro. induction a. unfold erasure_heap. induction h0.
+    case_eq (flow_to l0 L_Label). intro. fold lookup_heap_obj.
+    fold erasure_heap. unfold lookup_heap_obj. 
+    unfold lookup_heap_obj in H. case_eq (beq_oid o o0). intro. 
+    rewrite H1 in H. inversion H. intro.  rewrite H1 in H. fold lookup_heap_obj in H.
+    fold lookup_heap_obj. apply IHh. auto.
+    intro. fold erasure_heap. unfold lookup_heap_obj in H.
+    case_eq (beq_oid o o0). intro.  rewrite H1 in H. inversion H.
+    intro. rewrite H1 in H. fold lookup_heap_obj in H. apply IHh. auto.
+Qed. 
+
+Lemma lookup_erasure_heap_erasured : forall h o cls F lb CT, 
+       wfe_heap CT h ->
+   lookup_heap_obj h o = Some (Heap_OBJ cls F lb) -> 
+   flow_to lb L_Label = false -> 
+   lookup_heap_obj (erasure_heap h) o = None.
+Proof. induction h. intros. unfold lookup_heap_obj in H0. inversion H0. 
+      induction a. intros. 
+      case_eq ( beq_oid o0 o). intro. unfold lookup_heap_obj. 
+      unfold erasure_heap. rename h0 into ho. induction ho.
+      case_eq (flow_to l0 L_Label). unfold lookup_heap_obj in H0.
+      rewrite H2 in H0. inversion H0. subst. intro. rewrite H1 in H3. inversion H3.
+
+      intro. assert ( lookup_heap_obj h o0 = None). 
+      apply heap_lookup with ((o, Heap_OBJ c f l0) :: h) CT (Heap_OBJ c f l0); auto. 
+      apply beq_oid_equal in H2.
+      rewrite H2. auto.
+      fold lookup_heap_obj. fold erasure_heap.  apply lookup_none_in_erasured_heap.
+      auto.
+     intro.  unfold lookup_heap_obj in H0. 
+     rewrite H2 in H0. fold lookup_heap_obj in H0.
+     unfold lookup_heap_obj. unfold erasure_heap. fold lookup_heap_obj. induction h0. 
+     case_eq (flow_to l0 L_Label). unfold lookup_heap_obj. rewrite H2.  fold lookup_heap_obj.
+     fold erasure_heap. intro.  apply IHh with cls F lb CT; auto.  
+    inversion H. inversion H4. subst. auto.
+     intro.      fold erasure_heap. apply IHh with cls F lb CT. 
+    inversion H. inversion H4. subst. auto. auto. auto.  
+Qed. 
+
+
+Lemma multi_erasure_heap_equal : forall h, 
+   erasure_heap (erasure_heap h) = (erasure_heap h).
+  Proof. intro h.  induction h.  unfold erasure_heap. auto. induction a. rename h0 into ho.  unfold erasure_heap.
+  induction ho. case_eq (flow_to l0 L_Label). 
+  + intro. rewrite H. fold erasure_heap. fold erasure_heap. 
+  assert ((o,
+Heap_OBJ c (fun x : id =>   erasure_obj_null (erasure_obj_null (f x) ((o, Heap_OBJ c f l0) :: h))
+     ((o, Heap_OBJ c  (fun x0 : id => erasure_obj_null (f x0) ((o, Heap_OBJ c f l0) :: h)) l0) :: erasure_heap h)) l0) = 
+        (o, Heap_OBJ c (fun x : id => erasure_obj_null (f x) ((o, Heap_OBJ c f l0) :: h))   l0) ).
+
+  Require Import Coq.Logic.FunctionalExtensionality.
+  assert (forall a, (fun x : id =>   erasure_obj_null (erasure_obj_null (f x) ((o, Heap_OBJ c f l0) :: h))
+     ((o, Heap_OBJ c  (fun x0 : id => erasure_obj_null (f x0) ((o, Heap_OBJ c f l0) :: h)) l0) :: erasure_heap h)) a =  (fun x : id => erasure_obj_null (f x) ((o, Heap_OBJ c f l0) :: h)) a).
+   intro x. 
+   case (f x). induction t; try (unfold erasure_obj_null; auto).
+   rename o0 into o'. remember ((o, Heap_OBJ c f l0) :: h) as h'. fold erasure_obj_null. 
+   ++ remember (erasure_obj_null (Some (ObjId o')) h') as erased_field.
+    unfold erasure_obj_null in Heqerased_field. 
+    assert (forall h o, (exists cls F lb, lookup_heap_obj h o = Some (Heap_OBJ cls F lb) ) 
+      \/ lookup_heap_obj h o = None).
+    intro h0. induction h0.  right. unfold lookup_heap_obj. auto. 
+    intro o0. induction a. case_eq ( beq_oid o0 o1). unfold lookup_heap_obj.  intro. unfold lookup_heap_obj. rewrite H0.
+    rename h1 into ho. induction ho.     left. exists c0. exists f0. exists l1. auto. 
+    intro. unfold lookup_heap_obj. rewrite H0. fold lookup_heap_obj. apply IHh0. 
+    destruct H0 with h' o'. destruct H1 as [cls]. destruct H1 as [F]. destruct H1 as [lb]. 
+    +++  rewrite H1 in Heqerased_field. rewrite H1.
+      case_eq ( flow_to lb L_Label ).  
+    ++++ intro. rewrite H2 in  Heqerased_field. 
+      unfold erasure_obj_null. fold erasure_obj_null.  auto.
+      assert (exists F', lookup_heap_obj (erasure_heap h') o' = Some (Heap_OBJ cls F' lb)).
+      apply lookup_erasure_heap with F. auto. auto.  
+      assert (   ((o, Heap_OBJ c (fun x1 : id => erasure_obj_null (f x1) h') l0) :: (erasure_heap h)) = (erasure_heap h')).
+      remember ( erasure_heap h' ) as erasuedh. 
+      unfold erasure_heap in Heqerasuedh. rewrite Heqh' in Heqerasuedh. rewrite H in Heqerasuedh. fold erasure_heap in Heqerasuedh.
+      rewrite Heqerasuedh. 
+      assert ((fun x1 : id => erasure_obj_null (f x1) h') = (fun x1 : id => erasure_obj_null (f x1) ((o, Heap_OBJ c f l0) :: h))). rewrite Heqh'. auto. 
+      rewrite H4. auto. rewrite H4. destruct H3 as [F']. rewrite H3. rewrite H2. auto. 
+    ++++ intro.  unfold erasure_obj_null. auto.
+    +++ rewrite H1. unfold erasure_obj_null. auto.
+    ++ unfold erasure_obj_null. auto.
+    ++  fold erasure_obj_null. auto.
+   apply functional_extensionality in H0. rewrite H0.  auto. 
+   ++   rewrite IHh. rewrite H0. auto. 
+  + intro. fold erasure_heap. auto.
+Qed.  
+
+Lemma erasure_obj_null_equal : forall h t, 
+  erasure_obj_null (erasure_obj_null t h) h = (erasure_obj_null t h).
+Proof. intros. induction t. induction a; try (unfold erasure_obj_null; auto). 
+      assert (forall h o, (exists cls F lb, lookup_heap_obj h o = Some (Heap_OBJ cls F lb) ) 
+      \/ lookup_heap_obj h o = None).
+    intro h0. induction h0.  right. unfold lookup_heap_obj. auto. 
+    intro o0. induction a. case_eq ( beq_oid o0 o1). unfold lookup_heap_obj.  intro. unfold lookup_heap_obj. rewrite H. 
+     rename h1 into ho. induction ho.     left. exists c. exists f. exists l0. auto. 
+    intro. unfold lookup_heap_obj. rewrite H. fold lookup_heap_obj. apply IHh0. 
+    destruct H with h o. destruct H0 as [cls]. destruct H0 as [F]. destruct H0 as [lb]. rewrite H0.
+    case_eq (flow_to lb L_Label ). intro. rewrite H0. rewrite H1. auto. 
+   intro. auto. 
+  rewrite H0. auto. 
+  (unfold erasure_obj_null; auto).
+Qed. 
+
+Lemma multi_erasure_stack_equal : forall s h, 
+   erasure_stack (erasure_stack s h) h = (erasure_stack s h).
+Proof. intros.  induction s. 
+  + unfold erasure_stack. auto.
+  + unfold erasure_stack. fold erasure_stack. induction a. unfold erasure_stack. 
+      assert ( forall a,  (erasure_obj_null (erasure_obj_null (s0 a) h) h) = erasure_obj_null (s0 a) h).
+      intro a. apply erasure_obj_null_equal. 
+      assert ( forall x,  (fun x : id => erasure_obj_null (erasure_obj_null (s0 x) h) h) x  = (fun x : id => erasure_obj_null (s0 x) h) x).
+      intro x.  apply H. apply functional_extensionality in H0.  rewrite H0.  auto. 
+Qed. 
+
+Lemma erasure_obj_null_equal_erasure_h : forall h t, 
+    erasure_obj_null (erasure_obj_null t h) (erasure_heap h) = (erasure_obj_null t h).
+    Proof. intros. induction t. induction a; try (unfold erasure_obj_null; auto). 
+        assert (forall h o, (exists cls F lb, lookup_heap_obj h o = Some (Heap_OBJ cls F lb) ) 
+        \/ lookup_heap_obj h o = None).
+      intro h0. induction h0.  right. unfold lookup_heap_obj. auto. 
+      intro o0. induction a. case_eq ( beq_oid o0 o1). unfold lookup_heap_obj.  intro. unfold lookup_heap_obj. rewrite H. 
+       rename h1 into ho. induction ho.     left. exists c. exists f. exists l0. auto. 
+      intro. unfold lookup_heap_obj. rewrite H. fold lookup_heap_obj. apply IHh0. 
+      destruct H with h o. destruct H0 as [cls]. destruct H0 as [F]. destruct H0 as [lb]. rewrite H0.
+      case_eq (flow_to lb L_Label ). intro. 
+      assert (exists F', lookup_heap_obj (erasure_heap h) o = Some (Heap_OBJ cls F' lb)).
+      apply lookup_erasure_heap with F. auto. auto. destruct H2 as [F']. rewrite H2. rewrite H1. auto. 
+     intro. auto. 
+    rewrite H0. auto. 
+    (unfold erasure_obj_null; auto).
   Qed. 
 
-Theorem progress : forall t T sigma CT s h, 
-  field_wfe_heap CT h -> sigma = SIGMA s h ->  wfe_heap CT h -> wfe_stack CT h s -> 
-  has_type CT s h t T -> value t \/ (exists config', Config CT t sigma ==> config').
-Proof with auto.
-  intros  t T sigma CT s h.
-  intro wfe_fields. intros. 
-
-  induction H2.  
-(* TVar *)
-- right. 
-      inversion H1. 
-          + subst. exists  (Config CT v (SIGMA (Labeled_frame lb sf :: s') h)).
-      apply ST_var with 
-      (x:=x) (lb:=lb) (sf:=sf) (lsf:=Labeled_frame lb sf) (v:=v) (c:=c)
-      (sigma:=(SIGMA (Labeled_frame lb sf :: s') h)) (s':=s') 
-        (s:=(Labeled_frame lb sf :: s')) (h:=h); auto.
-          +  subst. exists  (Config CT v (SIGMA (Labeled_frame lb sf :: s') h)).
-      apply ST_var with 
-      (x:=x) (lb:=lb) (sf:=sf) (lsf:=Labeled_frame lb sf) (v:=v) (c:=c)
-      (sigma:=(SIGMA (Labeled_frame lb sf :: s') h)) (s':=s') 
-        (s:=(Labeled_frame lb sf :: s')) (h:=h); auto.
-
-
-(* null *)
--  left. apply v_null.
-(* field access *)
-- right. 
-    destruct IHhas_type. auto. auto. auto. auto.  
-    + inversion H6. rewrite <- H7 in H2. 
-      assert (exists F lb, lookup_heap_obj h o = Some (Heap_OBJ cls_def F lb)).
-       apply wfe_oid with (o:=o) (ct:=CT) (s:=s) (h:=h) 
-                          (sigma:=sigma) (cls_def:=cls_def) (cn:=clsT). auto. auto. auto. auto. 
-       destruct H8 as [F]. destruct H8 as [lb].
-
-      assert (exists v, F(f) = Some v).
-      apply field_val_of_heap_obj with (h:=h) (o:=o)  (CT:=CT) 
-                              (cls_def:=cls_def) (F:=F) (lo:=lb) (cls':=cls') (fields:=fields_def).
-      auto. auto. auto. auto. auto. 
-
-
-
-      destruct H9 as [v].
-      remember (join_label lb (current_label sigma)) as l'.
-      remember (update_current_label s l') as s'.
-      remember (SIGMA s' h) as sigma'.
-            exists (Config CT v sigma'). apply ST_fieldRead2 with 
-            (sigma:=sigma) (sigma':=sigma') (o:=o) (s:=s) (h:=h) (fname:=f) (lb:=lb) 
-            (cls:=cls_def) (fields:=F) (v:=v) (l':=l') (s':=s'). 
-            auto. auto. auto.            auto. auto. auto. 
-    (* skip *)
-    rewrite <- H7 in H2. inversion H2. 
-    (* call field access on null point object *)
-    exists Error_state. apply ST_fieldReadException.
-    (* label is primitive: calling field access is not valid *)
-    rewrite <- H7 in H2. inversion H2.
-   
-     (* call field access on labeled value*)
-    {rewrite <- H8  in H2. inversion H2. }
-    
-     (* call field access on opaque label value*)
-    {rewrite <- H8  in H2. inversion H2. }
-
-     (* context rule *)
-    + destruct H6. destruct x. 
-    exists (Config CT (FieldAccess t f) s0). pose proof (ct_consist CT c e t sigma s0). 
-    destruct H7.  auto.  
-    apply ST_fieldRead1 with (sigma:=sigma) (sigma':=s0) (e:=e) (e':=t) (f:=f). assumption.
-
-    exists Error_state. apply ST_fieldRead3. auto.
-
-(* method call *)
-- right.
-   destruct IHhas_type1. auto. auto. auto. auto.
-       + inversion H5. rewrite <- H6 in H2_. inversion H2_.
-          (* case analysis for argument: if the argument is a value *)
-             destruct IHhas_type2. auto. auto. auto. auto. subst. 
-            remember (sf_update empty_stack_frame arg_id argu arguT ) as sf. 
-            remember (SIGMA s h ) as sigma.
-            remember (current_label sigma) as l.
-            remember (Labeled_frame l sf) as lsf. 
-            rename s' into s0.
-            remember (cons lsf s) as s'.
-            remember (SIGMA s' (get_heap sigma)) as sigma'. 
-
-            exists (Config CT ((Return body)) sigma').
-            destruct H14 as [F]. destruct H as [lo].
-            apply ST_MethodCall3 with (sigma:=sigma) (sigma':=sigma') (o:=o) (s:=s) (h:=h) (cls:=cls_def) (fields:=F) 
-                                       (v:=argu) (lx:=lo) (l:=l) 
-                                       (theta:=lsf) (s':=s') (sf:=sf) (lsf:=lsf) (arg_id:=arg_id) 
-                                        (cls_a:=arguT) (body:=body) (meth:=meth) (returnT:=returnT) ;auto.
-            rewrite <- H9 in H2. inversion H2.  auto. 
-          (* case analysis for argument, if the argument is not a value *)
-            subst. 
-                destruct H15 as [config']. destruct config'. rename t into t'.
-                pose proof (excluded_middle_opaqueLabel argu).
-                destruct H6.
-                  (* case for argu = unlabelOpaque t *)
-                  destruct H6 as [t]. 
-                  rewrite -> H6 in H. inversion H. subst. 
-                  exists (Config c (MethodCall (ObjId o) meth (unlabelOpaque e')) s0).
-                  apply ST_MethodCall2 with (sigma:=(SIGMA s h)) (sigma':=s0) 
-                                            (v:=(ObjId o)) (e:=unlabelOpaque t) (e':=unlabelOpaque e') (id:=meth).
-                  intros. subst. intro contra. inversion contra. rewrite -> H11 in H. inversion H6.
-                      rewrite <- H10 in H; subst; inversion H8. auto.  subst. inversion H8.  subst.
-                      inversion H8. subst. inversion H8. subst. inversion H8. subst. inversion H8.
-                      assumption. apply v_oid. 
-                      subst. 
-                      remember (SIGMA s h ) as sigma.
-                      remember (sf_update empty_stack_frame arg_id t' arguT) as sf.
-                      remember (join_label lb (current_label sigma)) as l'. 
-                      remember (Labeled_frame l' sf) as lsf.
-                      rename s' into s''.
-                      remember (cons lsf s) as s'.
-                      remember (SIGMA s' (get_heap sigma)) as sigma''.
-                      exists (Config c (Return body) sigma'').  
-                      destruct H14 as [F]. destruct H6 as [lo].
-                      apply ST_MethodCall_unlableOpaque with (sigma:=sigma) (sigma':=sigma'') (o:=o) (s:=s) (h:=h) 
-                                            (cls:=cls_def0) (fields:=F) (v:=t') (lx:=lo) (l':=l') (lb:=lb) (s':=s')
-                                           (sf:=sf) (lsf:=lsf) (arg_id:=arg_id) (cls_a:=arguT) (body:=body) 
-                                           (meth:=meth) (returnT:=returnT) .
-                      auto. auto. auto. auto. auto. auto. subst. 
-                      
-                      inversion H2_0. inversion H12. auto. 
-                      rewrite <- H9 in H2. inversion H2. rewrite <- H8. auto. auto.  
-
-                      auto. 
-                  (*exception case
-                  subst. exists NPE. exists (SIGMA s h).
-                  apply ST_MethodCallOpaqueDataException with (sigma:=(SIGMA s h)) (o:=o).   *)
-
-                  (* case for argu <> unlabelOpaque t *)
-                  exists (Config CT (MethodCall (ObjId o) meth t') s0). 
-                  apply ST_MethodCall2 with (sigma:=(SIGMA s h)) (sigma':=s0) (v:=((ObjId o))) 
-                                            (e:=argu) (e':=t') (id:=meth).
-                  intro. intro. intro. 
-                  
-                  assert (argu <> unlabelOpaque t).  apply (H6 t). apply (H6 t). auto.
-                  assert (CT = c). apply ct_consist with (t:=argu) (t':=t') (sigma:=(SIGMA s h)) (sigma':=s0); auto. 
-                  rewrite <- H7 in H. auto. apply v_oid.
-                   
-                  exists Error_state. 
-                   apply ST_MethodCall5 with (sigma:=(SIGMA s h)) (v:=(ObjId o)) (e:=argu) (id:=meth).
-                  intros. intro contra. rewrite contra in H. inversion H. inversion H6.
-                  rewrite <- H15 in H10. inversion H10.                  rewrite <- H15 in H10. inversion H10.
-                  rewrite <- H15 in H10. inversion H10.                  rewrite <- H15 in H10. inversion H10.
-                  rewrite <- H16 in H10. inversion H10.                  rewrite <- H16 in H10. inversion H10.
-                  rewrite <- H11 in H7. auto. auto. auto. subst. inversion H2_. 
-
-                   exists Error_state. 
-                  apply ST_MethodCallException with (sigma:=sigma) (v:=argu) (meth:=meth). 
-
-                  rewrite <- H6 in H2_. inversion H2_. 
-                rewrite <- H7 in H2_. inversion H2_.                 
-                 rewrite <- H7 in H2_. inversion H2_. 
-      +  destruct H5 as [config']. destruct config'. 
-
-            exists (Config CT (MethodCall t meth argu) (s0)).
-                  apply ST_MethodCall1 with (sigma:=sigma) (sigma':=s0) (e2:=argu) (e:=e) (e':=t) (id:=meth). 
-                  assert (CT = c). apply ct_consist with (t:=e) (t':=t) (sigma:=sigma) (sigma':=s0); auto. 
-                  rewrite <- H6 in H5. auto.
-
-            exists Error_state. apply ST_MethodCall4 with (sigma:=sigma) (e:=e) (e2:=argu) (id:=meth). auto. 
-
-(* new expression *)
-- right. inversion H0.
-    destruct H2 as [cls_def]. destruct H2 as [field_defs]. destruct H2 as [method_defs].
-    destruct H2. 
-(*
-    assert (exists o, empty_heap o = None). 
-      unfold empty_heap. auto. exists (OID 0). auto. 
-      destruct H7 as [o]. 
-*)
-      remember (get_fresh_oid h) as o.
-      remember (init_field_map (find_fields cls_def) empty_field_map) as F.
-      remember (current_label sigma) as lb. 
-      remember  (add_heap_obj h o (Heap_OBJ cls_def F lb)) as h'.
-      remember (SIGMA s h') as sigma'.
-      exists (Config CT (ObjId o) sigma').
-       
-      (*destruct H3 as [field_defs]. destruct H3 as [method_defs].*)
-      apply ST_NewExp with (sigma:=sigma) (sigma':=sigma') (F:=F) (o:=o) (h:=h) (cls:=cls_def)
-                  (h':=h') (s:=s) (lb:=lb) (cls_name:=cls_name) 
-                  (field_defs:= field_defs) (method_defs:=method_defs).
-
-      subst; auto. auto.  auto.  auto. auto. auto.  auto. auto.   
-      
-    destruct H2 as [cls_def']. destruct H2 as [field_defs']. destruct H2 as [method_defs'].
-    destruct H2. 
-
-      remember (current_label sigma) as lb. 
-    remember (get_fresh_oid h) as o'.
-      remember (init_field_map (find_fields cls_def') empty_field_map) as F'.
-      remember (add_heap_obj h o' (Heap_OBJ cls_def' F' lb)) as h''.
-      remember (SIGMA s h'') as sigma''.
-      exists (Config CT (ObjId o') sigma''). 
-
-      apply ST_NewExp with (sigma:=sigma) (sigma':=sigma'') 
-                                          (F:=F') (o:=o') (h:=h) (cls:=cls_def')
-                                          (h':=h'') (s:=s) (lb:=lb) (cls_name:=cls_name)
-                                          (field_defs:=field_defs') (method_defs:=method_defs').
-      auto. auto.  auto.  auto. auto. auto.  auto. auto. 
-
-(* label *)
-- left. apply  v_label.
-
-
-(* label Data *)
-- right. destruct IHhas_type2. auto. auto. auto. auto.  
-            destruct IHhas_type1. auto. auto. auto. auto.
-            
-            (* subgoal #1 *)
-           exists (Config CT (v_l e lb) sigma).
-                apply ST_LabelData2 with (sigma:=sigma) (lb:=lb) (v:=e).  auto. 
-
-            (* subgoal #2 *)  
-                destruct H3 as [config']. inversion H3.  
-                destruct H2 as [config']. destruct config'. 
-                    exists (Config CT (labelData t lb) s0).
-                    apply ST_LabelData1 with (sigma:=sigma) (sigma':=s0) (e:=e) (e':=t) (lb:=lb).
-                    auto.
-                    assert (CT = c). apply ct_consist with (t:=e) (t':=t) (sigma:=sigma) (sigma':=s0); auto. 
-                    rewrite <- H3 in H2.  auto. 
-           (* subgoal #4*)
-               exists Error_state. 
-                  apply ST_LabelDataError with (e:=e) (sigma:=sigma) (lb:=lb). auto. 
-
-(* unlabel : *)
-- right.
- 
-            destruct IHhas_type. auto. auto. auto. auto.  
-             (* subgoal #1 *)
-                + inversion H3. 
-                     rewrite <- H4 in H2. inversion H2. 
-                     rewrite <- H4 in H2.  inversion H2. 
-                    exists Error_state.  apply ST_unlabelDataException with (sigma:=sigma).
-                    rewrite <- H4 in H2.  inversion H2.
-
-             (* subgoal #2 *)
-                remember ( join_label lb (current_label sigma)) as l'.
-                remember (update_current_label s l') as s'.
-                remember (SIGMA s' (get_heap sigma)) as sigma'.
-                exists (Config CT v sigma'). 
-                apply ST_unlabel2 with (sigma:=sigma) (s':=s') (sigma':=sigma') (l':=l') (s:=s) (h:=h) (lb:=lb) (v:=v). 
-                auto. auto. auto. auto. auto.
-
-            (* subgoal #3 *)
-                rewrite <- H5 in H2.  inversion H2. 
-
-              + destruct H3 as [config']. 
-                 destruct config'. 
-                 exists (Config CT (unlabel t) s0). 
-                 apply ST_unlabel1 with (sigma:=sigma) (sigma':=s0) (e:=e) (e':=t). auto. 
-                assert (CT = c). apply ct_consist with (t:=e) (t':=t) (sigma:=sigma) (sigma':=s0); auto. 
-                    rewrite <- H4 in H3. auto.  
-                 exists Error_state. apply ST_unlabelContextError with (sigma:=sigma) (e:=e). auto. 
-
-(* label Of *)
-(* same issue as above, we may need to add (v_l v lb) as a value*)
-- right. 
-         destruct IHhas_type. auto. auto. auto. auto.  
-            (* subgoal #1 *)
-                + inversion H3. rewrite <- H4 in H2. inversion H2. 
-                    rewrite <- H4 in H2. inversion H2. 
-                    exists Error_state.  apply ST_labelOfDataException with (sigma:=sigma).
-                    rewrite <- H4 in H2.  inversion H2.
-                    
-                   exists (Config CT (l lb) (sigma)). apply ST_labelof2 with (v:=v) (lb:=lb).
-
-                    rewrite <- H5 in H2. inversion H2. 
-             (* subgoal #2 *)
-                + destruct H3 as [config']. destruct config'. 
-                    exists (Config CT (labelOf t) s0). apply ST_labelof1 with (sigma:=sigma) (sigma':=s0) (e:=e) (e':=t).
-                    assert (CT = c). apply ct_consist with (t:=e) (t':=t) (sigma:=sigma) (sigma':=s0); auto. 
-                    rewrite <- H4 in H3. auto. 
-    
-             (*error state *)
-                 exists Error_state. apply ST_labelofCtxError with (e:=e) (sigma:=sigma). auto. 
-
-(* unlabel opaque *)
-- right. 
-         destruct IHhas_type. auto. auto. auto. auto. 
-            (* subgoal #1 *)
-                + inversion H3. rewrite <- H4 in H2. inversion H2. 
-                    rewrite <- H4 in H2. inversion H2. 
-                    exists Error_state.  apply ST_unlabel_opaqueDataException with (sigma:=sigma).
-                    rewrite <- H4 in H2.  inversion H2.
-              
-                     rewrite <- H5 in H2. inversion H2. 
- 
-                remember ( join_label lb (current_label sigma)) as l'.
-                remember (update_current_label s l') as s'.
-                remember (SIGMA s' (get_heap sigma)) as sigma'.
-                exists (Config CT v sigma'). 
-                apply ST_unlabel_opaque2 with (sigma:=sigma) (s':=s') (sigma':=sigma') (l':=l') (s:=s) (h:=h) (lb:=lb) (v:=v). 
-                auto. auto. auto. auto. 
-
-             (* subgoal #2 *)
-                + destruct H3 as [config']. destruct config'. 
-                    exists (Config CT (unlabelOpaque t) s0). apply ST_unlabel_opaque1 with (sigma:=sigma) (sigma':=s0) (e:=e) (e':=t). auto.
-                  assert (CT = c). apply ct_consist with (t:=e) (t':=t) (sigma:=sigma) (sigma':=s0); auto. 
-                    rewrite <- H4 in H3. auto.  
-                exists Error_state. apply ST_unlabel_opaque_ctx_error with (sigma:=sigma) (e:=e).  auto. 
-
-(* opaque call *)
-- right.  destruct IHhas_type. auto. auto. auto. auto. 
-            (* opaquecall won't be applied on values  *)
-
-            remember (current_label sigma) as lb. 
-            exists (Config CT (v_opa_l e lb)  sigma). 
-            apply ST_opaquecall_val2 with (v:=e) (sigma:=sigma) (lb:=lb). auto. auto. 
-
-            subst. destruct H3 as [config'].
-                pose proof (excluded_middle_returnT e).
-                destruct H3.
-                  (* case for e = return t *)
-                  destruct H3 as [t].
-                  rewrite -> H3 in H. 
-                  inversion H.  subst. 
-                  exists (Config CT (opaqueCall(Return e')) sigma').
-                  apply ST_opaquecall_return1 with (sigma:=(SIGMA s h)) (sigma':=sigma') (e:= t) (e':=e').
-                  auto.
-
-                  exists Error_state. rewrite H3.  apply ST_opaquecall_return_error with (sigma:=(SIGMA s h)) (e:=t).
-                  auto. 
-
-                  destruct config'.
-                  remember  (current_label sigma) as lb. 
-                  exists (Config CT (v_opa_l t lb) (SIGMA s' h)).
-                  rewrite H3. 
-                  apply ST_opaquecall_return2 with (sigma:=(SIGMA s h) ) (sigma':=(SIGMA s' h)) (s:=s) (h:=h) 
-                                            (lb:=lb) (s':=s') (lsf:=lsf) (v:=t).
-                  auto. inversion H8.  auto.
-                  rewrite H3 in H2. inversion H2. inversion H8.  auto.
-                  rewrite <- H8. rewrite <- H6. auto. auto. auto.
-                  inversion H12.  
-
-                  exists Error_state. rewrite H3.  
-                  apply ST_opaquecall_return4 with (sigma:=(SIGMA s h)) (s:=s) (h:=h) (lsf:=lsf); auto.
-                  inversion H9. auto. 
-
-                    (* case for e <> return t *)
-
-                  destruct config'. 
-                  exists (Config CT (opaqueCall t) s0). 
-                  apply ST_opaquecall1 with  (sigma:=(SIGMA s h) ) (sigma':=(s0)) (e:=e) (e':=t). 
-
-                  intros. apply H3. 
-                  assert (CT = c). apply ct_consist with (t:=e) (t':=t) (sigma:=(SIGMA s h)) (sigma':=s0); auto. 
-                  rewrite <- H4 in H. auto.
-
-                  exists Error_state. apply ST_opaquecall_ctx_error with (sigma:=(SIGMA s h)) (e:=e). auto. 
-
-(* Skip *)
-  - left. apply v_none. 
-
-(* assignment *)
--  admit. (*
-right. destruct IHhas_type. auto. auto. auto. auto. 
-                  remember (update_stack_top s x e) as s0.
-                  remember (SIGMA s0 h) as sigma'.
-                  exists (Config CT Skip sigma').
-                  apply ST_assignment2 with (sigma:=sigma) (sigma':=sigma') (id:=x) (v:=e) (s':=s0) (s:=s) (h:=h).
-                  auto. auto. auto. auto.
-
-                  destruct H5 as [config']. destruct config'. 
-                  exists (Config CT (Assignment x t) s0). 
-                  apply ST_assignment1 with (sigma:=sigma) (sigma':=s0) (e:=e) (e':=t) (id:=x).   
-                  assert (CT = c). apply ct_consist with (t:=e) (t':=t) (sigma:=sigma) (sigma':=s0); auto. 
-                    rewrite <- H6 in H5. auto.  
-                  auto.
-
-                  exists Error_state. 
-                  apply ST_assignment_ctx_error with (sigma:=sigma) (e:=e) (id:=x). auto.  
-*)
-(* FieldWrite *)
--right. 
-      destruct IHhas_type1. auto. auto. auto. auto. 
-       + inversion H4. 
-          (* case analysis for argument: if the argument is a value *)
-             destruct IHhas_type2. auto. auto. auto. auto. subst.
-            assert (exists fieldsMap lb, lookup_heap_obj h o = Some (Heap_OBJ cls_def fieldsMap lb)).
-            remember (SIGMA s h ) as sigma.
-            apply wfe_oid with (o:=o) (ct:=CT)  (s:=s) (h:=h) 
-                          (sigma:=sigma) (cls_def:=cls_def) (cn:=clsT). auto. auto. auto. auto.
-            destruct H as [F]. destruct H as [lb]. 
-            remember (SIGMA s h ) as sigma.
-            remember (join_label lb (current_label sigma)) as l'. 
-            remember (fields_update F f e) as F'. 
-            remember (update_heap_obj h o (Heap_OBJ cls_def F' l')) as h'.
-            remember (SIGMA s h') as sigma'.
-            exists (Config CT Skip sigma').
-            apply ST_fieldWrite3 with (sigma:=sigma) (sigma':=sigma') (o:=o) (s:=s) (h:=h) (h':=h') (f:=f) 
-                                                      (lb:=lb) (cls:=cls_def) (F:=F) (F':=F') (v:=e) (l':=l').
-            auto. auto. auto. auto. auto. auto.  auto.
-            
-          (* case analysis for argument, if the argument is not a value *)
-            subst. 
-                destruct H6 as [config'].
-                pose proof (excluded_middle_opaqueLabel e).
-                destruct H5.
-                  (* case for e = unlabelOpaque t *)
-                  destruct H5 as [t]. 
-                  rewrite -> H5 in H. inversion H. subst. 
-                  exists (Config CT (FieldWrite (ObjId o) f (unlabelOpaque e')) sigma').
-                  apply ST_fieldWrite2 with (sigma:=(SIGMA s h)) (sigma':=sigma') 
-                                            (v:=(ObjId o)) (e2:=unlabelOpaque t) (e2':=unlabelOpaque e') (f:=f).
-                  intros. subst. intro contra. inversion contra.  rewrite H8 in H10. 
-                  inversion H5. 
-                  rewrite <- H7 in H10.  inversion H10.                   rewrite <- H7 in H10.  inversion H10. 
-                  rewrite <- H7 in H10.  inversion H10.                   rewrite <- H7 in H10.  inversion H10. 
-                  rewrite <- H9 in H10.  inversion H10.                   rewrite <- H9 in H10.  inversion H10. 
-                  auto. auto. 
-
-                  exists Error_state. subst. apply ST_fieldWrite_ctx_error2 
-                        with (sigma:=(SIGMA s h)) (f:=f) (v:=(ObjId o)) (e2:=(unlabelOpaque t)).
-
-                  intros. intro contra. inversion contra. rewrite H8 in H10. inversion H5. 
-                  rewrite <- H7 in H10.  inversion H10.                   rewrite <- H7 in H10.  inversion H10. 
-                  rewrite <- H7 in H10.  inversion H10.                   rewrite <- H7 in H10.  inversion H10. 
-                  rewrite <- H9 in H10.  inversion H10.                   rewrite <- H9 in H10.  inversion H10. 
-                  auto. auto. 
-
-                  assert (exists fieldsMap lb, lookup_heap_obj h o = Some (Heap_OBJ cls_def fieldsMap lb)).
-                      apply wfe_oid with (o:=o) (ct:=CT)  (s:=s) (h:=h) 
-                                    (sigma:=sigma) (cls_def:=cls_def) (cn:=clsT). auto. auto. auto. auto.
-                      destruct H14 as [F]. destruct H14 as [lo]. 
-                      remember (fields_update F f v) as F'. 
-                      remember (join_label lo lb) as l''. 
-                      remember (update_heap_obj h o (Heap_OBJ cls_def F' l'')) as h'.
-                      remember (SIGMA s h') as sigma''.
-
-                      exists (Config CT Skip sigma'').
-                      apply ST_fieldWrite_opaque with (sigma:=(SIGMA s h)) (sigma':=sigma'') (o:=o) (s:=s) (h:=h) (h':=h') (f:=f) 
-                                                      (lb:=lb) (lo:=lo) (cls:=cls_def) (F:=F) (F':=F') (v:=v) (l':=l'') (e2:=e).
-                      rewrite <- H7 in H5. auto. auto. auto. auto. auto. auto.  auto.
-
-                      rewrite H5 in H2_0. inversion H2_0. rewrite <-H7 in H19. inversion H19. auto. 
-
-                      exists Error_state. 
-
-                      apply ST_fieldWrite_ctx_error2 with (sigma:=(SIGMA s h)) (f:=f) (v:=(ObjId o)) (e2:=e).
-                       intros. rewrite H5. intro contra. inversion contra. rewrite <- H13 in H10.
-                      rewrite H8 in H11. auto. auto. subst. auto.   
-
-                  (* case for argu <> unlabelOpaque t *)
-                  destruct config'. 
-                  exists (Config CT (FieldWrite (ObjId o) f t) s0). 
-                  apply ST_fieldWrite2 with (sigma:=(SIGMA s h)) (sigma':=s0) (v:=((ObjId o))) 
-                                            (e2:=e) (e2':=t) (f:=f).
-                  intros. apply H5. apply v_oid. 
-                  assert (CT = c). apply ct_consist with (t:=e) (t':=t) (sigma:=(SIGMA s h)) (sigma':=s0); auto. 
-                    rewrite <- H6 in H. auto.  
-
-                  exists Error_state. 
-                      apply ST_fieldWrite_ctx_error2 with (sigma:=(SIGMA s h)) (f:=f) (v:=(ObjId o)) (e2:=e).
-                       intros. apply H5.  auto. auto. 
-     
-                  destruct  IHhas_type2.  auto. auto. auto. auto.  
-                  rewrite <- H5 in H2_. inversion H2_.                   rewrite <- H5 in H2_. inversion H2_.
+Lemma multi_erasure_sigma_helper : forall s h, 
+  (erasure_stack (erasure_stack s h) (erasure_heap h)) = (erasure_stack s h).
+  intros. induction s. unfold erasure_stack. auto. 
+  induction a. remember (erasure_stack (Labeled_frame l0 s0 :: s) h) as Hy. 
+  unfold  erasure_stack in HeqHy. 
+  unfold erasure_stack. rewrite HeqHy.   fold erasure_stack.
   
-                  exists Error_state.
-                  apply ST_fieldWriteException with (sigma:=sigma) (f:=f) (v:=e). 
-
-                  rewrite <- H5 in H2_. inversion H2_.                   rewrite <- H6 in H2_. inversion H2_.
-                  rewrite <- H6 in H2_. inversion H2_.       
-
-
-          +    destruct H4 as [config'].
-                 destruct config'. 
-                  exists (Config CT (FieldWrite t f e) (s0)). 
-                  apply ST_fieldWrite1 with (sigma:=sigma) (sigma':=s0) (f:=f) (e1:=x) (e1':=t) (e2:=e).
-                  assert (CT = c). apply ct_consist with (t:=x) (t':=t) (sigma:=sigma) (sigma':=s0); auto. 
-                    rewrite <- H5 in H4. auto.  
-        
-              exists Error_state. 
-              apply ST_fieldWrite_ctx_error1 with (sigma:=sigma) (f:=f) (e1:=x) (e2:=e). auto. 
-
-(* if *)
-- destruct IHhas_type1. auto. auto. auto. auto. inversion H2. destruct H2. inversion H2. subst. 
-   destruct IHhas_type2. auto. auto. auto. auto. inversion H. destruct H. inversion H. subst. 
-    rewrite H7 in H6. inversion H6. subst. 
-    inversion H1. 
-    rewrite <- H9 in H7. inversion H7. rewrite <- H14 in H10.  inversion H10. 
-
-    inversion H8. 
-    
-    rewrite H14 in H3. rewrite H3 in H7. inversion H7. 
-    inversion H2_. inversion H2_0.
-    destruct H15 with id1 v1 T. auto. 
-    destruct H15 with id2 v2 T. auto.  
-    (* v= null and v0 =null*)
-(*    rewrite <- H26. 
-    remember (SIGMA s h) as sigma.
-    right. exists (Config CT s1 sigma).
-          apply ST_if_b1 with (sigma:=sigma) (s1:=s1) (s2:=s2) 
-                                (s:=s) (h:=h) (lsf:=lsf) (s':=s') (lb:=lb) (sf:=sf) (id1:=id1) (id2:=id2).
-    auto.     
-    rewrite H21. rewrite H16. rewrite <- H25.  auto. 
-    rewrite <- H23. rewrite <-H24. rewrite <- H16. auto.
-
-destruct H38. destruct H39. destruct H40. destruct H41.
-rewrite H40 in H38. rewrite H41 in H39.
-rewrite H24 in H38. rewrite H24 in H39.     rewrite H38. rewrite H39. auto.
-
-   rewrite H46. rewrite H47. auto. 
-    (* v= ObjId o and v0 =null*)
-    destruct H47 as [o]. destruct H47. destruct H48 as [F]. 
-     destruct H48 as [lo]. destruct H48 as [field_defs].    destruct H48 as [method_defs].  
-     destruct H48. 
-    remember (SIGMA s h) as sigma. 
-    right. exists (Config CT s2 sigma). rewrite <- H26. rewrite <- Heqsigma.
-    apply ST_if_b2 with (sigma:=sigma) (s1:=s1) (s2:=s2)
-                                (s:=s) (h:=h) (lsf:=lsf) (s':=s') (lb:=lb) (sf:=sf) (id1:=id1) (id2:=id2). 
-    auto.
-    rewrite H21. rewrite H16. rewrite <- H25.  auto. 
-    rewrite <- H23. rewrite <-H24. rewrite <- H16. auto.
-    intro contra. rewrite <- H10 in contra. rewrite <- H12 in contra.
-    rewrite H46 in contra. rewrite H47 in contra.  inversion contra.
-
-    (* v= null and v0 =ObjId o*)
-    destruct H17 with id2 v0 T. rewrite H24. auto. auto.  
-    rewrite <- H26.   
-    remember (SIGMA s h) as sigma.
-    right. 
-    destruct H46 as [o]. destruct H46. destruct H48 as [F]. 
-     destruct H48 as [lo]. destruct H48 as [field_defs].    destruct H48 as [method_defs].  
-     destruct H48. 
-    exists (Config CT s2 sigma). 
-    apply ST_if_b2 with (sigma:=sigma) (s1:=s1) (s2:=s2)
-                                (s:=s) (h:=h) (lsf:=lsf) (s':=s') (lb:=lb) (sf:=sf) (id1:=id1) (id2:=id2). 
-    auto.
-    rewrite H21. rewrite H16. rewrite <- H25.  auto. 
-    rewrite <- H23. rewrite <-H24. rewrite <- H16. auto.
-    intro contra. rewrite <- H10 in contra. rewrite <- H12 in contra.
-    rewrite H47 in contra. rewrite H46 in contra.  inversion contra.
-
-    (* v= ObjId o1 and v0 =ObjId o2*)  
-          (*case analysis v = v0*)
-          destruct H46 as [o]. destruct H46. destruct H47 as [o']. destruct H47.
-          (*destruct H22 as [cls_name]. destruct H27 as [cls_name']. *)
-          case_eq (beq_oid o o'). intro. 
-          assert (o=o').
-          apply beq_oid_equal with (x:=o) (x':=o'). auto. 
-          rewrite <- H51 in H47. rewrite <- H47 in H46.
-          rewrite H46 in H10. rewrite H10 in H12. 
-  
-          rewrite <- H26. 
-          remember (SIGMA s h) as sigma.
-          right. exists (Config CT s1 sigma ).
-          apply ST_if_b1 with (sigma:=sigma) (s1:=s1) (s2:=s2)
-                                (s:=s ) (h:=h) (lsf:=lsf) (s':=s') (lb:=lb) (sf:=sf) (id1:=id1) (id2:=id2). 
-          auto. rewrite H21. rewrite H16. rewrite <- H25.  auto.
-          inversion H7. rewrite <- H53. rewrite <- H54. rewrite <- H16. auto. auto. 
-          (*case analysis v != v0*)
-          intro. 
-          assert (Some v0 <> Some v).  intro contra. inversion contra.  
-          rewrite H52 in H47. rewrite H47 in H46. inversion H46. 
-          rewrite H53 in H50. assert (beq_oid o o = true). apply beq_oid_same.
-          rewrite H51 in H50. inversion H50. 
-
-          right. remember (SIGMA s h) as sigma. rewrite <- H26. 
-          exists (Config CT s2 sigma ). rewrite <- Heqsigma.
-          apply ST_if_b2 with (sigma:=sigma) (s1:=s1) (s2:=s2)
-                                (s:=s ) (h:=h) (lsf:=lsf) (s':=s') (lb:=lb) (sf:=sf) (id1:=id1) (id2:=id2). 
-          auto.  rewrite H21. rewrite H16. rewrite <- H25.  auto.
-          inversion H7. rewrite <- H53. rewrite <- H54. rewrite <- H16. auto. auto. 
-          rewrite H10 in H51. rewrite H12 in H51.  auto. 
-          
-*) admit. admit. admit. admit. admit.
-(* sequence *)
-- right. destruct IHhas_type1. auto. auto. auto. auto. 
-    exists (Config CT e2 sigma).
-   
-   apply ST_seq2 with (sigma:=sigma) (v:=e1) (s:=e2); auto.
-  
-  destruct H2 as [config'].
-  destruct config'.
-  exists (Config CT (Sequence t e2) s0). 
-   apply ST_seq1 with (sigma:=sigma) (s1:=e1) (s2:=e2) (s1':=t); auto.
-   assert (CT = c). apply ct_consist with (t:=e1) (t':=t) (sigma:=sigma) (sigma':=s0); auto. 
-                  rewrite <- H3 in H2. auto. 
-
-  exists Error_state. apply ST_seq_ctx_error with (sigma:=sigma) (s1:=e1) (s2:=e2).
-  auto. 
-
-(* return e *)
-(*
-- right. destruct IHhas_type. auto. auto. auto. auto. 
-  assert (exists lsf s', s = cons lsf s'). 
-  apply stack_not_nil with (sigma:=sigma) (gamma:=Gamma) (CT:=CT) (s:=s) (h:=h).
-  auto. auto. auto.
-  destruct H5 as [lsf0]. destruct H5 as [s0].
-  remember (join_label (get_current_label s) (get_current_label s0)) as l'.
-  remember (update_current_label s0 l' ) as s''.
-  remember (SIGMA s'' h) as sigma'.
-  
-  destruct s0.
-exists Error_state. 
-  apply ST_return_terminal with (s:=s) (h:=h) (lsf:=lsf0); auto.
-
-exists (Config CT e sigma').
-  apply ST_return2 with (sigma:=sigma) (sigma':=sigma') (v:=e)
-                                    (s:=s) (s':=(l0 :: s0)) (s'':=s'') (h:=h) (lsf:=lsf0) (l':=l').
-  auto. auto. auto. intuition. inversion H6. auto. auto. auto. 
-
-  destruct H4 as [config'].
-  destruct config'. 
-  exists (Config CT (Return t) s0). 
-  apply ST_return1 with (sigma:=sigma) (sigma':=s0) (e:=e) (e':=t). 
-
-  assert (CT = c). apply ct_consist with (t:=e) (t':=t) (sigma:=sigma) (sigma':=s0); auto. 
-                  rewrite <- H5 in H4. auto. 
+  assert (forall a,  (fun x : id =>
+   erasure_obj_null (erasure_obj_null (s0 x) h) (erasure_heap h)) a = (fun x : id => erasure_obj_null (s0 x) h) a).
+  intro a. apply erasure_obj_null_equal_erasure_h. apply functional_extensionality in H. rewrite H. 
   auto.
-
-  exists Error_state. apply ST_return_ctx_error with (sigma:=sigma) (e:=e). auto. 
-*)
-(* ObjId o *)
-- left. apply v_oid. 
-
-(* v_l *)
-- left. apply v_labeled. auto.  
-
-(* v_opl_l *)
-- left. apply v_opa_labeled. auto.
-Admitted. 
-
-
-
-Lemma field_consist_typing : forall CT v h o cls_def F f lb field_cls_name cls_name field_defs method_defs,
-  wfe_heap CT h ->
-  field_wfe_heap CT h -> 
-  lookup_heap_obj h o = Some (Heap_OBJ cls_def F lb) -> 
-  cls_def = class_def cls_name field_defs method_defs ->
-  type_of_field field_defs f = Some field_cls_name ->
-  F f = Some v ->
-     ( v = null \/ 
-          ( exists o' field_defs0 method_defs0 field_cls_def F' lo, 
-           v = (ObjId o') 
-          /\ field_cls_def = (class_def field_cls_name field_defs0 method_defs0) 
-          /\ lookup_heap_obj h o' = Some (Heap_OBJ field_cls_def F' lo) 
-          /\ CT field_cls_name = Some field_cls_def 
-          )
-      ).
-Proof with auto. 
-  intros. inversion H0.
-  assert (exists v : tm,
-       F f = Some v /\
-       (v = null \/
-        (exists
-           (o' : oid) (F' : FieldMap) (lx : Label) (field_defs0 : list field) 
-         (method_defs0 : list method_def),
-           v = ObjId o' /\
-           lookup_heap_obj h o' =
-           Some (Heap_OBJ (class_def field_cls_name field_defs0 method_defs0) F' lx) /\
-           CT field_cls_name = Some (class_def field_cls_name field_defs0 method_defs0)))).
-  apply H5 with (o:=o) (cls_def:=cls_def) (F:=F) (cls_name:=cls_name)
-       (lo:=lb) (method_defs:=method_defs) (field_defs:=field_defs); auto. 
-
-assert (exists cn field_defs method_defs, CT cn = Some cls_def /\ cls_def = (class_def cn field_defs method_defs)).
-apply heap_consist_ct with (h:=h) (o:=o) (ct:=CT) (cls:=cls_def) (F:=F) (lo:=lb). 
-auto. auto. 
-destruct H8 as [cls_name0]. destruct H8 as [field_defs0]. destruct H8 as [method_defs0]. destruct H8. 
-rewrite H2 in H9. inversion H9. auto.
-destruct H8 as [v']. destruct H8. rewrite H4 in H8. inversion H8. 
-destruct H9. left. auto. right. 
-destruct H9 as [o']. destruct H9 as [F']. destruct H9 as [lx]. 
-destruct H9 as [field_defs0]. destruct H9 as [method_defs0].
-remember  (class_def field_cls_name field_defs0 method_defs0) as field_cls_def.
-exists o'.  exists field_defs0. exists method_defs0. exists field_cls_def. exists F'. exists lx. 
-destruct H9.  split; auto. 
 Qed. 
 
+Lemma multi_erasure_sigma_equal : forall s h, 
+   erasure_sigma_fun (erasure_sigma_fun (SIGMA s h)) = (erasure_sigma_fun (SIGMA s h)).
+  Proof. 
+  intros s h. unfold erasure_sigma_fun. assert (erasure_heap (erasure_heap h) = (erasure_heap h)). 
+  apply multi_erasure_heap_equal. rewrite H.
+  assert ((erasure_stack (erasure_stack s h) (erasure_heap h)) = (erasure_stack s h)). 
+  apply multi_erasure_sigma_helper. rewrite H0. auto. 
+Qed.  
 
-Lemma heap_preserve_typing : forall s h h' t T CT,
-(forall o cls_def F lo, lookup_heap_obj h o = Some  (Heap_OBJ cls_def F lo) 
-                              -> exists F' lo', lookup_heap_obj h' o = Some  (Heap_OBJ cls_def F' lo') )
- -> has_type CT s h t T -> has_type CT s h' t T.
+
+Lemma flow_join_label : forall lb joined_lb lb' L,
+  flow_to lb L = false ->
+  lb' = join_label joined_lb lb ->
+  flow_to lb' L = false.
+Proof. Admitted. 
+
+Lemma flow_transitive : forall lb lb',
+  flow_to lb' L_Label = false ->
+  flow_to lb lb' = true ->
+  flow_to lb L_Label = false.
+Proof. Admitted. 
+
+Lemma flow_no_H_to_L : forall lb lb',
+  flow_to lb L_Label = true ->
+  flow_to lb' L_Label = false ->
+  flow_to lb lb' = false.
+Proof. Admitted. 
+
+Lemma erasure_sigma_fun_preserve_heap : forall h s1 h1' s2 s1' s2' h2' , 
+    SIGMA s1' h1' = erasure_sigma_fun (SIGMA s1 h) ->
+    SIGMA s2' h2' = erasure_sigma_fun (SIGMA s2 h) ->
+    h1' = h2' .
 Proof. 
-  intros s h h' t T CT.
-  intro Hyh.
-  intro Hy.  
-  induction Hy. 
-  + apply T_Var with (s':=s') (lsf:=lsf) (lb:=lb) (sf:=sf) (v:=v). auto. auto. auto.
-  + apply T_null.
-  + apply T_FieldAccess with (cls_def:=cls_def) (clsT:=clsT) 
-            (fields_def:=fields_def); auto. 
-  + apply T_MethodCall with (T:=T) (cls_def:=cls_def) (body:=body) (arg_id:=arg_id)
-        (arguT:=arguT) (s':=s'); auto. admit. 
-  + apply T_NewExp with (cls_name:=cls_name). auto. 
-  + apply T_label.
-  + apply T_labelData; auto.
-  + apply T_unlabel; auto.
-  + apply T_labelOf with (T:=T); auto. 
-  + apply T_unlabelOpaque. auto.
-  + apply T_opaqueCall. auto.
-  + apply T_skip.
-  + apply T_assignment with (c:=c) (sf:=sf) (lsf:=lsf) (s':=s') (lb:=lb) (v:=v); auto. (*(lsf:=lsf) (s':=s') (lb:=lb) (sf:=sf); auto. *)
-  + apply T_FieldWrite with (cls_def:=cls_def) (clsT:=clsT) (cls':=cls'); auto. 
-  + apply T_if with (T:=T); auto.
-  + apply T_sequence with (T:=T); auto.
-(*  + apply T_return with (ctx:=ctx) (Gamma':=Gamma'). auto. auto. auto. *)
-  + apply T_ObjId with (cls_def:=cls_def). 
-    auto. destruct H1 as [F]. destruct H1 as [lo].
-    
-    destruct Hyh with (o:=o) (cls_def:=cls_def) (F:=F) (lo:=lo).
-    auto. destruct H2 as [lx]. auto.
-    auto. destruct H1 as [F]. destruct H1 as [lo].
-    destruct Hyh with (o:=o) (cls_def:=cls_def) (F:=F) (lo:=lo).
-    auto. exists x.  auto. 
-  + apply T_v_l; auto.
-  + apply T_v_opa_l; auto.
+  intros. unfold erasure_sigma_fun in H. unfold erasure_sigma_fun in H0. 
+  inversion H. inversion H0.  auto. 
 Qed. 
 
 
 
-Lemma reduction_preserve_heap_pointer : forall t s s' h h', 
-     forall CT T, has_type CT s h t T ->
-     wfe_heap CT h ->
-     forall t', reduction (Config CT t (SIGMA s h)) (Config CT t' (SIGMA s' h')) -> 
-     (forall o cls_def F lo, lookup_heap_obj h o = Some  (Heap_OBJ cls_def F lo) 
-                              -> exists F' lo', lookup_heap_obj h' o = Some  (Heap_OBJ cls_def F' lo') ).
-Proof.
-     intros  t s s' h h'.
-     intros CT.
-     induction t; intro T; intro typing; intro wfe_h; intro t'; intro step; inversion step; inversion typing. 
-     + intuition. exists F. exists lo. auto.  
-     + apply IHt with (classTy clsT) e'; auto.
-     + inversion H10. auto. 
-          inversion H5. auto.  intuition. exists F. exists lo. auto. 
-     + apply IHt1 with  (classTy T0) e'; auto.
-     + apply IHt2 with (classTy arguT) e'; auto.
-     + inversion H15. auto.  intuition. exists F. exists lo. auto.  
-     + inversion H14. auto.   intuition. exists F. exists lo. auto.  
-     + inversion H11. rewrite H10. unfold add_heap_obj.
-        intros.  
-        case_eq (beq_oid o0 o). intro. apply beq_oid_equal in H21. 
-        rewrite H21 in H18. assert (lookup_heap_obj h o = None). 
-        apply fresh_oid_heap with (h:=h) (CT:=CT) (o:=o).
-        auto. inversion H5. auto. rewrite H22 in H18. inversion H18.
+Lemma join_label_commutative : forall l1 l2, 
+    join_label l1 l2 = join_label l2 l1. 
+Proof. Admitted. 
 
-        intro.  unfold lookup_heap_obj. 
-        rewrite H21. fold lookup_heap_obj.  inversion H5. 
-        rewrite <- H24. exists F0. exists lo. auto. 
-     + apply IHt with T0 e'; auto. 
-     + auto.  intuition. exists F. exists lo. auto.  
-     + apply IHt with (LabelelTy T) e'; auto. 
-     + inversion H7. auto.  intuition. exists F. exists lo. auto.   
-     + apply IHt with  (LabelelTy T0) e'; auto. 
-     + auto.  intuition. exists F. exists lo. auto.  
-     + apply IHt with  (OpaqueLabeledTy T) e'; auto. 
-     + inversion H7. auto.  intuition. exists F. exists lo. auto.   
-     + apply IHt with T0 e'; auto. 
-     + subst.  apply IHt with T0 (Return e'). auto. auto. apply ST_return1. auto.
-     + auto.  intuition. exists F. exists lo. auto.  
-     + subst. inversion H4. inversion H8. auto.  intuition. exists F. exists lo. auto.   
-(*     + apply IHt with T0 e'; auto. *)
-     + apply IHt with (classTy c) e'; auto.
-     + inversion H6. inversion H11. auto.  intuition. exists F. exists lo. auto.   
-     + apply IHt1 with  (classTy clsT) e1'; auto.
-     + apply IHt2 with   (classTy cls') e2'; auto.
-     + inversion H11. rewrite H10. inversion H6.  intros.
-        case_eq (beq_oid o0 o). intro. 
-        assert (Some (Heap_OBJ cls F' l') = lookup_heap_obj (update_heap_obj h0 o (Heap_OBJ cls F' l')) o).
-        apply lookup_updated with (o:=o) (ho:=(Heap_OBJ cls F' l'))
-                  (ho':=(Heap_OBJ cls F lb)) (h:=h0) (h':=(update_heap_obj h0 o (Heap_OBJ cls F' l'))); auto.
-        apply beq_oid_equal in H29. rewrite H29. 
-        exists F'. exists l'. auto. rewrite H29 in H24. rewrite <- H7 in H24. inversion H24. 
-       rewrite <- H32. auto. 
-       intro. 
-       assert (Some (Heap_OBJ cls_def0 F0 lo) = lookup_heap_obj (update_heap_obj h0 o (Heap_OBJ cls F' l')) o0).
-       apply lookup_updated_not_affected with (o:=o) (ho:=(Heap_OBJ cls F' l'))
-                 (h:=h0) (h':=(update_heap_obj h0 o (Heap_OBJ cls F' l'))) (o':=o0) 
-              (ho':=(Heap_OBJ cls_def0 F0 lo)); auto. 
-      intro contra. rewrite contra in H29. 
-      assert (beq_oid o o = true). apply beq_oid_same. 
-      rewrite H30 in H29. inversion H29.
-      exists F0. exists lo. auto.
-     + inversion H12. rewrite H11. inversion H7.  intros.
-        case_eq (beq_oid o0 o). intro. 
-        assert (Some (Heap_OBJ cls F' l') = lookup_heap_obj (update_heap_obj h0 o (Heap_OBJ cls F' l')) o).
-        apply lookup_updated with (o:=o) (ho:=(Heap_OBJ cls F' l'))
-                  (ho':=(Heap_OBJ cls F lo)) (h:=h0) (h':=(update_heap_obj h0 o (Heap_OBJ cls F' l'))); auto.
-        apply beq_oid_equal in H30. rewrite H30. 
-        exists F'. exists l'. auto. rewrite H30 in H25. rewrite <- H8 in H25. inversion H25. 
-       rewrite <- H33. auto. 
-       intro. 
-       assert (Some (Heap_OBJ cls_def0 F0 lo0) = lookup_heap_obj (update_heap_obj h0 o (Heap_OBJ cls F' l')) o0).
-       apply lookup_updated_not_affected with (o:=o) (ho:=(Heap_OBJ cls F' l'))
-                 (h:=h0) (h':=(update_heap_obj h0 o (Heap_OBJ cls F' l'))) (o':=o0) 
-              (ho':=(Heap_OBJ cls_def0 F0 lo0)); auto. 
-      intro contra. rewrite contra in H30. 
-      assert (beq_oid o o = true). apply beq_oid_same. 
-      rewrite H31 in H30. inversion H30.
-      exists F0. exists lo0. auto.
-     + intuition. exists F. exists lo. auto. 
-     + intuition. exists F. exists lo. auto.
-     + apply IHt1 with T0 s1'; auto.
-     + intuition. exists F. exists lo. auto. 
-(*     +  apply IHt with T e'; auto.
-     + intuition. exists F. exists lo. inversion H10. inversion H5. rewrite <-H24. auto. *)
+
+Lemma dot_free_preservation : forall t t' s h s' h' CT, 
+  field_wfe_heap CT h -> wfe_heap CT h -> wfe_stack CT h s ->
+  Config CT t (SIGMA s h) ==> Config CT t' (SIGMA s' h') ->
+  dot_free t = true ->
+  forall T, has_type CT empty_context h t T -> 
+  dot_free t' = true.
+Proof. intros  t t' s h s' h' CT. intro H_wfe_fields. 
+  intro H_wfe_heap. intro H_wfe_stack. intro H_reduction. intro H_dot_free.
+  intro T.  intro H_typing. 
+  generalize dependent t'.  
+  generalize dependent T.
+    generalize dependent s'.      generalize dependent h'. 
+induction t; intros; subst; try (inversion H_reduction; fail);
+     try (unfold  dot_free in H_dot_free; auto; fold dot_free in H_dot_free; auto).
+-  inversion H_typing. inversion H3.
+- inversion H_reduction. 
+ + subst.  inversion H_typing. destruct IHt with h' s' (classTy clsT) e'; auto.
+ + subst.  inversion H_wfe_fields. inversion H5. subst. rename h0 into h.
+    inversion H_typing. subst. inversion H2. subst. destruct H15 as [F'].   destruct H0 as [lo]. 
+    destruct H13 as [field_defs0]. destruct H1 as [method_defs0]. rewrite <- H6 in H0. inversion H0.
+    subst. rewrite <- H3 in H4. inversion H4.  
+   assert ( exists cn field_defs method_defs, CT cn = Some cls_def
+               /\ cls_def = (class_def cn field_defs method_defs)). 
+    apply heap_consist_ct with h o F' lo; auto. rewrite H9 in H6. auto.
+    destruct H1 as [cls_name].     destruct H1 as [field_defs].
+    destruct H1 as [method_defs].     destruct H1. 
+    rewrite H11 in H9. inversion H9. subst.
+    destruct H with o (class_def cls_name field_defs method_defs) 
+          F' cls_name lo method_defs field_defs i  cls'; auto. 
+    destruct H11. destruct H12. rewrite H11 in H7. inversion H7. rewrite H12. auto.
+    destruct H12 as [o'].     destruct H12 as [F_f]. destruct H12 as [lx]. 
+    destruct H12 as [f_field_defs].     destruct H12 as [f_method_defs]. destruct H12. 
+    rewrite H11 in H7. inversion H7. rewrite H12. auto.
+- inversion H_reduction.
+ + subst.  inversion H_typing. destruct IHt1 with h' s' (classTy T0) e'; auto.
+
+  apply dot_free_if in H_dot_free. destruct H_dot_free. auto.
+  unfold dot_free. fold dot_free. auto.
+    case_eq (dot_free e'). intro. rewrite H15 in H_dot_free. 
+    apply dot_free_if in H_dot_free. destruct H_dot_free. auto.
+    intro.  auto.
++ subst.  apply dot_free_if in H_dot_free. destruct H_dot_free. auto.
+  unfold dot_free. fold dot_free. inversion H_typing. destruct IHt2 with h' s'  (classTy arguT) e'; auto.
+  rewrite H. case_eq (dot_free e'). intro. auto. intro. auto.
++ subst. inversion H6. subst. inversion H_typing. subst.  inversion H2. 
+    destruct H16 as [F0]. destruct H16 as [lb]. rewrite H16 in H7. inversion H7. 
+    rewrite <- H1 in H4. inversion H4. subst. rewrite H5 in H8. inversion H8. subst. auto.
+    unfold dot_free. fold dot_free. apply surface_syntax_is_dot_free. auto.
+     
++ subst. inversion H6. subst. inversion H_typing. subst.  inversion H2. 
+    destruct H16 as [F0]. destruct H16 as [l0]. rewrite H16 in H7. inversion H7. 
+    rewrite <- H1 in H4. inversion H4. subst. rewrite H5 in H13. inversion H13. subst. auto.
+    unfold dot_free. fold dot_free. apply surface_syntax_is_dot_free. auto.
+- inversion H_reduction. auto.
+- inversion H_reduction. subst. inversion H_typing. destruct IHt with h' s' T0 e'; auto. subst. auto.
+- inversion H_reduction. subst. inversion H_typing. destruct IHt with h' s' (LabelelTy T) e'; auto. subst. auto.
+- inversion H_reduction. subst. inversion H_typing. destruct IHt with h' s' (LabelelTy T0) e'; auto. subst. auto.
+- inversion H_reduction. subst. inversion H_typing. destruct IHt with h' s' (OpaqueLabeledTy T) e'; auto. subst. auto.
+- inversion H_typing. inversion H4.
+- inversion H_reduction. apply dot_free_if in H_dot_free. destruct H_dot_free. auto. inversion H_typing.
+  + subst. destruct IHt1 with h' s' (classTy clsT) e1'; auto.
+      unfold dot_free. fold dot_free. case_eq (dot_free e1'). intro. rewrite H in H8. auto.
+      intro. auto.
+  +  apply dot_free_if in H_dot_free. destruct H_dot_free. auto. inversion H_typing.
+      subst. destruct IHt2 with h' s' (classTy cls') e2'; auto.
+      unfold dot_free. fold dot_free. case_eq (dot_free e2'). intro. rewrite H in H9. rewrite H9. auto.
+      intro. rewrite H in H9. rewrite H9. auto.
+  + subst. auto.
+  + subst. auto.
+- inversion H_reduction. apply dot_free_if in H_dot_free. destruct H_dot_free. auto. inversion H_typing.
+  + subst. inversion H23. inversion H5.
+  + subst. inversion H_typing. inversion H7. inversion H18.
+- apply dot_free_if in H_dot_free. destruct H_dot_free. auto. inversion H_typing. inversion H_reduction. 
+  + subst. destruct IHt1 with h' s' (T0) s1'; auto.
+      unfold dot_free. fold dot_free. case_eq (dot_free s1'). intro. rewrite H1 in H0. auto.
+      intro. auto.
+  + subst. auto.
+-  inversion H_typing.  inversion H_reduction.
+  + subst. destruct IHt with h' s' T0 e'; auto.
+  + subst. auto.
 Qed.
 
-Theorem preservation : forall CT s s' h h' sigma sigma',
-    field_wfe_heap CT h -> sigma = SIGMA s h ->  
-    wfe_heap CT h -> wfe_stack CT h s -> sigma' = SIGMA s' h' -> 
-    forall t T, has_type CT s h t T -> 
-     forall t',  Config CT t sigma ==> Config CT t' sigma' ->
-     ( has_type CT s' h' t' T) .
-Proof with auto.
-   intros CT s s' h h' sigma sigma'. intro H_field_wfe. 
-  intro. intro. intro. intro. intro t. intro T.  intro typing. intro t'. intro step.
-
-
-
-
-rewrite H in step. rewrite H2 in step. 
-generalize dependent T. 
-remember (Config CT t (SIGMA s h) ) as c.
-  remember (Config CT t' (SIGMA s' h') ) as c'. 
-  generalize dependent t'. generalize dependent t.   
-  induction step. 
-
-- admit. 
-- admit. 
--  admit. 
-- admit. 
-- admit. 
-- intro t'. intro. intro t. intro.
-  inversion Heqc. inversion Heqc'.  subst. intro T.  intro typing. 
-
-inversion typing.  
-assert (has_type CT s' h' e'  (classTy T0)). 
-apply IHstep with (t:=e) (t':=e') (T:=(classTy T0)); auto.
-
-assert (has_type CT s' h' e2  (classTy arguT)). 
-apply IHstep with (t:=e2) (t':=e2) (T:=(classTy arguT)); auto.
-
-  apply T_MethodCall with (e:=e') (meth:=id0) (argu:=e2) (s':=s')
-                    ( CT:=CT) (h:=h') (T:=T0) (returnT:=returnT) (cls_def:=cls_def)
-                            (body:=body) (arg_id:=arg_id) (arguT:=(returnT)).
-
-apply IHstep with e'. auto. auto.  
-auto. auto.  auto. 
-  apply T_MethodCall with (e:=e') (meth:=id0) (argu:=e2) (s':=s'0)
-                    ( CT:=CT) (h:=h') (T:=T0) (returnT:=returnT) (cls_def:=cls_def)
-                            (body:=body) (arg_id:=arg_id) (arguT:=(returnT)).
- destruct IHstep with e' e (classTy T0); auto. inversion step. 
-  
- 
-
-  | T_MethodCall : forall e meth argu CT s s' h T returnT cls_def body arg_id arguT,
-      has_type CT s h e (classTy T) ->
-      has_type CT s h argu (classTy arguT) ->
-      Some cls_def = CT(T) ->
-      find_method cls_def meth = Some (m_def returnT meth arguT arg_id (Return body))  ->
-
-      (exists lsf l v sf, sf = sf_update empty_stack_frame arg_id v arguT->
-        lsf = Labeled_frame l sf ->
-        s' = cons lsf s ->
-        has_type CT s' h (body) (classTy returnT)) ->
-      has_type CT s h (MethodCall e meth argu) (classTy returnT)
-
-- admit.
-- admit.
-- inversion Heqc'. 
-- inversion Heqc'.  admit.
-
-
- 
-  induction t. (*induction on the terms *)
-  (* (Tvar i) *)
-  + intro T. intro typing. intro t'.  intro step.
-        inversion step.   inversion typing. subst.
-       rewrite H8 in H7. inversion H7. inversion H8. 
-inversion H1. rewrite <- H10 in H18. inversion H18.
-
-inversion H13. inversion H17. inversion H7. inversion H.
-subst. destruct H19 with i v0 c0; auto. rewrite <- H18 in H11. inversion H11.
-subst. apply T_null.
-
-    destruct H2 as [o']. destruct H2. destruct H3 as [F]. destruct H3 as [lo]. 
-      destruct H3 as [field_defs]. destruct H3 as [method_defs]. destruct H3. 
-    rewrite <- H18 in H11. inversion H11. subst. 
-      apply T_ObjId with (h:=h0) (CT:=CT) (o:=o') (cls_name:=c0)
-                       (cls_def:=(class_def c0 field_defs method_defs)). auto. 
-      auto. exists  field_defs. exists method_defs. auto. 
- exists F. exists lo. auto. 
-      
-
-  (* null *)
-  + intro T. intro typing. intro t'.  intro step.
-        inversion step.  
-
-  (* field access *)
-  + intro T'. intro typing. intro t'. inversion typing. intro step. 
-     inversion step. subst. apply T_FieldAccess with  (e:=e') (f:=i) 
-            (cls_def:=cls_def) (CT:=CT) (clsT:=clsT) (cls':=cls') (h:=h') 
-            (fields_def:=(find_fields cls_def)). apply IHt. 
-             auto. auto. auto. auto. auto.
-
-   assert (wfe_heap CT h' /\ wfe_stack CT h' s' /\ field_wfe_heap CT h').
-   apply reduction_preserve_wfe with (t:=(FieldAccess t i)) (t':=t') (T:=T')  (sigma:=sigma) (sigma':=sigma') (CT:=CT) (s:=s) (s':=s') (h:=h) (h':=h').
-   auto. auto. auto. auto. auto. auto. auto.
-
-   rewrite <- H14 in H5. inversion H5. 
-
-   destruct H32 as [field_defs]. destruct H32 as [method_defs].
-      assert (v = null \/
-             (exists
-                (o' : oid) (field_defs0 : list field) (method_defs0 : 
-                                                       list method_def) 
-              (field_cls_def : CLASS) (F' : FieldMap) (lo : Label),
-                v = ObjId o' /\
-                field_cls_def =
-                class_def cls' field_defs0 method_defs0 /\
-                lookup_heap_obj h' o'  = Some (Heap_OBJ field_cls_def F' lo) /\
-                CT cls' = Some field_cls_def)
-      ).
-
-    apply field_consist_typing with (CT:=CT)  (v:=v) (h:=h') (o:=o) (cls_def:=cls)
-             (F:=fields) (f:=i) (lb:=lb) (field_cls_name:=cls') (cls_name:=cls_name) 
-             (field_defs:=field_defs) (method_defs:=method_defs).
-    apply H25. apply H25. rewrite H2 in H24. inversion H24. auto. subst. 
-    inversion H19. rewrite <- H3 in H20. rewrite <- H20 in H33.
-    destruct H33 as [F0]. destruct H as [lo0]. inversion H. auto.  
-    rewrite <- H6 in H28. inversion H28. rewrite <- H35 in H10.
-    rewrite H32 in H10. unfold find_fields in H10.
-    rewrite <- H10. auto. subst. auto. 
-
-    destruct H34. 
-    subst. apply T_null with (h:=h') (T:=(classTy cls')) (CT:=CT). 
-
-    destruct H34 as [o']. destruct H34 as [field_defs0]. destruct H34 as [method_defs0]. 
-    destruct H34 as [field_cls_def]. destruct H34 as [F']. destruct H34 as [lx]. 
-    destruct H34. subst. destruct H35. destruct H2. 
-
-
-    apply T_ObjId with (h:=h') (CT:=CT) (cls_name:=cls') 
-                                  (cls_def:=field_cls_def) (o:=o').
-
-     auto. auto.  
-     exists field_defs0. exists method_defs0. auto. 
-    exists  F'. exists lx. auto. 
-
-  (* MethodCall  *)
-    + intro T'. intro typing. intro t'. inversion typing. intro step. 
-        inversion step. 
-      (* reduction on the object  *)
-        - apply T_MethodCall with (e:=e') (meth:=i) (argu:=t2)
-                            ( CT:=CT) (h:=h') (T:=T) (returnT:=returnT) (cls_def:=cls_def)
-                            (body:=body) (arg_id:=arg_id) (arguT:=arguT) (s':=s').
-
-      apply IHt1; auto. 
-
-      apply heap_preserve_typing with (h:=h).
-      intros o cls_def0 F lo. intro.  
-
-      apply reduction_preserve_heap_pointer with (t:=t1) (s:=s) (s':=s') (h:=h) (h':=h')
-                             (CT:=CT) (T:=(classTy T))
-                              (t':=e') (F:=F) (lo:=lo); auto. 
-      rewrite <- H. rewrite <- H2.  auto.  auto. auto. auto. auto. auto. auto.
-      apply heap_preserve_typing with (h:=h).
-      intros o cls_def0 F lo. intro.  
-      apply reduction_preserve_heap_pointer with (t:=t1) (s:=s) (s':=s') (h:=h) (h':=h')
-                             (CT:=CT) (gamma:=gamma) (T:=(classTy T))
-                              (t':=e') (F:=F) (lo:=lo); auto. 
-      rewrite <- H. rewrite <- H2.  auto.  auto. 
-      (* reduction on the argument  *)
-        -  apply T_MethodCall with (Gamma:=gamma) (e:=t1) (meth:=i) (argu:=e')
-                    ( CT:=CT) (h:=h') (T:=T) (returnT:=returnT) (cls_def:=cls_def)
-                            (body:=body) (arg_id:=arg_id) (arguT:=arguT) (para_T:=para_T)
-                          (cls_a:=cls_a) (Gamma':=Gamma') (ctx:=ctx).
-          apply heap_preserve_typing with (h:=h).
-          intros o cls_def0 F lo. intro. 
-
-          apply reduction_preserve_heap_pointer with (t:=t2) (s:=s) (s':=s') (h:=h) (h':=h')
-                                 (CT:=CT) (gamma:=gamma) (T:=arguT)
-                                  (t':=e') (F:=F) (lo:=lo); auto. 
-          rewrite <- H. rewrite <- H2.  auto.  auto. auto. auto. auto. auto. auto. auto.  
-
-          apply heap_preserve_typing with (h:=h).
-          intros o cls_def0 F lo. intro. 
-
-          apply reduction_preserve_heap_pointer with (t:=t2) (s:=s) (s':=s') (h:=h) (h':=h')
-                                 (CT:=CT) (gamma:=gamma) (T:=arguT)
-                                  (t':=e') (F:=F) (lo:=lo); auto. 
-          rewrite <- H. rewrite <- H2.  auto.  auto. 
-      (* normal return  *)
-          -  apply heap_preserve_typing with (h:=h).
-          intros o0 cls_def0 F0 lo0. intro. 
-
-          apply reduction_preserve_heap_pointer with (t:=(MethodCall t1 i t2)) (s:=s) (s':=s') (h:=h) (h':=h')
-                                 (CT:=CT) (gamma:=gamma) (T:=T')
-                                  (t':=t') (F:=F0) (lo:=lo0); auto. 
-          rewrite <- H. rewrite <- H2.  auto. subst.  auto.
-
-          inversion H6. inversion H25. destruct H12 as [F']. destruct H12 as [lo'].
-         rewrite H15 in H12. rewrite H12 in H26. inversion H26. rewrite <- H16 in H3. 
-          rewrite <- H3 in H8. inversion H8. rewrite <- H20 in H27. rewrite H9 in H27. 
-          inversion H27. rewrite <- H15. 
-          apply T_return with (ctx:=(update_typing_frame empty_context_frame arg_id para_T)) 
-                        (Gamma':=(update_typing_frame empty_context_frame arg_id para_T :: gamma)). 
-          auto. auto. intro contra. inversion contra.  
-      (* opaque return  *)
-      - subst. apply heap_preserve_typing with (h:=h).
-          intros o0 cls_def0 F0 lo0. intro. 
-
-          apply reduction_preserve_heap_pointer with 
-                    (t:=(MethodCall (ObjId o) i (unlabelOpaque (v_opa_l v lb))))
-                     (s:=s) (s':=s') (h:=h) (h':=h')
-                                 (CT:=CT) (gamma:=gamma) (T:= (classTy returnT))
-                                  (t':=(Return body0)) (F:=F0) (lo:=lo0); auto. 
-
-          inversion H6. inversion H25. destruct H12 as [F']. destruct H12 as [lo'].
-         rewrite H15 in H12. rewrite H12 in H26. inversion H26. rewrite <- H16 in H3. 
-          rewrite <- H3 in H8. inversion H8. rewrite <- H20 in H32. rewrite H9 in H32. 
-          inversion H32. rewrite <- H15.
-          apply T_return with (ctx:=(update_typing_frame empty_context_frame arg_id para_T)) 
-                        (Gamma':=(update_typing_frame empty_context_frame arg_id para_T :: gamma)). 
-          auto. intuition. intro contra. inversion contra.  
-
-(* new expression  *)
-    + intro T. intro typing. intro t'.  intro step. 
-   assert (wfe_heap CT h' /\ wfe_stack CT gamma h' s' /\ field_wfe_heap CT h').
-   apply reduction_preserve_wfe with (t:=(NewExp c)) (t':=t') (T:=T)  (sigma:=sigma)
-           (sigma':=sigma') (gamma:=gamma) (CT:=CT) (s:=s) (s':=s') (h:=h) (h':=h').
-   auto. auto. auto. auto. auto. auto. auto.   
-      inversion step. inversion typing. 
-      apply T_ObjId with (h:=h') (Gamma:=gamma) (CT:=CT) (o:=o)
-                (cls_name:=c) (cls_def:=cls). 
-      assert (lookup_heap_obj h' o = Some (Heap_OBJ cls F lb)).
-      rewrite H2 in H16.       inversion H16.  rewrite H15.       unfold add_heap_obj. 
-      assert (beq_oid o o = true). apply beq_oid_same.
-      unfold lookup_heap_obj. rewrite H23. auto.
-      assert (exists cls_name field_defs method_defs, 
-                CT cls_name = Some cls /\ cls = (class_def cls_name field_defs method_defs)).
-      apply heap_consist_ct with (h:=h') (o:=o)(F:=F) (lo:=lb).
-      apply H3. auto. auto. exists field_defs. exists method_defs.  auto.
-
-rewrite H2 in H16.       inversion H16.  rewrite H15.       unfold add_heap_obj. 
-      assert (beq_oid o o = true). apply beq_oid_same.
-     unfold lookup_heap_obj. rewrite H23. auto.
-      exists F. exists lb. auto.
-
-(* Label  *)
-    + intro T. intro typing. intro t'.  intro step. 
-       inversion step. 
- 
-(* label data *)
-    + intro T. intro typing. intro t'.  intro step.
-        inversion step.   inversion typing.
-        apply T_labelData with (h:=h') (Gamma:=gamma) (lb:=l0) (CT:=CT) (e:=e') (T:=T0).
-        apply T_label. apply IHt; auto. inversion typing.
-        apply T_v_l with (h:=h') (Gamma:=gamma) (lb:=l0) (CT:=CT) (v:=t) (T:=T0).
-        apply T_label. 
-        apply heap_preserve_typing with (h:=h).
-          intros o0 cls_def0 F0 lo0. intro. 
-        apply reduction_preserve_heap_pointer with 
-                    (t:=(labelData t l0))
-                     (s:=s) (s':=s') (h:=h) (h':=h')
-                                 (CT:=CT) (gamma:=gamma) (T:= T)
-                                  (t':=t') (F:=F0) (lo:=lo0); auto.
-        rewrite <- H.         rewrite <- H2. auto. auto. auto.
-
-(* unlabel *)
-    + intro T. intro typing. intro t'.  intro step.
-        inversion step.   inversion typing.
-        apply T_unlabel. apply IHt. auto. auto.
-        inversion typing. rewrite <- H4 in H17. inversion H17. 
-        apply heap_preserve_typing with (h:=h).
-          intros o0 cls_def0 F0 lo0. intro. 
-        apply reduction_preserve_heap_pointer with 
-                    (t:=(unlabel t) )
-                     (s:=s) (s':=s') (h:=h) (h':=h')
-                                 (CT:=CT) (gamma:=gamma) (T:= T)
-                                  (t':=t') (F:=F0) (lo:=lo0); auto.
-        rewrite <- H.         rewrite <- H2. auto. rewrite <- H6. auto. 
-
-(* Label of  *)
-   + intro T. intro typing. intro t'.  intro step.
-        inversion step.   inversion typing.
-        apply T_labelOf with (T:=T0).  apply IHt. auto. auto. 
-        inversion typing. apply T_label.
-
-(* unlabelopaque  *)
-   + intro T. intro typing. intro t'.  intro step.
-        inversion step.   inversion typing.
-        apply T_unlabelOpaque. apply IHt. auto. auto.
-        inversion typing. rewrite <- H4 in H16. inversion H16. rewrite <- H6.  
-        apply heap_preserve_typing with (h:=h).
-          intros o0 cls_def0 F0 lo0. intro. 
-        apply reduction_preserve_heap_pointer with 
-                    (t:=(unlabelOpaque t) )
-                     (s:=s) (s':=s') (h:=h) (h':=h')
-                                 (CT:=CT) (gamma:=gamma) (T:= T)
-                                  (t':=t') (F:=F0) (lo:=lo0); auto.
-        rewrite <- H.         rewrite <- H2. auto. auto. 
-
-(* opaque call  *)
-   +  intro T. intro typing. intro t'.  intro step.
-        inversion step.   inversion typing.
-        apply T_opaqueCall. apply IHt. auto. auto.
-        inversion typing. 
-              apply T_opaqueCall. apply IHt. auto. rewrite <- H5. 
-        apply ST_return1. auto.
-        inversion typing.  apply T_v_opa_l. apply T_label.
-        apply heap_preserve_typing with (h:=h).
-          intros o0 cls_def0 F0 lo0. intro. 
-        apply reduction_preserve_heap_pointer with 
-                    (t:=(opaqueCall t) )
-                     (s:=s) (s':=s') (h:=h) (h':=h')
-                                 (CT:=CT) (gamma:=gamma) (T:= T)
-                                  (t':=t') (F:=F0) (lo:=lo0); auto.
-        rewrite <- H.         rewrite <- H2. auto. auto. 
-
-        inversion typing. auto. inversion typing.  apply T_v_opa_l. apply T_label.
-        apply heap_preserve_typing with (h:=h).
-          intros o0 cls_def0 F0 lo0. intro. 
-        apply reduction_preserve_heap_pointer with 
-                    (t:=(opaqueCall t) )
-                     (s:=s) (s':=s') (h:=h) (h':=h')
-                                 (CT:=CT) (gamma:=gamma) (T:= T)
-                                  (t':=t') (F:=F0) (lo:=lo0); auto.
-        rewrite <- H.         rewrite <- H2. auto. 
-        rewrite <- H4 in H18. inversion H18. auto. auto. 
-
-(* skip  *)
-   + intro T. intro typing. intro t'.  intro step.
-        inversion step.  
-
-(* assignment  *)
-   + intro T. intro typing. intro t'.  intro step.
-        inversion step.    inversion typing.
-        apply T_assignment with (T:=T0). auto. 
-        apply IHt. auto. auto. 
-        inversion typing. apply T_skip.
-
-(* field write  *)
-   + intro T. intro typing. intro t'.  intro step.
-        inversion step.    inversion typing.
-        apply T_FieldWrite with (cls_def:=cls_def) (clsT:=clsT) (cls':=cls'). 
-        apply IHt1. auto. auto.  
-        apply heap_preserve_typing with (h:=h).
-          intros o0 cls_def0 F0 lo0. intro. 
-        apply reduction_preserve_heap_pointer with 
-                    (t:=(FieldWrite t1 i t2) )
-                     (s:=s) (s':=s') (h:=h) (h':=h')
-                                 (CT:=CT) (gamma:=gamma) (T:= T)
-                                  (t':=t') (F:=F0) (lo:=lo0); auto.
-        rewrite <- H.         rewrite <- H2. auto. auto.  auto. auto. 
-        
-        inversion typing. 
-        apply T_FieldWrite with (cls_def:=cls_def) (clsT:=clsT) (cls':=cls'). 
-        
-        apply heap_preserve_typing with (h:=h).
-          intros o0 cls_def0 F0 lo0. intro. 
-        apply reduction_preserve_heap_pointer with 
-                    (t:=(FieldWrite t1 i t2) )
-                     (s:=s) (s':=s') (h:=h) (h':=h')
-                                 (CT:=CT) (gamma:=gamma) (T:= T)
-                                  (t':=t') (F:=F0) (lo:=lo0); auto.
-        rewrite <- H.  rewrite <- H2. auto. auto.  auto. auto. auto.  
-
-        inversion typing. apply T_skip.         inversion typing. apply T_skip.
-
-(* if statement  *)
-   + intro T. intro typing. intro t'.  intro step.
-        inversion step. 
-        inversion typing. subst.  inversion H11. rewrite <- H3. auto.
-         inversion typing. subst. inversion H11. rewrite <- H3. auto.
-
-(* sequence *)
-   + intro T. intro typing. intro t'.  intro step.
-        inversion step. 
-        inversion typing. 
-        apply T_sequence with (T:=T0) (T':=T). 
-        apply IHt1. auto. auto.
-        apply heap_preserve_typing with (h:=h).
-          intros o0 cls_def0 F0 lo0. intro. 
-        apply reduction_preserve_heap_pointer with 
-                    (t:=(Sequence t1 t2)  )
-                     (s:=s) (s':=s') (h:=h) (h':=h')
-                                 (CT:=CT) (gamma:=gamma) (T:= T)
-                                  (t':=t') (F:=F0) (lo:=lo0); auto.
-        rewrite <- H.  rewrite <- H2. auto. auto.
-
-        inversion typing. rewrite <- H8.  
-        apply heap_preserve_typing with (h:=h).
-          intros o0 cls_def0 F0 lo0. intro. 
-        apply reduction_preserve_heap_pointer with 
-                    (t:=(Sequence t1 t2)  )
-                     (s:=s) (s':=s') (h:=h) (h':=h')
-                                 (CT:=CT) (gamma:=gamma) (T:= T)
-                                  (t':=t') (F:=F0) (lo:=lo0); auto.
-        rewrite <- H.  rewrite <- H2. auto. auto.
-
-(* return   *)
-   + intro T. intro typing. intro t'.  intro step.
-        inversion step. 
-        inversion typing. 
-        apply T_return. apply IHt.  auto. auto.  auto. 
-        
-        inversion typing. rewrite <- H6. 
-        apply heap_preserve_typing with (h:=h).
-          intros o0 cls_def0 F0 lo0. intro. 
-        apply reduction_preserve_heap_pointer with 
-                    (t:=(Return t) )
-                     (s:=s) (s':=s') (h:=h) (h':=h')
-                                 (CT:=CT) (gamma:=gamma) (T:= T)
-                                  (t':=t') (F:=F0) (lo:=lo0); auto.
-        rewrite <- H.  rewrite <- H2. auto. auto.
-
-(* objId *)
-     + intro T. intro typing. intro t'.  intro step.
-        inversion step. 
-
-(* runtime labeled data *)
-     + intro T. intro typing. intro t'.  intro step.
-        inversion step. 
-(* runtime opaque labeled data *)
-     + intro T. intro typing. intro t'.  intro step.
-        inversion step. 
+Lemma surface_syntax_H_erasure_dot : forall t,
+surface_syntax t = true -> 
+erasure_H_fun t = dot.
+Proof. intro t. intro Hy. induction t; unfold surface_syntax in Hy; fold surface_syntax in Hy; inversion Hy;
+try (unfold erasure_H_fun; auto; fold erasure_H_fun;
+      apply surface_syntax_is_return_free in Hy; rewrite Hy; auto ;fail);
+try (apply surface_syntax_if in Hy; destruct Hy; unfold erasure_H_fun; fold erasure_H_fun;
+apply surface_syntax_is_return_free in H; apply surface_syntax_is_return_free in H1;
+rewrite H; rewrite H1; auto).
 Qed. 
+
+
+Fixpoint surface_syntax_plus_dot (t : tm) :=
+  match t with
+    | Tvar x => true
+    | null => true
+    | FieldAccess e f => (surface_syntax_plus_dot e)
+    | MethodCall e1 meth e2 => if (surface_syntax_plus_dot e1) then (surface_syntax_plus_dot e2) else false
+    | NewExp cls => true
+(* label related *)
+    | l lb => true
+    | labelData e lb => (surface_syntax_plus_dot e)
+    | unlabel e => (surface_syntax_plus_dot e)
+    | labelOf e => (surface_syntax_plus_dot e)
+    | unlabelOpaque e => (surface_syntax_plus_dot e)
+(* statements *)
+    | Skip => false
+    | Assignment x e => (surface_syntax_plus_dot e)
+    | FieldWrite e1 f e2 =>  if (surface_syntax_plus_dot e1) then (surface_syntax_plus_dot e2) else false
+    | If id0 id1 e1 e2 =>  if (surface_syntax_plus_dot e1) then (surface_syntax_plus_dot e2) else false
+    | Sequence e1 e2 =>  if (surface_syntax_plus_dot e1) then (surface_syntax_plus_dot e2) else false
+    | Return e => false
+
+(* special terms *)
+    | ObjId o =>  false
+  (* runtime labeled date*)
+    | v_l e lb => false
+    | v_opa_l e lb => false
+    | dot => true
+  end.
+
+Lemma surface_syntax_plus_dot_if : forall t1 t2, 
+    (if surface_syntax_plus_dot t1 then surface_syntax_plus_dot t2 else false) = true -> surface_syntax_plus_dot t1 = true /\ surface_syntax_plus_dot t2 = true.
+    Proof.  intros. case_eq (surface_syntax_plus_dot t1). intro. case_eq (surface_syntax_plus_dot t2). intro. auto.
+      intro. rewrite H0 in H. rewrite H1 in H. intuition. intro. rewrite H0 in H. intuition.
+Qed.
+
+Lemma valid_syntax_preservation : forall CT t t' sigma' s h, 
+      valid_syntax t ->
+      forall T, has_type CT empty_context h t T -> 
+      field_wfe_heap CT h -> wfe_heap CT h -> wfe_stack CT h s ->
+      Config CT t (SIGMA s h) ==> Config CT t' sigma' ->
+      valid_syntax t'. 
+Proof. 
+ intros CT t t' sigma' s h.   intro H_valid_syntax. intro T. intro H_typing.
+intro H_wfe_fields. intro H_wfe_heap. intro H_wfe_stack.
+    intro H_reduction.
+    remember (Config CT t (SIGMA s h)) as config. 
+    remember (Config CT t' sigma') as config'. 
+generalize dependent t. generalize dependent t'. 
+generalize dependent s. generalize dependent h.
+generalize dependent sigma'. generalize dependent T.
+induction H_reduction; intros; inversion Heqconfig; inversion Heqconfig'; subst; auto.
+- inversion H_wfe_fields. inversion H6. subst. rename h0 into h.
+    inversion H_typing. subst. inversion H5. 
+- inversion H_valid_syntax. inversion H_typing. subst. 
+   destruct IHH_reduction with (classTy clsT) sigma'0 h s e' e; auto. 
+-  inversion H_wfe_fields. inversion H8. subst. rename h0 into h.
+    inversion H_typing. subst.  inversion H5. subst. destruct H15 as [F'].  destruct H3 as [lo]. 
+    destruct H13 as [field_defs0]. destruct H4 as [method_defs0]. rewrite <- H7 in H6. inversion H6.
+    subst. rewrite <- H0 in H3. inversion H3. subst. 
+remember (class_def clsT field_defs0 method_defs0) as cls_def.
+   assert ( exists cn field_defs method_defs, CT cn = Some cls_def
+               /\ cls_def = (class_def cn field_defs method_defs)). 
+    apply heap_consist_ct with h o F' lo; auto. 
+    destruct H4 as [cls_name].     destruct H4 as [field_defs].
+    destruct H4 as [method_defs].     destruct H4. 
+    rewrite Heqcls_def in H10. inversion H10. subst.
+    destruct H with o (class_def cls_name field_defs method_defs) 
+          F' cls_name lo method_defs field_defs fname  cls'; auto. 
+    destruct H11. rewrite H11 in H1. inversion H1. destruct H12.  rewrite H12. auto.
+    destruct H12 as [o'].     destruct H12 as [F_f]. destruct H12 as [lx]. 
+    destruct H12 as [f_field_defs].     destruct H12 as [f_method_defs]. destruct H12. 
+    rewrite H12. auto.
+- inversion H_valid_syntax. inversion H_typing. subst. 
+   destruct IHH_reduction with (classTy T0) sigma'0 h s e' e; auto. subst. 
+   inversion H1; subst; inversion H_reduction. 
+-  inversion H_valid_syntax. inversion H_typing. subst. 
+    assert (valid_syntax e). apply surface_syntax_is_valid_syntax. auto. 
+    apply Valid_MethodCall2; auto.
+    apply   IHH_reduction with (classTy arguT) sigma'0 h s e; auto.  
+    subst.     apply Valid_MethodCall2; auto.
+    inversion H_typing. 
+apply   IHH_reduction with (classTy arguT) sigma'0 h s e; auto.  
+- inversion H_typing.  subst. inversion H11. subst. inversion H5. subst. rewrite <- H4 in H7. inversion H7. 
+  destruct H16 as [F']. destruct H as [lo]. rewrite H in H0. inversion H0.  subst. 
+  rewrite H8 in H1. inversion H1. subst. apply Valid_return. apply surface_syntax_is_valid_syntax. auto. 
+-  inversion H_typing.  subst. inversion H11. subst. inversion H3. subst. rewrite <- H2 in H7. inversion H7. 
+  destruct H16 as [F']. destruct H as [lo]. rewrite H in H0. inversion H0.  subst. 
+  rewrite H8 in H6. inversion H6. subst. apply Valid_return. apply surface_syntax_is_valid_syntax. auto.
+-  inversion H_valid_syntax. inversion H_typing. subst. 
+   destruct IHH_reduction with T0 sigma'0 h s e' e; auto.
+-  inversion H_valid_syntax. inversion H_typing. subst. 
+   destruct IHH_reduction with (LabelelTy T) sigma'0 h s e' e; auto.
+- inversion H_valid_syntax; auto;  inversion H0; apply value_is_valid_syntax; auto. 
+- inversion H_valid_syntax. inversion H_typing. subst. 
+   destruct IHH_reduction with (LabelelTy T0) sigma'0 h s e' e; auto.
+- inversion H_valid_syntax. inversion H_typing. subst. 
+   destruct IHH_reduction with (OpaqueLabeledTy T) sigma'0 h s e' e; auto.
+- inversion H_valid_syntax; auto;  inversion H0; apply value_is_valid_syntax; auto. 
+- inversion H_valid_syntax. inversion H_typing. subst. 
+   destruct IHH_reduction with ( T0) sigma'0 h s e' e; auto.
+- inversion H_valid_syntax. inversion H_typing. subst. 
+   destruct IHH_reduction with (classTy clsT) sigma'0 h s e1' e1; auto. 
+    inversion H1; subst; inversion H_reduction.
+-  inversion H_valid_syntax. inversion H_typing. subst. 
+   destruct IHH_reduction with (classTy cls') sigma'0 h s e2' e2; auto. subst. 
+    apply surface_syntax_is_valid_syntax. auto.  subst.  
+   apply Valid_FieldWrite2. auto. inversion H_typing. subst. 
+destruct IHH_reduction with (classTy cls') sigma'0 h s e2' e2; auto.
+-  inversion H_valid_syntax. inversion H_typing. subst.  
+    apply Valid_return. 
+   destruct IHH_reduction with T0 sigma'0 h s e' e; auto.
+-   inversion H_valid_syntax. auto.  apply surface_syntax_is_valid_syntax. auto. 
+- inversion H_typing. subst.  inversion H9.  inversion H5. 
+- inversion H_valid_syntax. inversion H_typing. subst. 
+  apply Valid_sequence1.
+destruct IHH_reduction with T0 sigma'0 h s s1' s1; auto. auto. subst. 
+inversion H1; subst; inversion H_reduction. 
+- inversion H_valid_syntax. apply surface_syntax_is_valid_syntax. auto.  auto. 
+Qed. 
+
+Lemma surface_syntax_equal_after_erasure : forall t,
+   surface_syntax t = true -> erasure_L_fun t = t. 
+Proof. intros. induction t; try (unfold surface_syntax in H; fold surface_syntax in H; inversion H; auto); 
+try (apply IHt in H; unfold erasure_L_fun; fold erasure_L_fun; rewrite H; auto);
+try  (unfold erasure_L_fun; fold erasure_L_fun; apply surface_syntax_if in H; destruct H;
+    apply IHt1 in H; apply IHt2 in H0; rewrite H; rewrite H0;  auto).
+Qed.  
+
+Lemma erasure_H_fun_imply_return_free : forall t, 
+  valid_syntax t ->
+  erasure_H_fun t = dot -> return_free t = true.
+Proof.   intro t. intro H_valid. intro.  induction t; try (unfold  erasure_H_fun in H; inversion H; fail);
+  try (unfold return_free; auto; fail);
+  try (unfold return_free; fold return_free;
+  unfold erasure_H_fun in H;  fold erasure_H_fun in H;
+  pose proof (exclude_middle_return_t t) as Hy; destruct Hy as [H_true | H_false];
+  auto; rewrite H_false in H; inversion H; fail).
+  unfold return_free; fold return_free;   unfold erasure_H_fun in H;  fold erasure_H_fun in H;
+pose proof (exclude_middle_return_t t1) as Hy1; destruct Hy1 as [H1_true | H1_false];
+pose proof (exclude_middle_return_t t2) as Hy2; destruct Hy2 as [H2_true | H2_false].
+rewrite H1_true; rewrite H2_true;  auto. rewrite H1_true in H; rewrite H2_false in H; inversion H.
+rewrite H1_false in H; inversion H. rewrite H1_false in H; inversion H.
+ 
+  unfold return_free; fold return_free;   unfold erasure_H_fun in H;  fold erasure_H_fun in H;
+pose proof (exclude_middle_return_t t1) as Hy1; destruct Hy1 as [H1_true | H1_false];
+pose proof (exclude_middle_return_t t2) as Hy2; destruct Hy2 as [H2_true | H2_false].
+rewrite H1_true; rewrite H2_true;  auto. rewrite H1_true in H; rewrite H2_false in H; inversion H.
+rewrite H1_false in H; inversion H. rewrite H1_false in H; inversion H.
+
+  unfold return_free; fold return_free.
+inversion H_valid. pose proof (surface_syntax_is_valid_syntax t1 H2). pose proof (surface_syntax_is_valid_syntax t2 H5).
+apply IHt1 in H6. apply IHt2 in H7. rewrite H6. rewrite H7. auto. 
+apply surface_syntax_H_erasure_dot. auto. apply surface_syntax_H_erasure_dot. auto. 
+ 
+  unfold return_free; fold return_free;   unfold erasure_H_fun in H;  fold erasure_H_fun in H;
+pose proof (exclude_middle_return_t t1) as Hy1; destruct Hy1 as [H1_true | H1_false];
+pose proof (exclude_middle_return_t t2) as Hy2; destruct Hy2 as [H2_true | H2_false].
+rewrite H1_true; rewrite H2_true;  auto. rewrite H1_true in H; rewrite H2_false in H.
+apply IHt2 in H. rewrite H in H2_false. inversion H2_false. inversion H_valid. 
+apply surface_syntax_is_valid_syntax. auto. auto. 
+rewrite H1_false in H. inversion H.
+rewrite H1_false in H. inversion H.
+
+unfold erasure_H_fun in H. fold erasure_H_fun in H. case_eq ( return_free t); intro; rewrite H0 in H; inversion H.
+Qed. 
+
+Lemma return_free_imply_erasure_H_fun_dot : forall t, 
+valid_syntax t ->
+return_free t = false -> erasure_H_fun t <> dot. 
+Proof. intro t.  intro H_valid. intros. induction t; try (unfold return_free in H; inversion H; fail);
+  try (unfold return_free in H; fold return_free in H; unfold erasure_H_fun; 
+       fold erasure_H_fun; rewrite H; intuition; inversion H0);
+  try (unfold return_free in H; fold return_free in H; unfold erasure_H_fun;
+       fold erasure_H_fun; apply  return_free_if_false in H; destruct H) ;
+  try (rewrite H; intuition; inversion H0);
+  try (destruct H; rewrite H; rewrite H0; intuition; inversion H1; fail).
+  inversion H_valid. apply surface_syntax_is_return_free in H2. rewrite H2 in H. inversion H.
+  destruct H. 
+  inversion H_valid. apply surface_syntax_is_return_free in H6. rewrite H6 in H0. inversion H0.
+  unfold   erasure_H_fun. destruct H. rewrite H. rewrite H0.  fold erasure_H_fun. intro contra. 
+  apply erasure_H_fun_imply_return_free in contra. rewrite H0 in contra. inversion contra.  
+  inversion H_valid. apply surface_syntax_is_valid_syntax. auto. auto. 
+ case_eq (return_free t); intro; intro contra; inversion contra; unfold erasure_H_fun in contra;
+ rewrite H0 in contra; inversion contra.  Qed. 
+
+Lemma return_free_true_imply_erasure_H_fun_dot : forall t, 
+valid_syntax t ->
+return_free t = true -> erasure_H_fun t = dot. 
+Proof. intro t.  intro H_valid. intros. induction t; try (unfold return_free in H; inversion H; fail);
+  try (unfold return_free in H; fold return_free in H; unfold erasure_H_fun; 
+       fold erasure_H_fun; rewrite H; intuition; inversion H0);
+  try (unfold return_free in H; fold return_free in H; unfold erasure_H_fun;
+       fold erasure_H_fun; apply  return_free_if_false in H; destruct H) ;
+  try (rewrite H; intuition; inversion H0);
+  try (destruct H; rewrite H; rewrite H0; intuition; inversion H1; fail);
+  try (unfold erasure_H_fun; auto; fail);
+  try (unfold return_free in H; fold return_free in H; apply return_free_if in H; destruct H;
+  unfold  erasure_H_fun; rewrite H; rewrite H0; auto). 
+Qed. 
+
+Lemma erasure_H_fun_imply_return_free_false : forall t, 
+  valid_syntax t ->
+  erasure_H_fun t <> dot -> return_free t = false.
+Proof.   intro t. intro H_valid. intro.
+  induction t; try (unfold erasure_H_fun in H; intuition; fail); fold erasure_H_fun in H;
+  try (
+  unfold erasure_H_fun in H; fold erasure_H_fun in H);
+  try (case_eq (return_free t ); intro; rewrite H0 in H; intuition); 
+  try (unfold return_free; auto; fail).
+   try (case_eq (return_free t1 ); intro; rewrite H0 in H; intuition); 
+   try (case_eq (return_free t2 ); intro; rewrite H1 in H; intuition).
+  unfold  return_free. fold return_free. rewrite H0. rewrite H1. auto. 
+  unfold  return_free. fold return_free. rewrite H0. auto. 
+   try (case_eq (return_free t1 ); intro; rewrite H0 in H; intuition); 
+   try (case_eq (return_free t2 ); intro; rewrite H1 in H; intuition).
+  unfold  return_free. fold return_free. rewrite H0. rewrite H1. auto. 
+  unfold  return_free. fold return_free. rewrite H0. auto. 
+   try (case_eq (return_free t1 ); intro; rewrite H0 in H; intuition); 
+   try (case_eq (return_free t2 ); intro; rewrite H1 in H; intuition).
+  unfold  return_free. fold return_free. rewrite H0. rewrite H1. auto. 
+  unfold  return_free. fold return_free. rewrite H0. auto. 
+Qed. 
+
+
+Lemma erasure_H_fun_equal_return_free : forall t t', 
+valid_syntax t -> valid_syntax t' ->
+erasure_H_fun t = erasure_H_fun t' ->
+return_free t = return_free t'.
+Proof. 
+intros. case_eq (return_free t). intro. apply return_free_true_imply_erasure_H_fun_dot in H2. 
+rewrite H2 in H1. assert (erasure_H_fun t' = dot). auto.  apply erasure_H_fun_imply_return_free in H3. auto. 
+auto. auto. intro.   apply return_free_imply_erasure_H_fun_dot in H2.  rewrite H1 in H2. 
+apply erasure_H_fun_imply_return_free_false in H2. auto. auto. auto. 
+Qed. 
+
+
+
+Lemma lookup_update_heap : forall h o cls F lb, 
+   lookup_heap_obj h o = Some (Heap_OBJ cls F lb) -> 
+   flow_to lb L_Label = true -> 
+   exists F', lookup_heap_obj (erasure_heap h) o = Some (Heap_OBJ cls F' lb) .
+Proof.      intros. induction h. unfold lookup_heap_obj in H. inversion H. 
+      induction a. 
+      case_eq ( beq_oid o o0). unfold lookup_heap_obj.  intro. 
+      unfold erasure_heap. rename h0 into ho. induction ho. unfold  lookup_heap_obj in H. rewrite H1 in H. 
+      inversion H. subst. rewrite H0. rewrite H1. exists (fun x : id => erasure_obj_null (F x) ((o0, Heap_OBJ cls F lb) :: h)). auto.
+      intro. unfold  lookup_heap_obj in H. rewrite H1 in H. fold  lookup_heap_obj in H. 
+      unfold erasure_heap. induction h0. fold erasure_heap.  unfold lookup_heap_obj. 
+      case_eq (flow_to l0 L_Label). intro. rewrite H1. fold lookup_heap_obj.  apply IHh. auto. 
+      intro. fold lookup_heap_obj. apply IHh. auto. 
+Qed. 
+
+Lemma flow_false_trans : forall lb1 lb2, 
+flow_to lb1 L_Label = false ->
+flow_to lb2 lb1 = true ->
+flow_to lb2 L_Label = false.
+Admitted.  
+
+Lemma exclude_middle_return : (forall t, ((exists v, t = Return v) \/ (forall v, t <> Return v))).
+  Proof with eauto. intro t. induction t; try (right; intro v0; intro contra; inversion contra; fail).
+  left. exists t. auto. Qed. 
+
+      Hint Constructors value.
+Lemma excluded_middle_value : forall t,
+  (value t) \/ ~ value t.
+  Proof with eauto.
+    intros. induction t; try (left; auto; fail); try (right; intro contra; inversion contra;fail).
+    destruct IHt. left; auto. right. intro contra. inversion contra. intuition. 
+      destruct IHt. left; auto. right. intro contra. inversion contra. intuition. 
+Qed. 
+
+Reserved Notation "c '==l>' c'"
+  (at level 40, c' at level 39).
+
+Inductive l_reduction : config -> config -> Prop :=
+    | L_reduction : forall c1 ct t s h c2_r, 
+      c1 ==> (Config ct t (SIGMA s h)) ->
+      erasure_fun ct s h t= c2_r ->
+      l_reduction c1 c2_r
+where "c '==l>' c'" := (l_reduction c c').
+
+Lemma multi_erasure_stack_helper : forall s h CT,
+      wfe_heap CT h -> 
+  (erasure_stack s h)  = (erasure_stack s (erasure_heap h)).
+  Proof. intros. induction s. unfold erasure_stack. auto. 
+  induction a. remember (erasure_stack (Labeled_frame l0 s0 :: s) h) as Hy. 
+  unfold  erasure_stack in HeqHy. 
+  unfold erasure_stack. rewrite HeqHy.   fold erasure_stack.
+  
+  assert (forall a,  (fun x : id => erasure_obj_null (s0 x) h) a =
+               (fun x : id => erasure_obj_null (s0 x) (erasure_heap h)) a).
+  intro a.
+  
+  Lemma erasure_obj_null_equal_erasure_h_helper : forall h t CT,
+      wfe_heap CT h ->
+      erasure_obj_null t h = erasure_obj_null t (erasure_heap h).
+      Proof. intros. induction t. induction a; try (unfold erasure_obj_null; auto). 
+          assert (forall h o, (exists cls F lb, lookup_heap_obj h o = Some (Heap_OBJ cls F lb) ) 
+          \/ lookup_heap_obj h o = None).
+        intro h0. induction h0.  right. unfold lookup_heap_obj. auto. 
+        intro o0. induction a. case_eq ( beq_oid o0 o1). unfold lookup_heap_obj.  intro. unfold lookup_heap_obj. rewrite H0. 
+         rename h1 into ho. induction ho.     left. exists c. exists f. exists l0. auto. 
+        intro. unfold lookup_heap_obj. rewrite H0. fold lookup_heap_obj. apply IHh0. 
+        destruct H0 with h o. destruct H1 as [cls]. destruct H1 as [F]. destruct H1 as [lb]. rewrite H1.
+        case_eq (flow_to lb L_Label ). intro. 
+        assert (exists F', lookup_heap_obj (erasure_heap h) o = Some (Heap_OBJ cls F' lb)).
+        apply lookup_erasure_heap with F. auto. auto. destruct H3 as [F']. rewrite H3. rewrite H2. auto. 
+       intro.   assert ( lookup_heap_obj (erasure_heap h) o = None).  apply lookup_erasure_heap_erasured with cls F lb CT; auto. 
+        rewrite H3. auto. rewrite H1. auto. assert (lookup_heap_obj (erasure_heap h) o  = None). 
+       apply lookup_none_in_erasured_heap. auto. rewrite H2. auto.
+      (unfold erasure_obj_null; auto).
+    Qed.
+    apply erasure_obj_null_equal_erasure_h_helper with CT. auto.
+     apply functional_extensionality in H0. rewrite H0. auto.
+ Qed. 
+
+Lemma exclude_middle_unlabelOpaque : (forall t, ((exists v, value v /\ t = unlabelOpaque v) 
+        \/ (forall v, t <> unlabelOpaque v) 
+          \/ (exists t', t = unlabelOpaque t' /\ ~ value t'))).
+  Proof with eauto. intro t. induction t; try (right; left; intro v0; intro contra; inversion contra; fail).
+  pose proof (excluded_middle_value t). destruct H. left. exists t. auto.
+  right. right. exists t. auto. Qed.
+
 
 Inductive multi_step_reduction : config -> config -> Prop := 
   | multi_reduction_refl : forall config , multi_step_reduction config config
@@ -3318,59 +2294,4768 @@ Inductive multi_step_reduction : config -> config -> Prop :=
                     multi_step_reduction c2 c3 ->
                     multi_step_reduction c1 c3.
 
-Inductive multi_step : tm -> Sigma -> tm -> Sigma -> Prop := 
-  | multi_refl : forall t sigma , multi_step t sigma t sigma
-  | multi_reduction : forall t1 t2 t3 sigma1 sigma2 sigma3, 
-                    reduction (Config t1 sigma1) (Config t2 sigma2) ->
-                    multi_step t2 sigma2 t3 sigma3 ->
-                    multi_step t1 sigma1 t3 sigma3.
+Inductive multi_step : Class_table -> tm -> Sigma -> Class_table-> tm -> Sigma -> Prop := 
+  | multi_refl : forall t ct sigma , multi_step ct t sigma ct t sigma
+  | multi_reduction : forall t1 t2 t3 sigma1 sigma2 sigma3 ct, 
+                    reduction (Config ct t1 sigma1) (Config ct t2 sigma2) ->
+                    multi_step ct t2 sigma2 ct t3 sigma3 ->
+                    multi_step ct t1 sigma1 ct t3 sigma3.
 
 Notation "c1 '==>*' c2" := (multi_step_reduction c1 c2) (at level 40).
 
 
-Theorem soundness : forall gamma CT,
-    forall sigma s h, sigma = SIGMA s h ->  wfe_heap CT gamma h -> wfe_stack CT gamma h s -> 
-    forall t s' h' t',  multi_step t sigma t' (SIGMA s' h')  ->
-    forall T, has_type CT gamma h t T -> 
-     value t' \/ (exists config', Config t' (SIGMA s' h') ==> config').
-Proof with auto. 
-  intros  gamma CT sigma s h.  intro. intro. intro. intros t s' h' t'.
-  intro multiH. 
 
-generalize dependent s.  generalize dependent h. 
-  induction multiH.
-  + intro h. intro well_heap. intro s. intro sigmaH. intro well_stack. intro T. 
-     intro typing. apply progress with  (T:=T) (gamma:=gamma) (CT:=CT)  (s:=s) (h:=h); auto.
-  + intro h1. intro well_heap. intro s1. intro. intro well_stack. intro T. intro typing. 
-      induction sigma2.  
-      assert (wfe_heap CT gamma h /\ wfe_stack CT gamma h s).
-      apply reduction_preserve_wfe with (t:=t1) (t':=t2) 
-              (sigma:=sigma1) (sigma':=(SIGMA s h)) (gamma:=gamma) (CT:=CT)
-              (s:=s1) (s':=s) (h:=h1) (h':=h) (T:=T).
-      auto. auto.       auto. auto.       auto. auto. 
-      destruct IHmultiH with (h0:=h) (s0:=s) (T:=T).
-      apply H1. auto. apply H1.
-      apply preservation with (gamma:=gamma) (CT:=CT) (s:=s1) (s':=s) 
-                    (h:=h1) (h':=h) (sigma:=sigma1) (sigma':= (SIGMA s h)) (t:=t1).
-      auto.       auto.       auto.       auto.       auto.       auto. 
-      left. auto. right. auto.
-Qed.
+Inductive multi_step_l_reduction : config -> config -> Prop := 
+  | multi_reduction_l_refl : forall config , multi_step_l_reduction config config
+  | multi_reduction_l_step : forall c1 c2 c3, 
+                    l_reduction c1 c2 ->
+                    multi_step_l_reduction c2 c3 ->
+                    multi_step_l_reduction c1 c3.
 
-Theorem deterministic: forall t sigma t1 sigma1 t2 sigma2, 
-     reduction (Config t sigma) (Config t1 sigma1) ->
-     reduction (Config t sigma) (Config t2 sigma2) -> 
+Notation "c1 '==>L*' c2" := (multi_step_l_reduction c1 c2) (at level 40).
+
+
+
+Theorem L_reduction_determinacy: forall ct t sigma t1 sigma1 t2 sigma2, 
+     l_reduction (Config ct t sigma) (Config ct t1 sigma1) ->
+     l_reduction (Config ct t sigma) (Config ct t2 sigma2) -> 
       t1 = t2 /\ sigma1 = sigma2. 
 Proof.
-     intros t sigma t1 sigma1 t2 sigma2 Hy1 Hy2.
-
-     remember (Config t1 sigma1) as _t1_config. 
-     generalize dependent t2.
-     induction Hy1; intros t2 Hy2. 
-      (*Tvar *)
-     + inversion Hy2. subst. inversion H6. rewrite <- H1 in H10. rewrite <- H2 in H10.
-        inversion H10. inversion  Heq_t1_config.
-          split. auto. auto. 
-     (*field access*)
-    + inversion Hy2. inversion Heq_t1_config. subst. 
-      
 Admitted. 
+
+Lemma normal_form_prime : forall v sigma ct, value v->
+(forall v' sigma', Config ct v sigma ==> Config ct v' sigma' -> False).
+Proof. 
+  intros v sigma ct. intro H_v. intros.
+  inversion H_v; try (rewrite <-H0 in H; inversion H; fail); 
+  try (rewrite <-H1 in H; inversion H).
+Qed.
+
+Lemma normal_form_L_reduction : forall v sigma ct, value v->
+(forall v' sigma', Config ct v sigma ==l> Config ct v' sigma' -> False).
+Proof. 
+  intros v sigma ct. intro H_v. intros.
+  induction H_v; 
+  try (subst; inversion H; subst; inversion H0; fail).
+Qed.
+
+Lemma ct_consist : forall CT CT' t t' sigma sigma', 
+  Config CT t sigma ==> Config CT' t' sigma' -> CT = CT'. 
+ Proof.
+   intros. induction t; inversion H; auto. 
+  Qed. 
+
+Lemma ct_erasure : forall CT CT' t t' s h sigma', 
+  erasure_fun CT s h t = Config CT' t' sigma' -> CT = CT'. 
+Proof. intros. unfold erasure_fun in H. 
+    case_eq (flow_to (current_label (SIGMA s h)) L_Label). intro. rewrite H0 in H. inversion H. auto. 
+    intro. rewrite H0 in H. induction s. inversion H. auto. 
+    case_eq ( return_free t).  intro. rewrite H1 in H. inversion H. auto. 
+    intro. rewrite H1 in H.
+    case_eq ( flow_to (current_label (SIGMA s h)) L_Label).  intro. rewrite H2 in H. inversion H. auto. 
+   intro. rewrite H2 in H. inversion H. auto. 
+Qed. 
+
+
+Lemma l_reduction_ct_consist : forall CT CT' t t' sigma sigma', 
+  Config CT t sigma ==l> Config CT' t' sigma' -> CT = CT'. 
+ Proof.
+   intros. inversion H. subst. assert (ct = CT'). apply ct_erasure with t0 t' s h sigma'; auto. subst.   
+   apply ct_consist in H0. auto. 
+  Qed. 
+
+Theorem L_reduction_multistep_determinacy: forall ct t sigma v1 sigma1 v2 sigma2, 
+     multi_step_l_reduction (Config ct t sigma) (Config ct v1 sigma1) ->
+     multi_step_l_reduction (Config ct t sigma) (Config ct v2 sigma2) -> 
+     value v1 -> value v2 ->
+      v1 = v2 /\ sigma1 = sigma2. 
+Proof.
+  intros ct t sigma v1 sigma1 v2 sigma2 Hy1 Hy2.
+  intro Hv1. intro Hv2.  
+  remember (Config ct v1 sigma1) as v1_config. 
+  remember (Config ct t sigma) as config. 
+  generalize dependent v1.      generalize dependent v2.
+  generalize dependent sigma.      generalize dependent sigma1.
+  generalize dependent sigma2. generalize dependent t. 
+  induction Hy1.
+  - intros. subst. inversion Heqv1_config. subst. 
+    inversion Hy2. auto. inversion H. subst. inversion Hv1; subst; inversion H3. 
+- intros. subst.  inversion Hy2. subst. inversion H.  subst. inversion Hv2; subst; inversion H0. 
+  subst.  induction c2.   induction c0. 
+  assert (ct = c). apply l_reduction_ct_consist with t  t0 sigma s. auto. 
+  assert (ct = c0). apply l_reduction_ct_consist with t  t1 sigma s0. auto.
+  subst. assert (t0 = t1 /\ s = s0). apply L_reduction_determinacy with c0 t sigma. auto. auto. 
+  destruct H2. subst. apply IHHy1 with t1 s0; auto.  inversion H1. inversion H2. inversion H6.  inversion Hy1. 
+  inversion H2.  inversion H6. 
+Qed. 
+
+Lemma multi_step_concat : forall c c1 c2, 
+ c ==>L*  c1 ->
+ c1 ==>L*  c2 ->
+ c ==>L*  c2.
+Proof. intros c c1 c2. 
+  intro Hy1.   intro Hy2.
+  induction Hy1.   auto. 
+  apply IHHy1 in Hy2. apply multi_reduction_l_step with c0; auto. 
+Qed. 
+
+Lemma erasure_sigma_preserve_context : forall s h s' h', 
+  SIGMA s' h' = erasure_sigma_fun (SIGMA s h) ->
+  flow_to (current_label (SIGMA s' h')) L_Label = flow_to (current_label (SIGMA s h)) L_Label.
+Proof. intros.
+ unfold erasure_sigma_fun in H. unfold erasure_stack in H.  induction s. 
+ inversion H. auto. 
+  induction a. rewrite H. unfold current_label. unfold get_stack. unfold get_current_label.
+  unfold get_stack_label. auto.  
+Qed.
+
+ (*
+Lemma erasure_preserve_context : forall s h s' h' t t' CT, 
+      Config CT t (SIGMA s h) =e=> (      Config CT t' (SIGMA s' h')) ->
+      (flow_to (current_label (SIGMA s' h')) L_Label = flow_to (current_label (SIGMA s h)) L_Label ).
+    Proof. intros. inversion H; apply erasure_sigma_preserve_context; auto. Qed.  
+*)
+
+
+Lemma lookup_heap_obj_two_cases : forall h o, 
+  ((exists cls F lb, lookup_heap_obj h o = Some (Heap_OBJ cls F lb) ) 
+      \/ (lookup_heap_obj h o = None)).
+  Proof.   intro h0. induction h0.  right. unfold lookup_heap_obj. auto. 
+    intro o0. induction a. case_eq ( beq_oid o0 o). unfold lookup_heap_obj.  intro. unfold lookup_heap_obj. rewrite H.
+    rename h into ho. induction ho.     left. exists c. exists f. exists l0. auto. 
+    intro. unfold lookup_heap_obj. rewrite H. fold lookup_heap_obj. apply IHh0.
+Qed. 
+
+
+  Lemma erasure_obj_null_result : forall t h, 
+    (erasure_obj_null (Some t) h = None) \/ (erasure_obj_null (Some t) h = Some null)
+   \/ (exists o, erasure_obj_null (Some t) h = Some (ObjId o)) \/ (erasure_obj_null (Some t) h = Some dot).
+  Proof. induction t; intros; try (left; auto; fail). right. left.  auto.  unfold erasure_obj_null. 
+    pose proof (lookup_heap_obj_two_cases h o). destruct H. destruct H as [cls]. destruct H as [F]. destruct H as [lb]. rewrite H.
+    case_eq (flow_to lb L_Label). intro. right. right. left.  exists o. auto.  intro. right. right. right. auto. 
+    rewrite H. right. right. right.  auto. right. right. right.  auto. 
+Qed. 
+
+  Lemma erasure_obj_null_option_result : forall option_t h, 
+    (erasure_obj_null (option_t) h = None) \/ (erasure_obj_null (option_t) h = Some null)
+   \/ (exists o, erasure_obj_null (option_t) h = Some (ObjId o)) \/ (erasure_obj_null (option_t) h = Some dot).
+  Proof.  induction option_t. intro h.  apply erasure_obj_null_result. intro h. left. auto.   Qed. 
+
+Lemma erasure_H_fun_preserve_value : forall v, 
+  value v ->
+  value (erasure_H_fun v).
+Proof. 
+  intros. induction v; try (inversion H); try ( unfold erasure_H_fun; auto; fail).
+  unfold erasure_H_fun. fold erasure_H_fun. apply value_is_return_free in H1. rewrite H1. auto.
+    unfold erasure_H_fun. fold erasure_H_fun. apply value_is_return_free in H1. rewrite H1. auto.
+Qed.
+
+Lemma field_in_erasured_heap : forall h o cls fields lb t0 i, 
+    Some (Heap_OBJ cls fields lb) = lookup_heap_obj (erasure_heap h) o ->
+    Some t0 = fields i ->
+    valid_syntax t0.
+  Proof. intros.  induction h. unfold erasure_heap in H. unfold  lookup_heap_obj in H. inversion H.  
+   unfold lookup_heap_obj in H. induction a. unfold erasure_heap in H. rename h0 into ho.
+    induction ho. case_eq (flow_to l0 L_Label). intro. rewrite H1 in H. case_eq (beq_oid o o0). intro. 
+   rewrite H2 in H.  inversion H. rewrite H5 in H0. subst.
+  assert ((erasure_obj_null (f i)  ((o0, Heap_OBJ c f l0) :: h) = None) \/ (erasure_obj_null (f i)  ((o0, Heap_OBJ c f l0) :: h) = Some null)
+   \/ (exists o, erasure_obj_null (f i)  ((o0, Heap_OBJ c f l0) :: h) = Some (ObjId o)) \/ (erasure_obj_null (f i)  ((o0, Heap_OBJ c f l0) :: h) = Some dot)).
+  apply erasure_obj_null_option_result. destruct H3; try (rewrite H3 in H0; inversion H0). destruct H3. rewrite H3 in H0.
+  inversion H0. auto. destruct H3. destruct H3 as [o']. rewrite H3 in H0. inversion H0. auto. rewrite H3 in H0. inversion H0. auto. 
+  intro. rewrite H2 in H. fold lookup_heap_obj in H. fold erasure_heap in H. apply IHh in H. auto.
+  intro. rewrite H1 in H. fold lookup_heap_obj in H. fold erasure_heap in H. apply IHh in H. auto.
+Qed. 
+
+Hint Constructors valid_syntax. 
+Lemma valid_syntax_preservation_erasure_H : forall t, 
+     valid_syntax t -> valid_syntax (erasure_H_fun t).
+Proof with eauto. induction t; intro; try (unfold erasure_H_fun; auto); fold erasure_H_fun;
+        try (case_eq (return_free t); auto; intro ; inversion H; auto).
+    case_eq (return_free t1). auto. intro . case_eq (return_free t2). intro. auto. 
+    intro. inversion H. apply surface_syntax_is_return_free in H6.  rewrite H6 in H1. inversion H1.
+    apply Valid_MethodCall2. auto. auto.      
+    intro. inversion H. apply Valid_MethodCall1. auto.  auto. 
+    apply value_is_return_free in H3. rewrite H3 in H0. inversion H0. 
+
+    case_eq (return_free t1). auto. intro . case_eq (return_free t2). intro. auto. 
+    intro. inversion H. apply surface_syntax_is_return_free in H6.  rewrite H6 in H1. inversion H1.
+    apply Valid_FieldWrite2. auto. auto.      
+    intro. inversion H. apply Valid_FieldWrite1. auto.  auto. 
+    apply value_is_return_free in H3. rewrite H3 in H0. inversion H0.
+
+    case_eq (return_free t1). auto. intro . case_eq (return_free t2). intro. auto. 
+    intro. inversion H. apply surface_syntax_is_return_free in H5.  rewrite H5 in H1. inversion H1. auto. 
+    intro.  inversion H.  apply Valid_sequence1; auto. apply value_is_return_free in H3. rewrite H3 in H0. inversion H0.
+    
+   apply Valid_v_l. apply erasure_H_fun_preserve_value.  auto. 
+   apply Valid_v_opa_l. apply erasure_H_fun_preserve_value.  auto.
+Qed.  
+
+Lemma valid_syntax_preservation_erasured : forall CT t t' s h sigma', 
+      valid_syntax t ->
+      forall T, has_type CT empty_context h t T -> 
+      wfe_heap CT h -> 
+      Config CT t (erasure_sigma_fun (SIGMA s h)) ==> Config CT t' sigma' ->
+      valid_syntax t'. 
+Proof. 
+ intros CT t t' s h sigma'.   intro H_valid_syntax. intro T. intro H_typing. intro H_wfe_heap.
+    intro H_reduction.
+    remember (Config CT t (erasure_sigma_fun (SIGMA s h))) as config. 
+    remember (Config CT t' sigma') as config'. 
+generalize dependent t. generalize dependent t'. 
+generalize dependent s. generalize dependent h.
+generalize dependent sigma'. generalize dependent T.
+induction H_reduction; intros; inversion Heqconfig; inversion Heqconfig'; subst; auto.
+-  inversion H_typing. subst. inversion H4. 
+- inversion H_valid_syntax. inversion H_typing. subst. 
+   destruct IHH_reduction with (classTy clsT) sigma'0 h s e' e; auto. 
+- inversion H8. subst. apply field_in_erasured_heap with h0 o cls fields lb fname; auto.
+- inversion H_valid_syntax. inversion H_typing. subst. 
+   destruct IHH_reduction with (classTy T0) sigma'0 h s e' e; auto. subst. 
+   inversion H1; subst; inversion H_reduction. 
+-  inversion H_valid_syntax. inversion H_typing. subst. 
+    assert (valid_syntax e). apply surface_syntax_is_valid_syntax. auto. 
+    apply Valid_MethodCall2; auto.
+    apply   IHH_reduction with (classTy arguT) sigma'0 h s e; auto.  
+    subst.     apply Valid_MethodCall2; auto.
+    inversion H_typing. 
+apply   IHH_reduction with (classTy arguT) sigma'0 h s e; auto.  
+- inversion H_typing.  subst. inversion H11. subst. inversion H5. subst. rewrite <- H4 in H7. inversion H7. 
+  destruct H16 as [F']. destruct H as [lo].   case_eq (flow_to lo L_Label ). intro. 
+  assert (exists F', lookup_heap_obj (erasure_heap h0) o = Some (Heap_OBJ cls_def0 F' lo)).
+  apply lookup_update_heap with F'; auto. destruct H10 as [F0]. rewrite H10 in H0. 
+  inversion H0.  subst. 
+  rewrite H8 in H1. inversion H1. subst. apply Valid_return. apply surface_syntax_is_valid_syntax. auto. 
+  intro. assert (lookup_heap_obj (erasure_heap h0) o = None). 
+  apply lookup_erasure_heap_erasured with cls_def0 F' lo CT; auto. 
+  rewrite H10 in H0. inversion H0.  
+-  inversion H_typing.  subst. inversion H11. subst. inversion H3. subst. rewrite <- H2 in H7. inversion H7. 
+  destruct H16 as [F']. destruct H as [lo]. 
+  case_eq (flow_to lo L_Label ). intro. 
+  assert (exists F', lookup_heap_obj (erasure_heap h0) o = Some (Heap_OBJ cls_def0 F' lo)).
+  apply lookup_update_heap with F'; auto. destruct H10 as [F0]. rewrite H10 in H0. inversion H0.  subst. 
+  rewrite H8 in H6. inversion H6. subst. apply Valid_return. apply surface_syntax_is_valid_syntax. auto.
+intro. assert (lookup_heap_obj (erasure_heap h0) o = None). 
+  apply lookup_erasure_heap_erasured with cls_def0 F' lo CT; auto. 
+  rewrite H10 in H0. inversion H0.  
+-  inversion H_valid_syntax. inversion H_typing. subst. 
+   destruct IHH_reduction with T0 sigma'0 h s e' e; auto.
+-  inversion H_valid_syntax. inversion H_typing. subst. 
+   destruct IHH_reduction with (LabelelTy T) sigma'0 h s e' e; auto.
+- inversion H_valid_syntax; auto;  inversion H0; apply value_is_valid_syntax; auto. 
+- inversion H_valid_syntax. inversion H_typing. subst. 
+   destruct IHH_reduction with (LabelelTy T0) sigma'0 h s e' e; auto.
+- inversion H_valid_syntax. inversion H_typing. subst. 
+   destruct IHH_reduction with (OpaqueLabeledTy T) sigma'0 h s e' e; auto.
+- inversion H_valid_syntax; auto;  inversion H0; apply value_is_valid_syntax; auto. 
+- inversion H_valid_syntax. inversion H_typing. subst. 
+   destruct IHH_reduction with ( T0) sigma'0 h s e' e; auto.
+- inversion H_valid_syntax. inversion H_typing. subst. 
+   destruct IHH_reduction with (classTy clsT) sigma'0 h s e1' e1; auto. 
+    inversion H1; subst; inversion H_reduction.
+-  inversion H_valid_syntax. inversion H_typing. subst. 
+   destruct IHH_reduction with (classTy cls') sigma'0 h s e2' e2; auto. subst. 
+    apply surface_syntax_is_valid_syntax. auto.  subst.  
+   apply Valid_FieldWrite2. auto. inversion H_typing. subst. 
+destruct IHH_reduction with (classTy cls') sigma'0 h s e2' e2; auto.
+- 
+  inversion H_valid_syntax. inversion H_typing. subst.  
+    apply Valid_return. 
+   destruct IHH_reduction with T0 sigma'0 h s e' e; auto.
+-   inversion H_valid_syntax. auto. apply surface_syntax_is_valid_syntax. auto.  
+- inversion H_typing. subst.  inversion H9.  inversion H5. 
+- inversion H_valid_syntax. inversion H_typing. subst. 
+  apply Valid_sequence1.
+destruct IHH_reduction with T0 sigma'0 h s s1' s1; auto. auto. subst. 
+inversion H1; subst; inversion H_reduction. 
+- inversion H_valid_syntax. apply surface_syntax_is_valid_syntax. auto.  auto. 
+Qed. 
+
+
+Hint Constructors has_type.
+Lemma typing_preservation_erasure : forall CT h t, 
+ forall T, has_type CT empty_context h t T -> has_type CT empty_context h (erasure_H_fun t) T.
+Proof with eauto. induction t; intros; try (unfold  erasure_H_fun; auto; fail); 
+    try (unfold  erasure_H_fun; case_eq (return_free t); intro;  auto; fold erasure_H_fun; inversion H; auto; fail).
+
+    unfold  erasure_H_fun; case_eq (return_free t); intro;  auto. fold erasure_H_fun. inversion H. 
+    apply T_FieldAccess with cls_def clsT fields_def; auto.
+
+    unfold  erasure_H_fun; case_eq (return_free t1); intro;  auto. case_eq (return_free t2). intro. auto. 
+    intro. fold erasure_H_fun. inversion H. apply T_MethodCall with Gamma' T0 cls_def body
+        arg_id arguT; auto. fold erasure_H_fun. inversion H. apply T_MethodCall with Gamma' T0 cls_def body
+        arg_id arguT; auto.
+
+    unfold  erasure_H_fun; case_eq (return_free t); intro;  auto. fold erasure_H_fun. inversion H. 
+    apply T_labelOf with (T0). auto.  
+
+    inversion H. inversion H5. 
+    
+    unfold  erasure_H_fun; case_eq (return_free t1); intro;  auto. case_eq (return_free t2). intro. auto. 
+    intro. fold erasure_H_fun. inversion H. auto.  apply T_FieldWrite with cls_def clsT cls'; auto. 
+    fold erasure_H_fun. inversion H. auto.  apply T_FieldWrite with cls_def clsT cls'; auto. 
+
+    unfold  erasure_H_fun; case_eq (return_free t1); intro;  auto. case_eq (return_free t2). intro. auto. 
+    intro. fold erasure_H_fun. inversion H. auto.     fold erasure_H_fun. inversion H. apply T_sequence with T0. auto. 
+    fold erasure_H_fun. inversion H. auto. 
+
+    unfold  erasure_H_fun; case_eq (return_free t); intro;  auto. fold erasure_H_fun. inversion H. auto. 
+    subst.     apply T_v_l. auto.  apply IHt.  auto.  apply erasure_H_fun_preserve_value. auto. 
+    
+    unfold  erasure_H_fun; case_eq (return_free t); intro;  auto. fold erasure_H_fun. inversion H. auto. 
+    apply T_v_opa_l. auto. apply IHt.  auto. apply erasure_H_fun_preserve_value. auto.
+Qed.  
+
+
+Lemma field_value : forall h o cls F lb f t' CT cls',  
+wfe_heap CT h -> field_wfe_heap CT h ->
+Some (Heap_OBJ cls F lb) = lookup_heap_obj h o ->
+F f = Some t' ->
+has_type CT empty_context h (FieldAccess (ObjId o) f)
+             (classTy cls') ->
+( t' = null \/ exists o',  t' = ObjId o').
+Proof. intros h o cls F lb f t' CT cls'. intro H_wfe_heap. intro H_wfe_fields. 
+  intro Hy. intro Hy_Field. intro H_typing.  inversion H_typing. inversion H2. 
+  subst.  destruct H16 as [F']. destruct H as [lo]. rewrite H in Hy. inversion Hy. subst.
+  destruct H15 as [field_defs]. destruct H0 as [method_defs]. rewrite <- H6 in H11. inversion H11. subst. 
+  inversion H_wfe_fields. subst. destruct H0 with o (class_def clsT field_defs method_defs) F' clsT lo method_defs field_defs
+      f cls'; auto. destruct H1. rewrite H1 in Hy_Field. inversion Hy_Field. subst. 
+  destruct H3. left. auto. 
+  destruct H3 as [o']. destruct H3 as [F0]. destruct H3 as [lx]. destruct H3. destruct H3. destruct H3. right. exists o'. auto.
+Qed.  
+
+  Lemma label_equivalence : forall l l', 
+    flow_to l L_Label = false -> flow_to l' L_Label = false ->
+    l = l'. 
+  Admitted. 
+
+
+Lemma erasure_value : forall v t, 
+         valid_syntax t -> 
+         value v -> 
+         erasure_H_fun t = v -> 
+         return_free t = true. 
+    Proof with eauto.  induction t; intros; auto; unfold erasure_H_fun in H1; fold erasure_H_fun in H1;
+    try (case_eq (return_free t ); intro; rewrite H2 in H1; unfold return_free; fold return_free; auto; subst; inversion H0 ).
+        try (case_eq (return_free t1 ); intro; rewrite H2 in H1; unfold return_free; fold return_free; auto; rewrite H2; 
+      case_eq (return_free t2); intro); try (auto); try (rewrite H3 in H1; rewrite <- H1 in H0; inversion H0; fail); 
+        try (rewrite H2 in H1); try (rewrite H3 in H1); try (rewrite <- H1 in H0; inversion H0). 
+        try (case_eq (return_free t1 ); intro; rewrite H2 in H1; unfold return_free; fold return_free; auto; rewrite H2; 
+      case_eq (return_free t2); intro); try (auto); try (rewrite H3 in H1; rewrite <- H1 in H0; inversion H0; fail); 
+        try (rewrite H2 in H1); try (rewrite H3 in H1); try (rewrite <- H1 in H0; inversion H0).
+      inversion H. unfold return_free. fold return_free. apply surface_syntax_is_return_free in H4. 
+      apply surface_syntax_is_return_free in H7. rewrite H4. rewrite H7.  auto.  
+       case_eq (return_free t1); intro; rewrite H2 in H1; unfold return_free; fold return_free. rewrite H2. 
+       case_eq (return_free t2). intro. auto. intro. rewrite H3 in H1. apply IHt2 in H1. rewrite H1 in H3. intuition. 
+      inversion H. apply surface_syntax_is_valid_syntax. auto. auto. auto. 
+      rewrite H2. rewrite <- H1 in H0. inversion H0. 
+      subst. apply value_erasure_to_dot in H3.
+      assert (erasure_H_fun (erasure_H_fun t)  = (erasure_H_fun t) ).
+      apply multi_erasure_H_tm_equal. inversion H. apply value_is_valid_syntax. auto. 
+      rewrite H1 in H3. apply erasure_H_fun_imply_return_free in H3. rewrite H3 in H2. auto. 
+      inversion H. apply value_is_valid_syntax. auto. 
+      subst. apply value_erasure_to_dot in H3.
+      assert (erasure_H_fun (erasure_H_fun t)  = (erasure_H_fun t) ).
+      apply multi_erasure_H_tm_equal. inversion H. apply value_is_valid_syntax. auto. 
+      rewrite H1 in H3. apply erasure_H_fun_imply_return_free in H3. rewrite H3 in H2. auto. 
+      inversion H. apply value_is_valid_syntax. auto. 
+Qed. 
+
+
+Lemma erasure_unlabelOpaque_return_free : forall t v, 
+  valid_syntax t-> value v -> erasure_H_fun t = unlabelOpaque v ->
+  return_free t = true. 
+Proof with eauto. induction t; intros; auto; unfold erasure_H_fun in H1;
+  fold erasure_H_fun in H1; try (case_eq (return_free t ); intro; rewrite H2 in H1; subst; inversion H1);
+   try (case_eq (return_free t1 ); intro; rewrite H2 in H1); try (  case_eq (return_free t2); intro; 
+  rewrite H3 in H1; inversion H1); try ( rewrite H2 in H1; inversion H1); try (inversion H1).
+  assert (return_free t = true). apply erasure_value with v; auto. inversion H. auto.
+  auto. 
+  assert (return_free t2 = true). apply IHt2 with v; auto. inversion H. 
+  apply surface_syntax_is_valid_syntax; auto. auto. rewrite H3 in H4. inversion H4. 
+Qed. 
+
+
+Lemma flow_to_simpl : forall l0 s0 s h, 
+flow_to (current_label (SIGMA (Labeled_frame l0 s0 :: s) h))
+             L_Label = false -> 
+flow_to l0 L_Label = false. 
+Proof. intros l0 s0 s h. unfold current_label.   unfold get_stack.  
+      unfold get_current_label. unfold get_stack_label. auto. Qed. 
+
+Lemma nil_flow_to_L_Label : forall h, 
+ flow_to (current_label (SIGMA nil h)) L_Label = true.
+Proof.   intro h.  unfold flow_to; unfold current_label;  unfold get_stack; 
+      unfold get_current_label. unfold L_Label. 
+      unfold subset. auto. Qed. 
+
+
+  Lemma lookup_updated_heap_none : forall h o1 o ho,
+    o <> o1 ->
+    lookup_heap_obj h o1 = None ->
+    lookup_heap_obj (update_heap_obj h o ho) o1 = None.
+    Proof. intros. induction h.
+    unfold update_heap_obj. unfold lookup_heap_obj. auto. 
+    induction a. case_eq (beq_oid o o0). intro. unfold update_heap_obj. rewrite H1. 
+    unfold lookup_heap_obj in H0. apply beq_oid_equal in H1. 
+    unfold lookup_heap_obj. rewrite <- H1 in H0. 
+    case_eq (beq_oid o1 o). intro. rewrite H2 in H0. inversion H0.
+    intro. rewrite H2 in H0. fold lookup_heap_obj. fold lookup_heap_obj in H0. auto. 
+    intro. unfold update_heap_obj. rewrite H1. 
+    fold update_heap_obj. unfold lookup_heap_obj in H0. 
+    case_eq ( beq_oid o1 o0). intro. rewrite H2 in H0. inversion H0.
+    intro.  rewrite H2 in H0. fold lookup_heap_obj in H0. apply IHh in H0. 
+    unfold lookup_heap_obj.  rewrite H2. fold lookup_heap_obj. auto. 
+  Qed.  
+
+Lemma lookup_updated_heap_equal : forall cls F lb o h cls1 F1 lb1 F' o1 lb',
+          lookup_heap_obj h o = Some (Heap_OBJ cls F lb) ->
+          lookup_heap_obj h o1 = Some (Heap_OBJ cls1 F1 lb1) -> 
+          (lookup_heap_obj
+               (update_heap_obj h o (Heap_OBJ cls F' lb')) o1  = 
+                      Some (Heap_OBJ cls1 F1 lb1)) \/ 
+              (lookup_heap_obj (update_heap_obj h o (Heap_OBJ cls F' lb')) o1  = 
+                      Some (Heap_OBJ cls F' lb') /\ beq_oid o1 o = true).
+      Proof. intros.  induction h. 
+      unfold lookup_heap_obj in H0. inversion H0.  induction a.
+      case_eq (beq_oid o o0). intro.
+
+      unfold  update_heap_obj. rewrite H1.
+      case_eq (beq_oid o1 o). intro.
+      unfold lookup_heap_obj. rewrite H2.
+      unfold lookup_heap_obj in H0. apply beq_oid_equal in H2. rewrite H2 in H0.
+      rewrite H1 in H0.
+      unfold lookup_heap_obj in H. rewrite H1 in H. rewrite H0 in H. inversion H. subst.  
+      right. auto. 
+      intro. unfold lookup_heap_obj. rewrite H2. fold lookup_heap_obj.
+      unfold lookup_heap_obj in H0. apply beq_oid_equal in H1. rewrite <-H1 in H0.
+      rewrite H2 in H0. fold lookup_heap_obj in H0. rewrite H0. 
+      left. auto.
+      intro. 
+      case_eq (beq_oid o1 o0). intro.
+      unfold update_heap_obj. rewrite H1. fold update_heap_obj.
+       unfold lookup_heap_obj. rewrite H2.
+       unfold lookup_heap_obj in H0.    rewrite H2 in H0. rewrite H0.
+      left. auto. 
+      intro.  unfold lookup_heap_obj in H. 
+       unfold lookup_heap_obj in H0. 
+      rewrite H1 in H. fold lookup_heap_obj in H.
+      rewrite H2 in H0. fold lookup_heap_obj in H0.
+      unfold update_heap_obj.
+       unfold lookup_heap_obj.  rewrite H1. rewrite H2. 
+      fold lookup_heap_obj.
+       fold update_heap_obj. apply IHh; auto.
+ Qed. 
+
+
+ Lemma update_H_object_equal_erasure : forall h o CT cls F F' lb lb',
+       wfe_heap CT h -> 
+        Some (Heap_OBJ cls F lb) = lookup_heap_obj h o ->
+        flow_to lb' L_Label = false ->
+        flow_to lb L_Label = false ->
+          erasure_heap h = erasure_heap
+                                            (update_heap_obj h o
+                                               (Heap_OBJ cls F' lb')).
+    Proof. intros h o CT cls F F' lb lb'. intros.  induction h. unfold lookup_heap_obj in H0. inversion H0.
+     induction a. case_eq (beq_oid o o0). intro. unfold update_heap_obj. rewrite H3. 
+
+    unfold lookup_heap_obj in H0.  rewrite H3 in H0.  inversion H0. 
+    unfold erasure_heap. fold erasure_heap. rewrite H2. rewrite H1.  auto. 
+    intro. unfold update_heap_obj. rewrite H3.  fold update_heap_obj. 
+    assert (erasure_heap h =
+      erasure_heap (update_heap_obj h o (Heap_OBJ cls F' lb'))).
+    apply IHh. auto.  inversion H. auto. inversion H4. subst. auto.
+    unfold  lookup_heap_obj in H0. rewrite H3 in H0. fold lookup_heap_obj in H0. auto.
+    unfold erasure_heap. fold erasure_heap.
+    rewrite H4. auto. 
+
+    induction h0. 
+    assert ( forall a, 
+     (fun x : id => erasure_obj_null (f x) ((o0, Heap_OBJ c f l0) :: h)) a
+          = (fun x : id => erasure_obj_null (f x)
+                     ((o0, Heap_OBJ c f l0) :: update_heap_obj h o (Heap_OBJ cls F' lb'))) a).
+    Proof. intro  a. 
+assert (forall h o, (exists cls F lb, lookup_heap_obj h o = Some (Heap_OBJ cls F lb) ) 
+      \/ lookup_heap_obj h o = None).
+    intro h1. induction h1.  right. unfold lookup_heap_obj. auto.
+    intro o1.  induction a0. case_eq ( beq_oid o1 o2). unfold lookup_heap_obj.  intro. unfold lookup_heap_obj. rewrite H5.
+    rename h0 into ho. induction ho.     left. exists c0. exists f0. exists l1. auto. 
+    intro. unfold lookup_heap_obj. rewrite H5. fold lookup_heap_obj. apply IHh1. 
+    remember ((o, Heap_OBJ c f l0) :: h) as h'. 
+    case (f a). induction t; try (unfold erasure_obj_null; auto).
+    
+
+    destruct H5 with  ((o0, Heap_OBJ c f l0) :: h)  o1. 
+    destruct H6 as [cls1]. destruct H6 as [F1]. destruct H6 as [lb1]. rewrite H6.
+
+      
+      remember ((o0, Heap_OBJ c f l0) :: h) as h0.
+      assert(  (lookup_heap_obj
+               (update_heap_obj h0 o (Heap_OBJ cls F' lb')) o1  = 
+                      Some (Heap_OBJ cls1 F1 lb1)) \/ 
+              (lookup_heap_obj (update_heap_obj h0 o (Heap_OBJ cls F' lb')) o1  = 
+                      Some (Heap_OBJ cls F' lb')) /\ beq_oid o1 o = true ).
+      apply lookup_updated_heap_equal with F lb; auto. 
+      destruct H7. unfold update_heap_obj in H7. rewrite Heqh0 in H7.  rewrite H3 in H7. 
+      fold update_heap_obj in H7. rewrite H7. auto.
+
+      unfold update_heap_obj in H7. rewrite Heqh0 in H7.  rewrite H3 in H7. 
+      fold update_heap_obj in H7. destruct H7. rewrite H7. apply beq_oid_equal in H8.
+      rewrite H8 in H6. rewrite H6 in H0. inversion H0. subst. rewrite H2.  rewrite H1.  auto.
+
+      rewrite H6. 
+      auto.
+      assert (lookup_heap_obj (update_heap_obj ((o0, Heap_OBJ c f l0) :: h) o (Heap_OBJ cls F' lb')) o1 = None).
+      apply lookup_updated_heap_none; auto. 
+      intro contra. rewrite contra in H0. rewrite <- H0 in H6. inversion H6. 
+      unfold update_heap_obj in H7. rewrite H3 in H7. fold update_heap_obj in H7. rewrite H7. auto. 
+        
+      auto. 
+      apply functional_extensionality in H5. rewrite H5. auto.  
+Qed.
+
+
+Lemma erasure_stack_updated_heap : forall s h o cls F i v lo, 
+ flow_to lo L_Label = false ->
+ lookup_heap_obj h o = Some (Heap_OBJ cls F lo) ->
+ (erasure_stack s h) = erasure_stack s
+        (update_heap_obj h o
+           (Heap_OBJ cls (fields_update F i v) lo)).
+  Proof.  intros.  
+(*flow_to l0 L_Label = true *)
+induction s. auto. induction a. rename s0 into sf.
+    unfold erasure_stack. fold erasure_stack.
+    assert (forall a, (fun x : id => erasure_obj_null (sf x) h) a = (fun x : id =>
+                                                                           erasure_obj_null (sf x)
+                                                                             (update_heap_obj h o
+                                                                                (Heap_OBJ cls (fields_update F i v) lo))) a) .
+    intro a. assert (forall h o, (exists cls F lb, lookup_heap_obj h o = Some (Heap_OBJ cls F lb) ) 
+      \/ lookup_heap_obj h o = None).
+    intro h1. induction h1.  right. unfold lookup_heap_obj. auto.
+    intro o1.  induction a0. case_eq ( beq_oid o1 o0). unfold lookup_heap_obj.  intro. unfold lookup_heap_obj. rewrite H1.
+    rename h0 into ho. induction ho.     left. exists c. exists f. exists l1. auto. 
+    intro. unfold lookup_heap_obj. rewrite H1. fold lookup_heap_obj. apply IHh1. 
+    case (sf a). induction t; try (unfold erasure_obj_null; auto).
+
+    destruct H1 with  h o0. 
+    destruct H2 as [cls1]. destruct H2 as [F1]. destruct H2 as [lb1]. rewrite H2.
+    remember  lo as lb'. 
+    remember (fields_update F i v) as F'. 
+    assert(  (lookup_heap_obj
+               (update_heap_obj h o (Heap_OBJ cls F' lb')) o0  = 
+                      Some (Heap_OBJ cls1 F1 lb1)) \/ 
+              (lookup_heap_obj (update_heap_obj h o (Heap_OBJ cls F' lb')) o0  = 
+                      Some (Heap_OBJ cls F' lb')) /\ beq_oid o0 o = true ).
+      apply lookup_updated_heap_equal with F lo; auto. rewrite <- Heqlb'. auto.
+      destruct H3. unfold update_heap_obj in H3.
+      fold update_heap_obj in H3. rewrite H3. auto.
+
+      unfold update_heap_obj in H3. 
+      fold update_heap_obj in H3. destruct H3. rewrite H3. apply beq_oid_equal in H4.
+      rewrite H4 in H2. rewrite H2 in H0. inversion H0. subst. 
+      auto.
+      rewrite H2. unfold erasure_obj_null.
+      assert (lookup_heap_obj
+          (update_heap_obj h o
+             (Heap_OBJ cls (fields_update F i v)
+                lo))    o0 = None).
+      apply lookup_updated_heap_none; auto.
+     intro contra. rewrite contra in H0. rewrite H0 in H2.  inversion H2. 
+      rewrite H3. auto. auto. 
+     apply functional_extensionality in H1.
+     rewrite H1. auto. 
+Qed. 
+
+
+
+Lemma extend_heap_preserve_erasure : forall s h o h' CT cls F lb, 
+  o = (get_fresh_oid h) ->field_wfe_heap CT h -> wfe_heap CT h ->  wfe_stack CT h s ->
+  h' =  add_heap_obj h o (Heap_OBJ cls F lb) ->
+  flow_to lb L_Label = false ->
+  erasure_sigma_fun (SIGMA s h) =   erasure_sigma_fun (SIGMA s h').
+Proof. 
+  intros  s h o h' CT cls F lb. 
+  intro H_o. intro H_wfe_field. intro H_wfe_heap. intro H_wfe_stack.   intro H_h'. intro H_flow. 
+  assert (erasure_heap h = erasure_heap h'). induction h. 
+  unfold erasure_heap. rewrite H_h'. unfold  add_heap_obj. rewrite H_flow. auto. 
+  unfold add_heap_obj in H_h'. remember (a::h) as h0. unfold erasure_heap.
+  rewrite H_h'. rewrite H_flow. fold  erasure_heap. auto. 
+  unfold erasure_sigma_fun. 
+  assert (erasure_stack s h = erasure_stack s h').
+  induction s. unfold erasure_stack. auto. unfold erasure_stack.
+  induction a.  
+
+  assert (forall a, (fun x : id => erasure_obj_null (s0 x) h) a = (fun x : id => erasure_obj_null (s0 x) h') a).
+  intro a. inversion H_wfe_stack. unfold empty_stack_frame. unfold erasure_obj_null. auto.
+  inversion H3. 
+  assert (forall x, s0 x = None \/ exists v, s0 x = Some v ).
+  intro x. induction s0. right. exists a0. auto. left. auto. 
+  destruct H12 with a. rewrite H13.   unfold erasure_obj_null. auto. 
+  destruct H13 as [v]. inversion H0. inversion H7. subst. 
+  destruct H8 with a v; auto. subst. 
+  unfold  erasure_obj_null. rewrite H13. 
+  auto. destruct H4 as [cls_name]. destruct H4 as [o'].  destruct H4. subst. 
+  rewrite H13. unfold erasure_obj_null. 
+destruct H5 as [Fo]. destruct H4 as [lo]. 
+  destruct H4 as [field_defs].  destruct H4 as [method_defs]. destruct H4. 
+assert ( lookup_heap_obj h o'  =  lookup_heap_obj (add_heap_obj h (get_fresh_oid h) (Heap_OBJ cls F lb)) o').
+  assert (o' <> (get_fresh_oid h) ).
+  intro contra. assert (lookup_heap_obj h (get_fresh_oid h) = None). 
+  apply fresh_oid_heap with CT; auto. rewrite <- contra in H6. rewrite H6 in H4. 
+  inversion H4. 
+  unfold  lookup_heap_obj. unfold add_heap_obj.
+  assert (beq_oid o' (get_fresh_oid h) = false).  apply beq_oid_not_equal. auto. 
+  rewrite H9.  fold lookup_heap_obj. auto. rewrite <- H6. rewrite H4. auto. 
+
+  apply functional_extensionality in H0. 
+
+  rewrite H0. auto. rewrite H. rewrite H0. auto. 
+Qed.
+
+Lemma return_free_change_imply_method_call : forall t CT s h l0 sf s' h' e', 
+     wfe_heap CT h -> 
+     field_wfe_heap CT h ->
+     forall T, has_type CT empty_context h t T ->
+     Config CT t (SIGMA s h) ==>
+     Config CT e' (SIGMA (Labeled_frame l0 sf :: s') h') ->
+     return_free t = true -> return_free e' = false ->
+     s = s'.
+  Proof. induction t; intros CT s h lb sf s' h' e'; intro H_wfe_heap; intro H_wfe_fields; intro T; intro H_typing;
+   intro H_reduction;   intro Hy1; intro Hy2; inversion H_reduction;  inversion H_typing; subst; 
+    try (unfold  return_free in Hy1; fold  return_free in Hy1; 
+      unfold  return_free in Hy2; fold  return_free in Hy2).
+   - inversion H13.
+   - apply IHt with CT h lb sf h' e'0 (classTy clsT); auto.
+   - inversion H5. subst. 
+        assert (( e' = null \/ exists o',  e' = ObjId o')).
+  apply field_value with h0 o cls fields lb0 i CT cls'; auto.
+      destruct H. subst. inversion Hy2. destruct H as [o']. subst. inversion Hy2.  
+   - apply return_free_if in Hy1. destruct Hy1. auto. rewrite H1 in Hy2. 
+      case_eq (return_free e'0). intro. rewrite H2 in Hy2. inversion Hy2. 
+      intro. 
+      apply IHt1 with CT h lb sf h' e'0 (classTy T0); auto.
+   - apply return_free_if in Hy1. destruct Hy1. auto. rewrite H in Hy2. 
+      case_eq (return_free e'0). intro. rewrite H1 in Hy2. inversion Hy2. 
+      intro. 
+      apply IHt2 with CT h lb sf h' e'0 (classTy arguT); auto.
+   - inversion H14. inversion H6. auto. 
+   - inversion H14. inversion H6. auto. 
+   - inversion H11. inversion H5. inversion Hy2. 
+   -  apply IHt with CT h lb sf h' e'0 T0; auto.
+   - rewrite Hy1 in Hy2.  inversion Hy2. 
+  -  apply IHt with CT h lb sf h' e'0  (LabelelTy T); auto.
+   - inversion H4. inversion H7. subst.  rewrite Hy1 in Hy2.  inversion Hy2. 
+   -   apply IHt with CT h lb sf h' e'0  (LabelelTy T0); auto.
+   -  inversion Hy2.
+  -  apply IHt with CT h lb sf h' e'0   (OpaqueLabeledTy T); auto.
+  -  rewrite Hy1 in Hy2.  inversion Hy2. 
+  - inversion H11. - inversion H14. 
+  - apply return_free_if in Hy1. destruct Hy1. auto. rewrite H1 in Hy2. 
+      case_eq (return_free e1'). intro. rewrite H2 in Hy2. inversion Hy2. 
+      intro. 
+      apply IHt1 with CT h lb sf h' e1' (classTy clsT); auto.
+   - apply return_free_if in Hy1. destruct Hy1. auto. rewrite H in Hy2. 
+      apply IHt2 with CT h lb sf h' e2' (classTy cls'); auto.
+   - inversion Hy2.    - inversion Hy2. 
+   - inversion H21. inversion H5.  - inversion H21. inversion H5. 
+  - apply return_free_if in Hy1. destruct Hy1. auto. rewrite H1 in Hy2. 
+      case_eq (return_free s1'). intro. rewrite H2 in Hy2. inversion Hy2. 
+      intro. 
+      apply IHt1 with CT h lb sf h' s1' T0; auto.
+   - apply return_free_if in Hy1. destruct Hy1. auto. rewrite H1 in Hy2.
+      inversion Hy2.  
+   - inversion Hy1.
+   - inversion Hy1. 
+Qed.   
+
+
+Lemma return_free_change_imply_return : forall t CT s h l0 sf s' h' e', 
+     wfe_heap CT h -> 
+     field_wfe_heap CT h ->
+     forall T, has_type CT empty_context h t T ->
+     Config CT t (SIGMA (Labeled_frame l0 sf :: s) h) ==>
+     Config CT e' (SIGMA s' h') ->
+     return_free t = false -> return_free e' = true ->
+     s = s'.
+  Proof. induction t; intros CT s h lb sf s' h' e'; intro H_wfe_heap; intro H_wfe_fields; intro T; intro H_typing;
+   intro H_reduction;   intro Hy1; intro Hy2; inversion H_reduction;  inversion H_typing; subst; 
+    try (unfold  return_free in Hy1; fold  return_free in Hy1; 
+      unfold  return_free in Hy2; fold  return_free in Hy2); 
+      try (inversion Hy1; fail); try (inversion Hy2; fail).  Admitted. 
+(*
+   - inversion H13.
+   - apply IHt with CT h lb sf h' e'0 (classTy clsT); auto.
+   - inversion H5. subst. 
+        assert (( e' = null \/ exists o',  e' = ObjId o')).
+  apply field_value with h0 o cls fields lb0 i CT cls'; auto.
+      destruct H. subst. inversion Hy2. destruct H as [o']. subst. inversion Hy2.  
+   - apply return_free_if in Hy1. destruct Hy1. auto. rewrite H1 in Hy2. 
+      case_eq (return_free e'0). intro. rewrite H2 in Hy2. inversion Hy2. 
+      intro. 
+      apply IHt1 with CT h lb sf h' e'0 (classTy T0); auto.
+   - apply return_free_if in Hy1. destruct Hy1. auto. rewrite H in Hy2. 
+      case_eq (return_free e'0). intro. rewrite H1 in Hy2. inversion Hy2. 
+      intro. 
+      apply IHt2 with CT h lb sf h' e'0 (classTy arguT); auto.
+   - inversion H14. inversion H6. auto. 
+   - inversion H14. inversion H6. auto. 
+   - inversion H11. inversion H5. inversion Hy2. 
+   -  apply IHt with CT h lb sf h' e'0 T0; auto.
+   - rewrite Hy1 in Hy2.  inversion Hy2. 
+  -  apply IHt with CT h lb sf h' e'0  (LabelelTy T); auto.
+   - inversion H4. inversion H7. subst.  rewrite Hy1 in Hy2.  inversion Hy2. 
+   -   apply IHt with CT h lb sf h' e'0  (LabelelTy T0); auto.
+   -  inversion Hy2.
+  -  apply IHt with CT h lb sf h' e'0   (OpaqueLabeledTy T); auto.
+  -  rewrite Hy1 in Hy2.  inversion Hy2. 
+  - inversion H11. - inversion H14. 
+  - apply return_free_if in Hy1. destruct Hy1. auto. rewrite H1 in Hy2. 
+      case_eq (return_free e1'). intro. rewrite H2 in Hy2. inversion Hy2. 
+      intro. 
+      apply IHt1 with CT h lb sf h' e1' (classTy clsT); auto.
+   - apply return_free_if in Hy1. destruct Hy1. auto. rewrite H in Hy2. 
+      apply IHt2 with CT h lb sf h' e2' (classTy cls'); auto.
+   - inversion Hy2.    - inversion Hy2. 
+   - inversion H21. inversion H5.  - inversion H21. inversion H5. 
+  - apply return_free_if in Hy1. destruct Hy1. auto. rewrite H1 in Hy2. 
+      case_eq (return_free s1'). intro. rewrite H2 in Hy2. inversion Hy2. 
+      intro. 
+      apply IHt1 with CT h lb sf h' s1' T0; auto.
+   - apply return_free_if in Hy1. destruct Hy1. auto. rewrite H1 in Hy2.
+      inversion Hy2.  
+   - inversion Hy1.
+   - inversion Hy1. 
+Qed.   *)
+
+Lemma return_free_change_imply_return_free_false2true : forall t CT s h  s' h' e', 
+     wfe_heap CT h -> 
+     field_wfe_heap CT h ->
+     forall T, has_type CT empty_context h t T ->
+     Config CT t (SIGMA s h) ==>
+     Config CT e' (SIGMA s' h') ->
+     return_free t = false -> return_free e' = true ->
+     return_free (erasure_H_fun t) = true.
+  Proof. induction t; intros CT s h  s' h' e'; intro H_wfe_heap; intro H_wfe_fields; intro T; intro H_typing;
+   intro H_reduction;   intro Hy1; intro Hy2; inversion H_reduction;  inversion H_typing; subst; 
+    try (unfold  return_free in Hy1; fold  return_free in Hy1; 
+      unfold  return_free in Hy2; fold  return_free in Hy2); auto. 
+   - unfold erasure_H_fun. fold erasure_H_fun. rewrite Hy1. 
+      assert (return_free (erasure_H_fun t) = true). 
+      apply IHt with CT s h s' h' e'0 (classTy clsT); auto. 
+      unfold return_free. fold return_free. auto.  Admitted. (*
+   - inversion H5. subst. 
+        assert (( e' = null \/ exists o',  e' = ObjId o')).
+  apply field_value with h0 o cls fields lb0 i CT cls'; auto.
+      destruct H. subst. unfold erasure_H_fun. auto. 
+      destruct H as [o']. subst. unfold erasure_H_fun. auto. 
+   - apply return_free_if in Hy1. destruct Hy1. auto. rewrite H1 in Hy2. 
+      case_eq (return_free e'0). intro. rewrite H2 in Hy2. inversion Hy2. 
+      intro. assert (return_free (erasure_H_fun e'0) = true). 
+      apply IHt1 with CT s h lb sf s' h' (classTy T0); auto.
+      unfold erasure_H_fun.  fold erasure_H_fun. rewrite H2.
+      unfold return_free. fold return_free. rewrite H3. rewrite H1. auto. 
+   - apply return_free_if in Hy1. destruct Hy1. auto. 
+      case_eq (return_free e'0). intro. rewrite H1 in Hy2. rewrite H in Hy2. inversion Hy2. 
+      intro. assert (return_free (erasure_H_fun e'0) = true). 
+      apply IHt2 with CT s h lb sf s' h' (classTy arguT); auto.
+      unfold erasure_H_fun.  fold erasure_H_fun. rewrite H1.
+      unfold return_free. fold return_free. rewrite H.
+      unfold return_free. fold return_free. rewrite H2. rewrite H. auto. 
+   - inversion H6. subst. rename h0 into h. rename s0 into s. inversion H18. 
+      subst. rewrite <- H1 in H20. inversion H20. destruct H10 as [F']. destruct H as [lo].
+      rewrite H in H7. inversion H7. subst. rewrite H21 in H8. inversion H8. subst. 
+      assert (return_free body0 = true). apply surface_syntax_is_return_free. auto. 
+      unfold erasure_H_fun. fold erasure_H_fun. rewrite H0. auto. 
+   - inversion H6. subst. rename h0 into h. rename s0 into s. inversion H18. 
+      subst. rewrite <- H1 in H20. inversion H20. destruct H8 as [F']. destruct H as [lo].
+      rewrite H in H7. inversion H7. subst. rewrite H21 in H13. inversion H13. subst. 
+      assert (return_free body0 = true). apply surface_syntax_is_return_free. auto. 
+      unfold erasure_H_fun. fold erasure_H_fun. rewrite H0. auto. 
+   - unfold erasure_H_fun. auto. 
+   - unfold erasure_H_fun. fold erasure_H_fun. rewrite Hy2. 
+      assert (return_free (erasure_H_fun e'0) = true). 
+      apply IHt with CT s h lb sf s' h' T0; auto. 
+      unfold return_free. fold return_free. auto.  
+   - unfold erasure_H_fun. fold erasure_H_fun.  rewrite Hy1.  auto. 
+  -  unfold erasure_H_fun. fold erasure_H_fun. rewrite Hy2. 
+      assert (return_free (erasure_H_fun e'0) = true). 
+      apply IHt with CT s h lb sf s' h' (LabelelTy T); auto. 
+      unfold return_free. fold return_free. auto.  
+   - assert (erasure_H_fun e' = dot). apply return_free_true_imply_erasure_H_fun_dot.
+      apply value_is_valid_syntax; auto. auto. rewrite H. auto. 
+   - unfold erasure_H_fun. fold erasure_H_fun. rewrite Hy2. 
+      assert (return_free (erasure_H_fun e'0) = true). 
+      apply IHt with CT s h lb sf s' h' (LabelelTy T0); auto. 
+      unfold return_free. fold return_free. auto.  
+   - unfold erasure_H_fun. auto. 
+   - unfold erasure_H_fun. fold erasure_H_fun. rewrite Hy2. 
+      assert (return_free (erasure_H_fun e'0) = true). 
+      apply IHt with CT s h lb sf s' h' (OpaqueLabeledTy T); auto. 
+      unfold return_free. fold return_free. auto.
+   - rewrite Hy1 in Hy2. inversion Hy2. 
+  - inversion H11. 
+  - inversion H14. 
+  - apply return_free_if in Hy1. destruct Hy1. auto. rewrite H1 in Hy2. 
+      case_eq (return_free e1'). intro. rewrite H2 in Hy2. inversion Hy2. 
+      intro. assert (return_free (erasure_H_fun e1') = true). 
+      apply IHt1 with CT s h lb sf s' h' (classTy clsT); auto.
+      unfold erasure_H_fun.  fold erasure_H_fun. rewrite H2.
+      unfold return_free. fold return_free. rewrite H3. rewrite H1. auto.
+   - apply return_free_if in Hy1. destruct Hy1. auto. 
+      case_eq (return_free e2'). intro. rewrite H1 in Hy2. rewrite H in Hy2. inversion Hy2. 
+      intro. assert (return_free (erasure_H_fun e2') = true). 
+      apply IHt2 with CT s h lb sf s' h' (classTy cls'); auto.
+      unfold erasure_H_fun.  fold erasure_H_fun. rewrite H1.
+      unfold return_free. fold return_free. rewrite H.
+      unfold return_free. fold return_free. rewrite H3. rewrite H. auto.
+   - inversion H21. inversion H5. 
+    - inversion H21. inversion H5. 
+  - apply return_free_if in Hy1. destruct Hy1. auto. rewrite H1 in Hy2. 
+      case_eq (return_free s1'). intro. rewrite H2 in Hy2. inversion Hy2. 
+      intro. assert (return_free (erasure_H_fun s1') = true). 
+      apply IHt1 with CT s h lb sf s' h' T0; auto.
+      unfold erasure_H_fun.  fold erasure_H_fun. rewrite H2.
+      unfold return_free. fold return_free. rewrite H3. rewrite H1. auto.
+   - apply return_free_if in Hy1. destruct Hy1. auto. rewrite H1 in Hy2.
+      inversion Hy2.  
+    - inversion Hy2. inversion Hy1. 
+    - inversion Hy1. 
+Qed.  *)
+
+
+Lemma return_free_equal_stack : forall t CT s h l0 s0  l1 s1 s' h' e', 
+     wfe_heap CT h -> 
+     field_wfe_heap CT h ->
+     forall T, has_type CT empty_context h t T ->
+     Config CT t (SIGMA (Labeled_frame l0 s0 :: s) h) ==>
+     Config CT e' (SIGMA (Labeled_frame l1 s1 :: s') h') ->
+     return_free t = true -> return_free e' = true ->
+     s = s'.
+  Proof. induction t; intros CT s h lb0 s0  lb1 s1 s' h' e'; intro H_wfe_heap; intro H_wfe_fields; intro T; intro H_typing;
+   intro H_reduction;   intro Hy1; intro Hy2; inversion H_reduction;  inversion H_typing; subst; 
+      try (inversion Hy1; fail); try (inversion Hy2;fail); try (auto).
+   - apply IHt with CT h lb0 s0 lb1 s1 h' e'0 (classTy clsT); auto.
+   - inversion H5. subst. unfold  update_current_label in H10.  inversion H10. auto. 
+   - apply return_free_if in Hy1. destruct Hy1. auto. 
+      unfold return_free in Hy2. fold return_free in Hy2.   rewrite H1 in Hy2.  
+      case_eq (return_free e'0). intro. rewrite H2 in Hy2. 
+      apply IHt1 with CT h lb0 s0 lb1 s1 h' e'0 (classTy T0); auto.
+      intro. rewrite H2 in Hy2.  inversion Hy2. 
+   - apply return_free_if in Hy1. destruct Hy1. auto. 
+      unfold return_free in Hy2. fold return_free in Hy2.   rewrite H in Hy2.  
+      apply IHt2 with CT h lb0 s0 lb1 s1 h' e'0 (classTy arguT); auto.
+   - inversion H5. subst. inversion H11. auto.
+   - apply IHt with CT h lb0 s0 lb1 s1 h' e'0 T0; auto.
+   - apply IHt with CT h lb0 s0 lb1 s1 h' e'0 (LabelelTy T); auto.
+   - inversion H4. subst. inversion H7.  auto. 
+   - apply IHt with CT h lb0 s0 lb1 s1 h' e'0 (LabelelTy T0); auto.
+   - apply IHt with CT h lb0 s0 lb1 s1 h' e'0 (OpaqueLabeledTy T); auto.
+   - inversion H4. subst. inversion H7.  auto. 
+    - inversion H11. 
+    - inversion H14. 
+    - apply return_free_if in Hy1. destruct Hy1. 
+      unfold return_free in Hy2. fold return_free in Hy2. 
+      case_eq (return_free e1'). intro. rewrite H2 in Hy2. 
+      auto.  apply IHt1 with CT h lb0 s0 lb1 s1 h' e1' (classTy clsT); auto.
+      intro. rewrite H2 in Hy2.  inversion Hy2. 
+   - apply return_free_if in Hy1. destruct Hy1. auto. 
+      unfold return_free in Hy2. fold return_free in Hy2.   rewrite H in Hy2.  
+      apply IHt2 with CT h lb0 s0 lb1 s1 h' e2' (classTy cls'); auto.
+    - inversion H6. subst. inversion H12. subst. auto. 
+    - inversion H7. subst. inversion H13. subst. auto.
+    - apply return_free_if in Hy1. destruct Hy1. 
+      unfold return_free in Hy2. fold return_free in Hy2. 
+      case_eq (return_free s1'). intro. rewrite H2 in Hy2. 
+      auto.  apply IHt1 with CT h lb0 s0 lb1 s1 h' s1' T0; auto.
+      intro. rewrite H2 in Hy2.  inversion Hy2.
+Qed. 
+
+Lemma valid_syntax_after_erasure : forall t, 
+  valid_syntax t ->
+  valid_syntax (erasure_H_fun t).
+Proof with eauto. induction t; intros; unfold  erasure_H_fun; auto; try (fold erasure_H_fun).
+case_eq (return_free t ); intro; auto. apply Valid_FieldAccess. apply IHt. inversion H. auto. 
+case_eq (return_free t1 ); intro; auto. Admitted. 
+
+
+
+Lemma simulation_H : forall CT t t' s h s' h',
+      dot_free t = true ->
+      valid_syntax t ->
+      forall T, has_type CT empty_context h t T -> 
+      field_wfe_heap CT h -> wfe_heap CT h -> wfe_stack CT h s ->
+      flow_to (current_label (SIGMA s h)) L_Label = false ->
+      flow_to (current_label (SIGMA s' h')) L_Label = false ->
+      Config CT t (SIGMA s h) ==> Config CT t' (SIGMA s' h') ->
+      erasure_fun CT s h t = erasure_fun CT s' h' t'.
+Proof. 
+  intros  CT t t' s h s' h'. intro H_dot_free. intro H_valid_syntax. 
+  intro T. intro H_typing. intro H_wfe_fields. 
+  intro H_wfe_heap. intro H_wfe_stack. 
+  intro H_flow_l.   intro H_flow_r. intro H_reduction. 
+  (*intro H_erasure_sigma_l.  *) 
+  
+generalize dependent t'. 
+  generalize dependent T.
+    generalize dependent s.      generalize dependent h.
+    generalize dependent s'.      generalize dependent h'.
+induction t; intros; try (inversion H_reduction; subst).
+- (* (Tvar i) *) inversion H_typing. inversion H3. 
+- (*(FieldAccess t i)*) intros. 
+unfold dot_free in H_dot_free. fold dot_free in H_dot_free. auto.
+destruct s. admit. 
+ inversion H_typing. subst. 
+assert (erasure_fun CT s h t = erasure_fun CT s' h' e').
+    apply IHt with h' s' h s (classTy clsT)  e'; auto.     
+
+inversion H_erasure_l. subst.
+  + rewrite H_flow_l in H3. inversion H3.
+  + subst.  inversion H_erasure_r. subst.
+        rewrite H_flow_r in H4. inversion H4. subst. 
+  ++  inversion H_typing. subst. 
+    assert (Config CT (erasure_H_fun_whole t s) (SIGMA  s'0 h'0) = Config CT (erasure_H_fun_whole e' s')  (SIGMA s'1 h'1)).
+    apply IHt with h' s' h s (classTy clsT)  e'; auto.     
+    inversion H_valid_syntax. auto. 
+    apply erasure_H_context; auto.     auto. apply erasure_H_context; auto.
+
+    unfold erasure_H_fun_whole.  
+    induction s. 
+    pose proof (nil_flow_to_L_Label h). rewrite H1 in H_flow_l. inversion H_flow_l. 
+
+    induction a. apply flow_to_simpl in H_flow_l. rewrite H_flow_l. fold erasure_H_fun_whole.
+    fold erasure_H_fun_whole in IHs. unfold erasure_H_fun. fold erasure_H_fun. 
+
+    unfold erasure_H_fun_whole.  
+    induction s'. 
+    pose proof (nil_flow_to_L_Label h'). rewrite H1 in H_flow_r. inversion H_flow_r. 
+
+    induction a. apply flow_to_simpl in H_flow_r. rewrite H_flow_r. fold erasure_H_fun_whole.
+    fold erasure_H_fun_whole in IHs'. unfold erasure_H_fun. fold erasure_H_fun. 
+
+     unfold erasure_H_fun_whole in H. fold erasure_H_fun_whole in H. 
+      rewrite H_flow_l in H. rewrite H_flow_r in H.
+
+     inversion H. subst. auto.  
+      
+     case_eq (return_free t). case_eq (return_free e'). intros. 
+     pose proof (dot_erasure_dot s).      pose proof (dot_erasure_dot s').
+      rewrite H9. rewrite H11. auto.  
+     
+     intros. pose proof (dot_erasure_dot s).  rewrite H9. 
+    apply return_free_true_imply_erasure_H_fun_dot in H7. 
+    rewrite H7 in H6. rewrite H9 in H6. 
+    assert ((Labeled_frame l0 s0 :: s)  = s').
+    apply return_free_change_imply_method_call with t CT h l1 s1 h' e' (classTy clsT); auto.
+    apply erasure_H_fun_imply_return_free. inversion H_valid_syntax. auto. auto. 
+
+    assert ((erasure_H_fun_whole (FieldAccess (erasure_H_fun e') i) s') = dot).
+    apply field_access_erasure_dot; auto. apply valid_syntax_after_erasure; auto. 
+    inversion H_valid_syntax. 
+    apply valid_syntax_preservation with CT t  (SIGMA (Labeled_frame l1 s1 :: s') h')
+                  (Labeled_frame l0 s0 :: s) h (classTy clsT); auto. 
+    apply return_free_imply_erasure_H_fun_dot  in H1. auto. 
+    apply valid_syntax_preservation with CT t  (SIGMA (Labeled_frame l1 s1 :: s') h')
+                  (Labeled_frame l0 s0 :: s) h (classTy clsT); auto.  
+    inversion H_valid_syntax. auto. rewrite H12. auto. 
+    inversion H_valid_syntax.  auto. 
+
+    intro. case_eq (return_free e'). intro. 
+    apply return_free_true_imply_erasure_H_fun_dot in H7. rewrite H7 in H6. 
+    assert (erasure_H_fun_whole dot s' = dot). apply dot_erasure_dot. 
+    rewrite H9 in H6. 
+    assert ((erasure_H_fun_whole (FieldAccess (erasure_H_fun t) i) s) = dot).
+    apply field_access_erasure_dot; auto. apply valid_syntax_after_erasure; auto. 
+    inversion H_valid_syntax. auto. 
+    apply return_free_imply_erasure_H_fun_dot in H1. auto. 
+    inversion H_valid_syntax. auto. 
+    rewrite H11. rewrite H9. auto. 
+     apply valid_syntax_preservation with CT t  (SIGMA (Labeled_frame l1 s1 :: s') h')
+                  (Labeled_frame l0 s0 :: s) h (classTy clsT); auto.   
+    inversion H_valid_syntax. auto. 
+    intro. 
+
+    
+    
+    assert (erasure_H_fun_whole (FieldAccess (erasure_H_fun t) i) s = 
+    erasure_H_fun_whole (FieldAccess (erasure_H_fun e') i) s'). 
+    apply field_access_erasure_helper; auto. inversion H_valid_syntax. auto. 
+    apply valid_syntax_preservation with CT t  (SIGMA (Labeled_frame l1 s1 :: s') h')
+                  (Labeled_frame l0 s0 :: s) h (classTy clsT); auto.   
+    inversion H_valid_syntax. auto. 
+    rewrite H9. auto.  
+
+- (*FieldAccess (ObjId o) i*)  
+  intros. unfold dot_free in H_dot_free. fold dot_free in H_dot_free. auto.
+  inversion H_erasure_l. subst.
+  + rewrite H_flow_l in H2. inversion H2.
+  + subst.  inversion H_erasure_r. subst.
+        rewrite H_flow_r in H3. inversion H3. subst. 
+  ++  inversion H_typing. subst. unfold erasure_H_fun_whole.
+        induction s. 
+        pose proof (nil_flow_to_L_Label h). rewrite H in H_flow_l. inversion H_flow_l.
+    induction a. apply flow_to_simpl in H_flow_l. rewrite H_flow_l. fold erasure_H_fun_whole.
+    fold erasure_H_fun_whole in IHs. unfold erasure_H_fun. fold erasure_H_fun. 
+ assert (return_free (ObjId o) = true).
+  auto.  rewrite H. inversion H_reduction. inversion H5. subst.   inversion H9.  subst. 
+  inversion H5. inversion H18. subst. inversion H23. subst. rename h1 into h.  
+  assert (( t' = null \/ exists o',  t' = ObjId o')).
+  apply field_value with h o cls fields lb i CT cls'; auto. 
+  assert ((erasure_H_fun_whole t' (Labeled_frame lb0 s1 :: s)) = dot). apply value_erasure_dot; auto.
+  destruct H0. rewrite H0. auto. destruct H0 as [o']. rewrite H0. auto.
+  rewrite H9. assert ((erasure_H_fun_whole dot s) = dot). apply dot_erasure_dot; auto.
+  rewrite H11. rewrite H14. rewrite H12. 
+      assert (l0 = lb0). apply label_equivalence; auto; 
+      apply flow_transitive with l0; auto. rewrite H13. auto.   
+
+- (*MethodCall t1' i t2*)  admit. 
+- (*MethodCall t1 i t2'*)  admit.
+- (*MethodCall o i v*) 
+ inversion H_erasure_l. subst.
+  + rewrite H_flow_l in H2. inversion H2.
+  + subst.  inversion H_erasure_r. subst.
+        rewrite H_flow_r in H3. inversion H3. subst. 
+  ++  inversion H_typing. subst. inversion H6. inversion H14.  subst. 
+        rewrite H11. rewrite H13. 
+    induction s0. pose proof (nil_flow_to_L_Label h0). rewrite H in H_flow_l.
+    inversion H_flow_l. induction a. apply flow_to_simpl in H_flow_l.
+    unfold erasure_H_fun_whole. fold erasure_H_fun_whole. rewrite H_flow_l.
+    unfold erasure_H_fun . fold erasure_H_fun. 
+    unfold return_free. fold return_free. 
+    assert (return_free t2 = true). apply value_is_return_free. auto.  
+    rewrite H.  auto. rewrite H2. 
+
+    inversion H4. subst. destruct H23 as [F']. destruct H0 as [lo']. rewrite H0 in H7. 
+    inversion H7. subst. rewrite <- H15   in H10. inversion H10. subst. 
+    rewrite H12 in H8. inversion H8. subst. 
+    
+    assert (return_free body0 = true). apply surface_syntax_is_return_free. auto. 
+    rewrite H1.  
+
+    unfold erasure_H_fun. unfold return_free. 
+
+    unfold erasure_sigma_fun. unfold erasure_stack. rewrite H_flow_l. rewrite H2. 
+    fold erasure_stack. auto. 
+
+-  (* MethodCall (ObjId o) i (unlabelOpaque (v_opa_l v lb))  *) 
+ inversion H_erasure_l. subst.
+  + rewrite H_flow_l in H2. inversion H2.
+  + subst.  inversion H_erasure_r. subst.
+        rewrite H_flow_r in H3. inversion H3. subst. 
+  ++  inversion H_typing. subst. inversion H6. inversion H14.  subst. 
+        rewrite H11. rewrite H9. 
+    induction s0. pose proof (nil_flow_to_L_Label h0). rewrite H in H_flow_l.
+    inversion H_flow_l. induction a. apply flow_to_simpl in H_flow_l.
+    unfold erasure_H_fun_whole. fold erasure_H_fun_whole. rewrite H_flow_l.
+    unfold erasure_H_fun . fold erasure_H_fun. 
+    unfold return_free. fold return_free. 
+    assert (return_free v = true). apply value_is_return_free. inversion H5.  auto.  
+    rewrite H.  auto. 
+
+    assert (flow_to
+      (join_label lb (current_label (SIGMA (Labeled_frame l0 s :: s0) h0)))
+      L_Label = false). 
+    apply flow_join_label with (current_label (SIGMA (Labeled_frame l0 s :: s0) h0)) lb; auto.
+    rewrite H0.  
+
+    inversion H4. subst. destruct H24 as [F']. destruct H1 as [lo']. rewrite H1 in H7. 
+    inversion H7. subst. rewrite <- H16   in H8. inversion H8. subst. 
+    rewrite H10 in H13. inversion H13. subst. 
+    
+    assert (return_free body0 = true). apply surface_syntax_is_return_free. auto. 
+    rewrite H15.  
+
+    unfold erasure_H_fun. unfold return_free. 
+
+    unfold erasure_sigma_fun. unfold erasure_stack. rewrite H_flow_l. rewrite H0. 
+    fold erasure_stack. auto. 
+
+- (* new exp*) 
+ inversion H_erasure_l. subst.
+  + rewrite H_flow_l in H2. inversion H2.
+  + subst.  inversion H_erasure_r. subst.
+        rewrite H_flow_r in H3. inversion H3. subst. 
+  ++  inversion H_typing. subst. inversion H5. inversion H11.  subst.
+       rewrite H9. rewrite H12.
+    remember (add_heap_obj h0 (get_fresh_oid h0)
+           (Heap_OBJ (class_def c field_defs method_defs)
+              (init_field_map field_defs empty_field_map)
+              (current_label (SIGMA s0 h0)))) as h'.
+    assert (erasure_sigma_fun (SIGMA s0 h0) =   erasure_sigma_fun (SIGMA s0 h')). 
+    apply extend_heap_preserve_erasure with (get_fresh_oid h0) CT 
+        (class_def c field_defs method_defs)
+         (init_field_map field_defs empty_field_map)
+        (current_label (SIGMA s0 h0)); auto. 
+     induction s0. pose proof (nil_flow_to_L_Label h0). rewrite H0 in H_flow_l.
+    inversion H_flow_l. induction a. apply flow_to_simpl in H_flow_l.
+    unfold erasure_H_fun_whole. fold  erasure_H_fun_whole. rewrite H_flow_l. 
+    unfold erasure_H_fun. rewrite H. auto.  
+      
+
+- (* label data *) 
+ intros. 
+unfold dot_free in H_dot_free. fold dot_free in H_dot_free. auto.
+inversion H_valid_syntax. 
+pose proof (valid_syntax_after_erasure t H1). subst.    
+inversion H_erasure_l. subst.
+  + rewrite H_flow_l in H5. inversion H5.
+  + subst.  inversion H_erasure_r. subst.
+        rewrite H_flow_r in H6. inversion H6. subst. 
+  ++ inversion H_typing. subst. 
+    assert (Config CT (erasure_H_fun_whole t s) (SIGMA  s'0 h'0) = Config CT (erasure_H_fun_whole e' s')  (SIGMA s'1 h'1)).
+    apply IHt with h' s' h s T0 e'; auto.     
+    inversion H_valid_syntax. auto. 
+    apply erasure_H_context; auto.     auto. apply erasure_H_context; auto.
+
+    unfold erasure_H_fun_whole.  
+    induction s. 
+    pose proof (nil_flow_to_L_Label h). rewrite H2 in H_flow_l. inversion H_flow_l. 
+
+    induction a. apply flow_to_simpl in H_flow_l. rewrite H_flow_l. fold erasure_H_fun_whole.
+    fold erasure_H_fun_whole in IHs. unfold erasure_H_fun. fold erasure_H_fun. 
+
+    unfold erasure_H_fun_whole.  
+    induction s'. 
+    pose proof (nil_flow_to_L_Label h'). rewrite H2 in H_flow_r. inversion H_flow_r. 
+
+    induction a. apply flow_to_simpl in H_flow_r. rewrite H_flow_r. fold erasure_H_fun_whole.
+    fold erasure_H_fun_whole in IHs'. unfold erasure_H_fun. fold erasure_H_fun. 
+
+     unfold erasure_H_fun_whole in H. fold erasure_H_fun_whole in H. 
+      rewrite H_flow_l in H. rewrite H_flow_r in H.
+
+     inversion H. subst. auto.  
+      
+     case_eq (return_free t). case_eq (return_free e'). intros. 
+     pose proof (dot_erasure_dot s).      pose proof (dot_erasure_dot s').
+      rewrite H8. rewrite H11. auto.  
+     
+     intros. pose proof (dot_erasure_dot s).  rewrite H8. 
+    apply return_free_true_imply_erasure_H_fun_dot in H7. 
+    rewrite H7 in H4. rewrite H8 in H4. 
+   (* assert ((Labeled_frame l0 s0 :: s)  = s').
+    apply return_free_change_imply_method_call with t CT h l2 s1 h' e' T0; auto.
+    apply erasure_H_fun_imply_return_free. inversion H_valid_syntax. auto. auto*)
+
+    assert ((erasure_H_fun_whole (labelData (erasure_H_fun e') l0) s') = dot).
+    apply label_data_erasure_dot; auto. apply valid_syntax_after_erasure; auto. 
+    apply valid_syntax_preservation with CT t  (SIGMA (Labeled_frame l2 s1 :: s') h')
+                  (Labeled_frame l1 s0 :: s) h T0; auto. 
+    apply return_free_imply_erasure_H_fun_dot  in H2. auto.
+    apply valid_syntax_preservation with CT t  (SIGMA (Labeled_frame l2 s1 :: s') h')
+                  (Labeled_frame l1 s0 :: s) h T0; auto. auto.   
+    rewrite H11. auto. auto. 
+
+    intro. case_eq (return_free e'). intro. 
+    apply return_free_true_imply_erasure_H_fun_dot in H7. rewrite H7 in H4. 
+    assert (erasure_H_fun_whole dot s' = dot). apply dot_erasure_dot. 
+    rewrite H8 in H4. 
+    assert ((erasure_H_fun_whole (labelData (erasure_H_fun t) l0) s) = dot).
+    apply label_data_erasure_dot; auto.
+    apply return_free_imply_erasure_H_fun_dot  in H2. auto. auto. 
+    rewrite H11. rewrite H8. auto. 
+    apply valid_syntax_preservation with CT t  (SIGMA (Labeled_frame l2 s1 :: s') h')
+                  (Labeled_frame l1 s0 :: s) h T0; auto. auto.   
+    intro. 
+
+    assert (erasure_H_fun_whole (labelData (erasure_H_fun t) l0) s = 
+    erasure_H_fun_whole (labelData (erasure_H_fun e') l0) s'). 
+    apply label_data_erasure_helper; auto.
+    apply valid_syntax_preservation with CT t  (SIGMA (Labeled_frame l2 s1 :: s') h')
+                  (Labeled_frame l1 s0 :: s) h T0; auto. 
+    rewrite H8. auto.  
+
+- (* v_l t lb *) 
+ inversion H_erasure_l. subst.
+  + rewrite H_flow_l in H3. inversion H3.
+  + subst.  inversion H_erasure_r. subst.
+        rewrite H_flow_r in H4. inversion H4. subst. 
+  ++  inversion H_typing. subst. rewrite H8. rewrite H10. 
+    induction s'. pose proof (nil_flow_to_L_Label h'). rewrite H in H_flow_l.
+    inversion H_flow_l. induction a. apply flow_to_simpl in H_flow_l.
+    unfold erasure_H_fun_whole. fold erasure_H_fun_whole. rewrite H_flow_l.
+    unfold erasure_H_fun . fold erasure_H_fun. 
+    unfold return_free. fold return_free. 
+    assert (return_free t = true). apply value_is_return_free. auto.  
+    rewrite H.  auto. 
+
+-  (* unlabel *) admit. 
+
+-  (* unlabel v_l *) 
+ inversion H_erasure_l. subst.
+  + rewrite H_flow_l in H2. inversion H2.
+  + subst.  inversion H_erasure_r. subst.
+        rewrite H_flow_r in H3. inversion H3. subst. 
+  ++  inversion H_typing. subst. inversion H4. inversion H7.  subst. 
+        rewrite H10. rewrite H12. 
+    induction s0. pose proof (nil_flow_to_L_Label h0). rewrite H in H_flow_l.
+    inversion H_flow_l. induction a. apply flow_to_simpl in H_flow_l.
+    unfold erasure_H_fun_whole. fold erasure_H_fun_whole. rewrite H_flow_l.
+    unfold erasure_H_fun . fold erasure_H_fun. 
+    unfold return_free. fold return_free. 
+    assert (return_free t' = true). apply value_is_return_free. auto.  
+    inversion H6. auto. rewrite H.  auto. 
+
+    assert (erasure_H_fun_whole t'
+     (update_current_label (Labeled_frame l0 s :: s0)
+        (join_label lb (current_label (SIGMA (Labeled_frame l0 s :: s0) h0)))) = dot).
+    apply value_erasure_dot.     inversion H6. auto.
+    apply flow_join_label with (current_label (SIGMA (Labeled_frame l0 s :: s0) h0)) lb; auto. 
+    subst. rewrite H17. 
+
+    pose proof (dot_erasure_dot s0). rewrite H0. 
+    unfold update_current_label. unfold erasure_sigma_fun. unfold erasure_stack. 
+    rewrite H_flow_l. fold erasure_stack. 
+    assert (flow_to
+         (join_label lb (current_label (SIGMA (Labeled_frame l0 s :: s0) h0)))
+         L_Label = false).
+    apply flow_join_label with (current_label (SIGMA (Labeled_frame l0 s :: s0) h0)) lb; auto. 
+    rewrite H1. auto. 
+
+-  (* labelOf *) 
+
+ intros. 
+unfold dot_free in H_dot_free. fold dot_free in H_dot_free. auto.
+inversion H_valid_syntax. 
+pose proof (valid_syntax_after_erasure t H1). subst.    
+inversion H_erasure_l. subst.
+  + rewrite H_flow_l in H5. inversion H5.
+  + subst.  inversion H_erasure_r. subst.
+        rewrite H_flow_r in H6. inversion H6. subst. 
+  ++  inversion H_typing. subst. 
+    assert (Config CT (erasure_H_fun_whole t s) (SIGMA  s'0 h'0) = Config CT (erasure_H_fun_whole e' s')  (SIGMA s'1 h'1)).
+    apply IHt with h' s' h s (LabelelTy T0)  e'; auto.     
+    apply erasure_H_context; auto.     auto. apply erasure_H_context; auto.
+
+    unfold erasure_H_fun_whole.  
+    induction s. 
+    pose proof (nil_flow_to_L_Label h). rewrite H3 in H_flow_l. inversion H_flow_l. 
+
+    induction a. apply flow_to_simpl in H_flow_l. rewrite H_flow_l. fold erasure_H_fun_whole.
+    fold erasure_H_fun_whole in IHs. unfold erasure_H_fun. fold erasure_H_fun. 
+
+    unfold erasure_H_fun_whole.  
+    induction s'. 
+    pose proof (nil_flow_to_L_Label h'). rewrite H3 in H_flow_r. inversion H_flow_r. 
+
+    induction a. apply flow_to_simpl in H_flow_r. rewrite H_flow_r. fold erasure_H_fun_whole.
+    fold erasure_H_fun_whole in IHs'. unfold erasure_H_fun. fold erasure_H_fun. 
+
+    unfold erasure_H_fun_whole in H. fold erasure_H_fun_whole in H. 
+      rewrite H_flow_l in H. rewrite H_flow_r in H.
+
+     inversion H. subst. auto.  
+
+     case_eq (return_free t). case_eq (return_free e'). intros. 
+     pose proof (dot_erasure_dot s).      pose proof (dot_erasure_dot s').
+      rewrite H9. rewrite H11. auto.  
+     
+     intros. pose proof (dot_erasure_dot s).  rewrite H9. 
+    apply return_free_true_imply_erasure_H_fun_dot in H7. 
+    rewrite H7 in H4. rewrite H9 in H4. 
+
+    assert ((erasure_H_fun_whole (labelOf (erasure_H_fun e')) s') = dot).
+    apply labelOf_erasure_dot; auto. apply valid_syntax_after_erasure; auto.  
+    apply valid_syntax_preservation with CT t  (SIGMA (Labeled_frame l1 s1 :: s') h')
+                  (Labeled_frame l0 s0 :: s) h (LabelelTy T0); auto. 
+
+    apply return_free_imply_erasure_H_fun_dot  in H3. auto. 
+    apply valid_syntax_preservation with CT t  (SIGMA (Labeled_frame l1 s1 :: s') h')
+                  (Labeled_frame l0 s0 :: s) h (LabelelTy T0); auto. 
+    rewrite H11. auto. auto.  
+
+    intro. case_eq (return_free e'). intro. 
+    apply return_free_true_imply_erasure_H_fun_dot in H7. rewrite H7 in H4. 
+    assert (erasure_H_fun_whole dot s' = dot). apply dot_erasure_dot. 
+    rewrite H9 in H4.  rewrite H9. 
+    assert ((erasure_H_fun_whole (labelOf (erasure_H_fun t)) s) = dot).
+    apply labelOf_erasure_dot; auto.  
+    apply return_free_imply_erasure_H_fun_dot in H3. auto. auto. 
+    rewrite H11. auto. 
+    apply valid_syntax_preservation with CT t  (SIGMA (Labeled_frame l1 s1 :: s') h')
+                  (Labeled_frame l0 s0 :: s) h (LabelelTy T0); auto. 
+    intro. 
+
+    assert (erasure_H_fun_whole (labelOf (erasure_H_fun t)) s = 
+    erasure_H_fun_whole (labelOf (erasure_H_fun e')) s'). 
+    apply label_of_erasure_helper; auto. auto. 
+    apply valid_syntax_preservation with CT t  (SIGMA (Labeled_frame l1 s1 :: s') h')
+                  (Labeled_frame l0 s0 :: s) h (LabelelTy T0); auto. 
+    rewrite H9. auto.  
+
+
+-  (* labelOf v*) 
+ inversion H_erasure_l. subst.
+  + rewrite H_flow_l in H2. inversion H2.
+  + subst.  inversion H_erasure_r. subst.
+        rewrite H_flow_r in H3. inversion H3. subst. 
+  ++  inversion H_typing. subst. rewrite H7. rewrite H9. 
+    induction s'. pose proof (nil_flow_to_L_Label h'). rewrite H in H_flow_l.
+    inversion H_flow_l. induction a. apply flow_to_simpl in H_flow_l.
+    unfold erasure_H_fun_whole. fold erasure_H_fun_whole. rewrite H_flow_l.
+    unfold erasure_H_fun . fold erasure_H_fun. 
+    unfold return_free. fold return_free. 
+    assert (return_free v = true). apply value_is_return_free. auto.  
+    inversion H5. auto. rewrite H.  auto. 
+
+-  (* unlabelOpaque e *)
+ intros. 
+unfold dot_free in H_dot_free. fold dot_free in H_dot_free. auto.
+inversion H_valid_syntax. 
+pose proof (valid_syntax_after_erasure t H1). subst.    
+inversion H_erasure_l. subst.
+  + rewrite H_flow_l in H5. inversion H5.
+  + subst.  inversion H_erasure_r. subst.
+        rewrite H_flow_r in H6. inversion H6. subst. 
+  ++  inversion H_typing. subst. 
+    assert (Config CT (erasure_H_fun_whole t s) (SIGMA  s'0 h'0) = Config CT (erasure_H_fun_whole e' s')  (SIGMA s'1 h'1)).
+    apply IHt with h' s' h s (OpaqueLabeledTy T)  e'; auto.     
+    apply erasure_H_context; auto.     auto. apply erasure_H_context; auto.
+
+    unfold erasure_H_fun_whole.  
+    induction s. 
+    pose proof (nil_flow_to_L_Label h). rewrite H3 in H_flow_l. inversion H_flow_l. 
+
+    induction a. apply flow_to_simpl in H_flow_l. rewrite H_flow_l. fold erasure_H_fun_whole.
+    fold erasure_H_fun_whole in IHs. unfold erasure_H_fun. fold erasure_H_fun. 
+
+    unfold erasure_H_fun_whole.  
+    induction s'. 
+    pose proof (nil_flow_to_L_Label h'). rewrite H3 in H_flow_r. inversion H_flow_r. 
+
+    induction a. apply flow_to_simpl in H_flow_r. rewrite H_flow_r. fold erasure_H_fun_whole.
+    fold erasure_H_fun_whole in IHs'. unfold erasure_H_fun. fold erasure_H_fun. 
+
+    unfold erasure_H_fun_whole in H. fold erasure_H_fun_whole in H. 
+      rewrite H_flow_l in H. rewrite H_flow_r in H.
+
+     inversion H. subst. auto.  
+
+     case_eq (return_free t). case_eq (return_free e'). intros. 
+     pose proof (dot_erasure_dot s).      pose proof (dot_erasure_dot s').
+      rewrite H9. rewrite H11. auto.  
+     
+     intros. pose proof (dot_erasure_dot s).  rewrite H9. 
+    apply return_free_true_imply_erasure_H_fun_dot in H7. 
+    rewrite H7 in H4. rewrite H9 in H4. 
+
+    assert ((erasure_H_fun_whole (unlabelOpaque (erasure_H_fun e')) s') = dot).
+    apply unlabelOpaque_erasure_dot; auto. apply valid_syntax_after_erasure; auto.  
+    apply valid_syntax_preservation with CT t  (SIGMA (Labeled_frame l1 s1 :: s') h')
+                  (Labeled_frame l0 s0 :: s) h (OpaqueLabeledTy T); auto. 
+
+    apply return_free_imply_erasure_H_fun_dot  in H3. auto. 
+    apply valid_syntax_preservation with CT t  (SIGMA (Labeled_frame l1 s1 :: s') h')
+                  (Labeled_frame l0 s0 :: s) h (OpaqueLabeledTy T); auto. 
+    rewrite H11. auto. auto.  
+
+    intro. case_eq (return_free e'). intro. 
+    apply return_free_true_imply_erasure_H_fun_dot in H7. rewrite H7 in H4. 
+    assert (erasure_H_fun_whole dot s' = dot). apply dot_erasure_dot. 
+    rewrite H9 in H4.  rewrite H9. 
+    assert ((erasure_H_fun_whole (unlabelOpaque (erasure_H_fun t)) s) = dot).
+    apply unlabelOpaque_erasure_dot; auto.  
+    apply return_free_imply_erasure_H_fun_dot in H3. auto. auto. 
+    rewrite H11. auto. 
+    apply valid_syntax_preservation with CT t  (SIGMA (Labeled_frame l1 s1 :: s') h')
+                  (Labeled_frame l0 s0 :: s) h (OpaqueLabeledTy T); auto. 
+    intro. 
+    
+    assert (erasure_H_fun_whole (unlabelOpaque (erasure_H_fun t)) s = 
+    erasure_H_fun_whole (unlabelOpaque (erasure_H_fun e')) s'). 
+    apply unlabelOpaque_erasure_helper; auto. auto. 
+    apply valid_syntax_preservation with CT t  (SIGMA (Labeled_frame l1 s1 :: s') h')
+                  (Labeled_frame l0 s0 :: s) h (OpaqueLabeledTy T); auto. 
+    rewrite H9. auto.  
+
+-  (* (unlabelOpaque (v_opa_l t' lb)) *) 
+ inversion H_erasure_l. subst.
+  + rewrite H_flow_l in H2. inversion H2.
+  + subst.  inversion H_erasure_r. subst.
+        rewrite H_flow_r in H3. inversion H3. subst. 
+  ++  inversion H_typing. subst. inversion H4. inversion H7.  subst. 
+        rewrite H9. rewrite H11. 
+    induction s0. pose proof (nil_flow_to_L_Label h0). rewrite H in H_flow_l.
+    inversion H_flow_l. induction a. apply flow_to_simpl in H_flow_l.
+    unfold erasure_H_fun_whole. fold erasure_H_fun_whole. rewrite H_flow_l.
+    unfold erasure_H_fun . fold erasure_H_fun. 
+    unfold return_free. fold return_free. 
+    assert (return_free t' = true). apply value_is_return_free. auto.  
+    inversion H6. auto. rewrite H.  auto. 
+
+    assert (erasure_H_fun_whole t'
+     (update_current_label (Labeled_frame l0 s :: s0)
+        (join_label lb (current_label (SIGMA (Labeled_frame l0 s :: s0) h0)))) = dot).
+    apply value_erasure_dot.     inversion H6. auto.
+    apply flow_join_label with (current_label (SIGMA (Labeled_frame l0 s :: s0) h0)) lb; auto. 
+    rewrite H0. 
+
+    pose proof (dot_erasure_dot s0). rewrite H1. 
+    unfold update_current_label. unfold erasure_sigma_fun. unfold erasure_stack. 
+    rewrite H_flow_l. fold erasure_stack. 
+    assert (flow_to
+         (join_label lb (current_label (SIGMA (Labeled_frame l0 s :: s0) h0)))
+         L_Label = false).
+    apply flow_join_label with (current_label (SIGMA (Labeled_frame l0 s :: s0) h0)) lb; auto. 
+    rewrite H5. auto. 
+
+-  (*Assignment*) 
+      inversion H_typing. inversion H5.
+-  (* Assignment *) 
+     inversion H_typing. inversion H5.
+-  (* (FieldWrite t1 i t2) *) admit.
+-  (* (FieldWrite t1 i t2) *) admit.
+-  (* (FieldWrite t1 i t2) *) 
+    inversion H_erasure_l. subst.
+  + rewrite H_flow_l in H2. inversion H2.
+  + subst.  inversion H_erasure_r. subst.
+        rewrite H_flow_r in H3. inversion H3. subst. 
+  ++  inversion H_typing. subst. inversion H6. inversion H12. subst. 
+        induction s0. pose proof (nil_flow_to_L_Label h0). rewrite H in H_flow_l.
+        inversion H_flow_l. induction a. apply flow_to_simpl in H_flow_l.
+        unfold erasure_H_fun_whole. fold erasure_H_fun_whole. rewrite H_flow_l.
+        unfold erasure_H_fun . fold erasure_H_fun.
+        unfold return_free. fold return_free. assert (return_free t2 = true).
+        apply value_is_return_free. auto. rewrite H. rewrite H10. rewrite H14.
+        unfold erasure_sigma_fun.
+
+       rename h0 into h.
+        assert (erasure_heap h = erasure_heap
+                                                    (update_heap_obj h o
+                                                       (Heap_OBJ cls (fields_update F i t2) lb))).
+        apply update_H_object_equal_erasure with CT F lb; auto. 
+        apply flow_false_trans with ((current_label (SIGMA (Labeled_frame l0 s :: s0) h))); auto.
+        apply flow_false_trans with ((current_label (SIGMA (Labeled_frame l0 s :: s0) h))); auto.
+        rewrite <- H0.
+        
+        unfold erasure_stack. fold erasure_stack. rewrite H_flow_l.
+
+        assert ( (erasure_stack s0 h) = erasure_stack s0
+                (update_heap_obj h o
+                     (Heap_OBJ cls (fields_update F i t2) lb))).
+        apply erasure_stack_updated_heap; auto. 
+        apply flow_false_trans with ((current_label (SIGMA (Labeled_frame l0 s :: s0) h))); auto.
+  
+        rewrite H1. auto. 
+-  (*(FieldWrite t1 i t2 *) 
+      inversion H_erasure_l. subst.
+  + rewrite H_flow_l in H2. inversion H2.
+  + subst.  inversion H_erasure_r. subst.
+        rewrite H_flow_r in H3. inversion H3. subst. 
+  ++  inversion H_typing. subst. inversion H7. inversion H13. subst. 
+        induction s0. pose proof (nil_flow_to_L_Label h0). rewrite H in H_flow_l.
+        inversion H_flow_l. induction a. apply flow_to_simpl in H_flow_l.
+        unfold erasure_H_fun_whole. fold erasure_H_fun_whole. rewrite H_flow_l.
+        unfold erasure_H_fun . fold erasure_H_fun.
+        unfold return_free. fold return_free. assert (return_free v = true).
+        apply value_is_return_free. auto. rewrite H. rewrite H9. rewrite H12.
+        unfold erasure_sigma_fun.
+
+       rename h0 into h.
+        assert (erasure_heap h = erasure_heap
+                                                    (update_heap_obj h o
+                                                       (Heap_OBJ cls (fields_update F i v) lo))).
+        apply update_H_object_equal_erasure with CT F lo; auto. 
+        apply flow_false_trans with ((join_label (current_label (SIGMA (Labeled_frame l0 s :: s0) h)) lb)); auto.
+        apply flow_join_label with (current_label (SIGMA (Labeled_frame l0 s :: s0) h)) lb; auto. 
+        apply join_label_commutative; auto.
+        apply flow_false_trans with ((join_label (current_label (SIGMA (Labeled_frame l0 s :: s0) h)) lb)); auto.
+        apply flow_join_label with (current_label (SIGMA (Labeled_frame l0 s :: s0) h)) lb; auto. 
+        apply join_label_commutative; auto.
+        rewrite <- H0.
+        
+        unfold erasure_stack. fold erasure_stack. rewrite H_flow_l.
+
+
+        assert ( (erasure_stack s0 h) = erasure_stack s0
+                (update_heap_obj h o
+                     (Heap_OBJ cls (fields_update F i v) lo))).
+        apply erasure_stack_updated_heap; auto. 
+        apply flow_false_trans with ((join_label (current_label (SIGMA (Labeled_frame l0 s :: s0) h)) lb)); auto.
+        apply flow_join_label with (current_label (SIGMA (Labeled_frame l0 s :: s0) h)) lb; auto. 
+        apply join_label_commutative; auto.
+  
+        rewrite H1. auto. 
+
+-  (* if *) 
+  inversion H_typing. inversion H7. inversion H18. 
+-  (* if *) 
+  inversion H_typing. inversion H7. inversion H18. 
+-  (* Sequence *) 
+ intros. 
+unfold dot_free in H_dot_free. fold dot_free in H_dot_free. auto.
+apply dot_free_if in H_dot_free. destruct H_dot_free. 
+inversion H_valid_syntax. 
+pose proof (valid_syntax_after_erasure t1 H4). subst.    
+inversion H_erasure_l. subst.
+  + rewrite H_flow_l in H8. inversion H8.
+  + subst.  inversion H_erasure_r. subst.
+        rewrite H_flow_r in H9. inversion H9. subst. 
+  ++  inversion H_typing. subst. 
+    assert (Config CT (erasure_H_fun_whole t1 s) (SIGMA  s'0 h'0) = Config CT (erasure_H_fun_whole s1' s')  (SIGMA s'1 h'1)).
+    apply IHt1 with h' s' h s T0 s1'; auto.
+    apply erasure_H_context; auto.     auto. apply erasure_H_context; auto.
+    assert (return_free t2 = true).
+    inversion H_valid_syntax. apply surface_syntax_is_return_free. auto. 
+    inversion H10; subst; inversion H0.  
+
+    unfold erasure_H_fun_whole.  
+    induction s. 
+    pose proof (nil_flow_to_L_Label h). rewrite H7 in H_flow_l. inversion H_flow_l. 
+
+    induction a. apply flow_to_simpl in H_flow_l. rewrite H_flow_l. fold erasure_H_fun_whole.
+    fold erasure_H_fun_whole in IHs. unfold erasure_H_fun. fold erasure_H_fun. 
+
+    unfold erasure_H_fun_whole.  
+    induction s'. 
+    pose proof (nil_flow_to_L_Label h'). rewrite H7 in H_flow_r. inversion H_flow_r. 
+
+    induction a. apply flow_to_simpl in H_flow_r. rewrite H_flow_r. fold erasure_H_fun_whole.
+    fold erasure_H_fun_whole in IHs'. unfold erasure_H_fun. fold erasure_H_fun. 
+
+
+    unfold erasure_H_fun_whole in H2. fold erasure_H_fun_whole in H2. 
+      rewrite H_flow_l in H2. rewrite H_flow_r in H2.
+
+     inversion H2. subst. auto.  
+
+     case_eq (return_free t1). case_eq (return_free s1'). intros. 
+     pose proof (dot_erasure_dot s).      pose proof (dot_erasure_dot s').
+     rewrite H3. 
+     rewrite H14. rewrite H17. auto.  
+     
+     intros. pose proof (dot_erasure_dot s). rewrite H3.  rewrite H14. 
+    apply return_free_true_imply_erasure_H_fun_dot in H11. 
+    rewrite H11 in H10. rewrite H14 in H10.
+
+    assert ((erasure_H_fun_whole (Sequence (erasure_H_fun s1') t2) s') = dot).
+    apply sequence_erasure_dot; auto. apply valid_syntax_after_erasure; auto.  
+    apply valid_syntax_preservation with CT t1  (SIGMA (Labeled_frame l1 s1 :: s') h')
+                  (Labeled_frame l0 s0 :: s) h T0; auto. 
+
+    apply return_free_imply_erasure_H_fun_dot  in H7. auto. 
+    apply valid_syntax_preservation with CT t1  (SIGMA (Labeled_frame l1 s1 :: s') h')
+                  (Labeled_frame l0 s0 :: s) h T0; auto. 
+    rewrite H17. auto. auto.  
+
+    intro. rewrite H3.  case_eq (return_free s1'). intro. 
+    apply return_free_true_imply_erasure_H_fun_dot in H11. rewrite H11 in H10. 
+    assert (erasure_H_fun_whole dot s' = dot). apply dot_erasure_dot. 
+    rewrite H14 in H10.  rewrite H14. 
+    assert ((erasure_H_fun_whole (Sequence (erasure_H_fun t1) t2) s) = dot).
+    apply sequence_erasure_dot; auto.  
+    apply return_free_imply_erasure_H_fun_dot in H7. auto. auto. 
+    rewrite H17. auto. 
+    apply valid_syntax_preservation with CT t1  (SIGMA (Labeled_frame l1 s1 :: s') h')
+                  (Labeled_frame l0 s0 :: s) h T0; auto. 
+    intro. 
+    
+    assert (erasure_H_fun_whole (Sequence (erasure_H_fun t1) t2) s = 
+    erasure_H_fun_whole (Sequence (erasure_H_fun s1') t2) s'). 
+    apply Sequence_erasure_helper; auto. auto. 
+    apply valid_syntax_preservation with CT t1  (SIGMA (Labeled_frame l1 s1 :: s') h')
+                  (Labeled_frame l0 s0 :: s) h T0; auto. 
+    rewrite H14. auto.
++  inversion H4; subst; inversion H0. 
+
+- (*sequence *) 
+    inversion H_erasure_l. subst.
+  + rewrite H_flow_l in H3. inversion H3.
+  + subst.  inversion H_erasure_r. subst.
+        rewrite H_flow_r in H4. inversion H4. subst.
+  ++ induction s'. pose proof (nil_flow_to_L_Label h'). rewrite H in H_flow_l.
+        inversion H_flow_l. induction a. apply flow_to_simpl in H_flow_l.
+        unfold erasure_H_fun_whole. fold erasure_H_fun_whole. rewrite H_flow_l.
+        unfold erasure_H_fun. fold erasure_H_fun. assert (return_free t1 = true).
+        apply value_is_return_free. auto. rewrite H. fold erasure_H_fun.
+        case_eq (return_free t'). intro.  assert ( erasure_H_fun t' = dot).
+        apply return_free_true_imply_erasure_H_fun_dot. auto. 
+        inversion H_valid_syntax. apply surface_syntax_is_valid_syntax. auto. auto.
+        auto. rewrite H2. rewrite H8. rewrite H10. auto.
+        intro.  rewrite H8. rewrite H10. auto.
+
+- (*return e*) 
+ intros. 
+unfold dot_free in H_dot_free. fold dot_free in H_dot_free. auto.
+inversion H_valid_syntax. 
+pose proof (valid_syntax_after_erasure t H1). subst.    
+inversion H_erasure_l. subst.
+  + rewrite H_flow_l in H5. inversion H5.
+  + subst.  inversion H_erasure_r. subst.
+        rewrite H_flow_r in H6. inversion H6. subst. 
+  ++  inversion H_typing. subst. 
+    assert (Config CT (erasure_H_fun_whole t s) (SIGMA  s'0 h'0) = Config CT (erasure_H_fun_whole e' s')  (SIGMA s'1 h'1)).
+    apply IHt with h' s' h s T0  e'; auto.     
+    apply erasure_H_context; auto.     auto. apply erasure_H_context; auto.  inversion H. subst.
+
+    induction s.
+    pose proof (nil_flow_to_L_Label h). rewrite H4 in H_flow_l. inversion H_flow_l. 
+
+    induction s'.
+    pose proof (nil_flow_to_L_Label h'). rewrite H4 in H_flow_r. inversion H_flow_r.
+    induction a. induction a0. 
+
+    apply flow_to_simpl in H_flow_r. apply flow_to_simpl in H_flow_l. 
+
+    unfold erasure_H_fun_whole in H7. fold erasure_H_fun_whole in H7. 
+      rewrite H_flow_l in H7. rewrite H_flow_r in H7.
+
+    case_eq (return_free t). case_eq (return_free e'). intros. 
+     pose proof (dot_erasure_dot s).      pose proof (dot_erasure_dot s').
+
+     assert (s = s'). apply return_free_equal_stack with t CT h l0 s0 l1 s1 h' e' T0; auto. 
+     rewrite H14. unfold erasure_H_fun_whole. fold erasure_H_fun_whole. 
+      rewrite H_flow_l. rewrite H_flow_r. unfold erasure_H_fun.  rewrite H4. rewrite H8. auto.
+    
+     intros. pose proof (dot_erasure_dot s). 
+     assert ( (Labeled_frame l0 s0 :: s) = s'). 
+    apply return_free_change_imply_method_call with t CT h l1 s1 h' e' T0; auto.  
+    apply return_free_true_imply_erasure_H_fun_dot in H8. 
+    rewrite H8 in H7. rewrite <- H13 in H7.
+    rewrite <- H11 in H7. unfold erasure_H_fun_whole in H7. rewrite H_flow_l in H7. 
+    fold erasure_H_fun_whole in H7. rewrite H11 in H7. rewrite H11 in H7.
+    unfold erasure_H_fun_whole. fold erasure_H_fun_whole. rewrite H_flow_l. 
+
+    case_eq (return_free (erasure_H_fun e')). intro. apply return_free_true_imply_erasure_H_fun_dot in H14. 
+    unfold erasure_H_fun. fold erasure_H_fun.
+    apply erasure_H_fun_imply_return_free in H8. 
+     rewrite H8. auto. rewrite H4. rewrite H_flow_r. rewrite <- H13. 
+    unfold erasure_H_fun_whole. rewrite H_flow_l. fold erasure_H_fun_whole. 
+    unfold erasure_H_fun. fold erasure_H_fun. apply erasure_H_fun_imply_return_free in H14.  rewrite H14. auto.
+  apply valid_syntax_after_erasure. auto.
+    apply valid_syntax_preservation with CT t  (SIGMA (Labeled_frame l1 s1 :: s') h')
+                  (Labeled_frame l0 s0 :: s) h T0; auto. auto.
+    apply valid_syntax_after_erasure. auto.
+    apply valid_syntax_preservation with CT t  (SIGMA (Labeled_frame l1 s1 :: s') h')
+                  (Labeled_frame l0 s0 :: s) h T0; auto. 
+
+    assert (return_free (erasure_H_fun e') = true).
+    apply return_free_change_imply_return_free with t CT (Labeled_frame l0 s0 :: s) h l1 s1 s' h' T0; auto.
+    apply erasure_H_fun_imply_return_free in H8. auto. auto. 
+     intro. rewrite H14 in H15. inversion H15. auto. 
+
+    intro.  fold erasure_H_fun_whole. 
+
+    case_eq (return_free e'). intros.
+    apply return_free_true_imply_erasure_H_fun_dot in H8. rewrite H8 in H7. 
+    pose proof (dot_erasure_dot s'). rewrite H11 in H7. 
+    
+    assert ((return_free (erasure_H_fun t)) = true).
+    apply return_free_change_imply_return_free_false2true with CT (Labeled_frame l0 s0 :: s)
+                h (Labeled_frame l1 s1 :: s') h'  e' T0; auto.  admit. 
+
+    unfold erasure_H_fun_whole. fold erasure_H_fun_whole. rewrite H_flow_l. rewrite H_flow_r.
+    unfold erasure_H_fun. fold erasure_H_fun. rewrite H4. 
+    apply erasure_H_fun_imply_return_free in H8. rewrite H8. induction s. 
+
+    unfold erasure_H_fun_whole in H7.     apply erasure_H_fun_imply_return_free in H7. 
+    rewrite H7 in H4. inversion H4. 
+    auto. induction a.     case_eq ( flow_to l2 L_Label). intro.
+    unfold erasure_H_fun_whole in H7. fold erasure_H_fun_whole in H7.  rewrite H14 in H7. 
+    apply erasure_H_fun_imply_return_free in H7.  rewrite H7 in H4. inversion H4. auto.
+ 
+    intro. unfold erasure_H_fun_whole in H7. rewrite H14 in H7.  fold erasure_H_fun_whole in H7. 
+    unfold erasure_H_fun_whole. fold erasure_H_fun_whole. rewrite H14. 
+    unfold erasure_H_fun. fold erasure_H_fun. rewrite H13. 
+    assert (Labeled_frame l2 s2 :: s = (Labeled_frame l1 s1 :: s')). apply return_free_change_imply_return with 
+        t CT h l0 s0 h' e' T0; auto.  inversion H15. auto. 
+    apply valid_syntax_preservation with CT t (SIGMA (Labeled_frame l1 s1 :: s') h')
+                  (Labeled_frame l0 s0 :: s) h T0; auto.
+    apply valid_syntax_preservation with CT t (SIGMA (Labeled_frame l1 s1 :: s') h')
+                  (Labeled_frame l0 s0 :: s) h T0; auto. 
+
+    intro. 
+    unfold erasure_H_fun_whole. rewrite H_flow_l. rewrite H_flow_r. fold erasure_H_fun_whole.
+
+
+Lemma return_erasure_helper_revised : forall t e' s s', 
+    valid_syntax t -> valid_syntax e' -> s <> nil -> s' <> nil ->
+    erasure_H_fun_whole (erasure_H_fun t) s = erasure_H_fun_whole (erasure_H_fun e') s' ->
+    return_free t = false -> return_free e' = false ->
+    (erasure_H_fun_whole (erasure_H_fun (Return t)) s)  = 
+    (erasure_H_fun_whole (erasure_H_fun (Return e')) s').
+  Proof. intros. generalize dependent t. generalize dependent e'. 
+    induction s.  intros. intuition. 
+
+    induction s'. intuition. 
+
+   
+    
+    
+
+Lemma return_erasure_helper_revised : forall t e' s s' l0 s0 l1 s1, 
+    valid_syntax t -> valid_syntax e' ->
+    flow_to l0 L_Label = false ->    flow_to l1 L_Label = false ->
+    erasure_H_fun_whole (erasure_H_fun t) s = erasure_H_fun_whole (erasure_H_fun e') s' ->
+    return_free t = false -> return_free e' = false ->
+    erasure_H_fun_whole (Return t) (Labeled_frame l0 s0 :: s) = 
+    erasure_H_fun_whole (Return e') (Labeled_frame l1 s1 :: s').
+Proof. intros. generalize dependent t. generalize dependent e'. generalize dependent s'.
+    induction s.  intros. generalize dependent e'.  generalize dependent t. induction s'.
+
+    intros. admit. admit. 
+    induction s'. admit.  induction a. induction a0. intros.  
+    case_eq (flow_to l2 L_Label). intro. 
+
+
+
+ unfold erasure_H_fun_whole in H3. rewrite H3. unfold erasure_H_fun_whole. 
+    fold erasure_H_fun_whole.  rewrite H1. rewrite H2. auto.
+
+    intros. unfold erasure_H_fun_whole in H3. induction a. case_eq (flow_to l2 L_Label). intro.
+    rewrite H6 in H3. unfold erasure_H_fun_whole. rewrite H6. rewrite H3. auto.
+    rewrite H1. rewrite H2. auto. 
+
+    intros.   rewrite H6 in H3. fold erasure_H_fun_whole in H3.
+    unfold erasure_H_fun_whole.  rewrite H6. fold erasure_H_fun_whole. 
+    unfold erasure_H_fun. fold erasure_H_fun. rewrite H1. rewrite H2.  rewrite H4. rewrite H5. 
+    case_eq (return_free (erasure_H_fun e')) . intro. 
+    induction s'. unfold erasure_H_fun_whole in H3. rewrite <-H3 in H7. rewrite H4 in H7. inversion H7. 
+    induction a. case_eq (flow_to l3 L_Label).  unfold erasure_H_fun_whole in H3. 
+    intro. rewrite H8 in H3. rewrite <-H3 in H7. rewrite H4 in H7. inversion H7. 
+    
+    intro. unfold erasure_H_fun_whole in H3. rewrite H8 in H3. fold erasure_H_fun_whole in H3.
+     apply return_free_true_imply_erasure_H_fun_dot in H7. rewrite H7 in H3.  
+    pose proof (dot_erasure_dot s'). rewrite H9 in H3. rewrite H3 in H4. inversion H4. 
+     apply valid_syntax_after_erasure. auto. 
+
+    intro.
+    assert (erasure_H_fun_whole (Return  t)
+         (Labeled_frame l0 s0 :: nil) =
+               erasure_H_fun_whole (Return (erasure_H_fun e'))
+                 (Labeled_frame l1 s1 :: s')).
+    apply IHs'; auto. apply valid_syntax_after_erasure. auto.
+    unfold erasure_H_fun_whole in H8. rewrite H1 in H8. rewrite H2 in H8.
+    fold erasure_H_fun_whole in H8. rewrite <- H8. unfold erasure_H_fun. fold erasure_H_fun. 
+    rewrite H4. auto. 
+
+    intros.  generalize dependent e'.  generalize dependent t. induction s'.
+    intros. induction a.  unfold erasure_H_fun_whole in H3. 
+    case_eq (flow_to l2 L_Label).  intro.  rewrite H6 in H3.  unfold erasure_H_fun_whole. 
+    fold erasure_H_fun_whole.  rewrite H1. rewrite H2. rewrite H6. rewrite H3. auto. 
+
+    intro. rewrite H6 in H3. fold erasure_H_fun_whole in H3. 
+
+    case_eq (return_free (erasure_H_fun t)). intro. 
+    assert ((erasure_H_fun (erasure_H_fun t)) = dot). 
+    apply return_free_true_imply_erasure_H_fun_dot; auto. 
+    apply valid_syntax_after_erasure. auto.  
+    induction s. unfold erasure_H_fun_whole in H3. rewrite <-H3 in H5. 
+    rewrite H7 in H5. inversion H5. 
+    induction a. case_eq (flow_to l3 L_Label).  unfold erasure_H_fun_whole in H3. 
+    intro. rewrite H9 in H3. rewrite <-H3 in H5.     rewrite H7 in H5. inversion H5. 
+    intro.      unfold erasure_H_fun_whole in H3. rewrite H9 in H3. fold erasure_H_fun_whole in H3.
+    rewrite H8 in H3. pose proof (dot_erasure_dot s). rewrite H10 in H3. rewrite <- H3 in H5. inversion H5. 
+
+    intro. 
+    assert (erasure_H_fun_whole (Return (erasure_H_fun  t))
+        (Labeled_frame l0 s0 :: s) =
+      erasure_H_fun_whole (Return e')
+        (Labeled_frame l1 s1 :: nil)).
+    apply IHs; auto. apply valid_syntax_after_erasure. auto.
+    rewrite <- H8. unfold  erasure_H_fun_whole. rewrite H1.  rewrite H6. 
+    
+    fold erasure_H_fun_whole.  remember (erasure_H_fun_whole
+  (erasure_H_fun (Return (erasure_H_fun t))) s) as tmp. 
+    unfold erasure_H_fun. fold erasure_H_fun. rewrite H4.   auto. 
+
+
+    intros.  induction a.    case_eq (flow_to l2 L_Label).  intro. 
+    assert (erasure_H_fun_whole (Return t )
+  (Labeled_frame l0 s0 :: Labeled_frame l2 s2 :: s)  = (erasure_H_fun (Return t ))). 
+    unfold erasure_H_fun_whole.  rewrite H6. rewrite H1. auto. 
+      
+    unfold erasure_H_fun_whole in H3. rewrite H6 in H3. fold erasure_H_fun_whole in H3. 
+    unfold erasure_H_fun_whole. rewrite H6.   fold erasure_H_fun_whole. rewrite H1. rewrite H2. 
+    induction a0. case_eq (flow_to l3 L_Label). intro. rewrite H8 in H3.  rewrite H3. auto .
+    intro. rewrite H8 in H3. rewrite <- H7. unfold erasure_H_fun. fold erasure_H_fun. 
+    case_eq (return_free (erasure_H_fun e')). intro. 
+   apply return_free_true_imply_erasure_H_fun_dot in H9. induction s'. 
+   unfold erasure_H_fun_whole in H3. rewrite H3 in H4. apply erasure_H_fun_imply_return_free in H9.
+   rewrite H9 in H4. inversion H4. apply valid_syntax_after_erasure. auto. 
+   induction a. case_eq (flow_to l4 L_Label).  unfold erasure_H_fun_whole in H3. 
+    intro. rewrite H10 in H3. rewrite H3 in H4.  apply erasure_H_fun_imply_return_free in H9.
+   rewrite H9 in H4. inversion H4. apply valid_syntax_after_erasure. auto. 
+    
+    intro. unfold erasure_H_fun_whole in H3.  rewrite H10 in H3. fold erasure_H_fun_whole in H3.  
+     rewrite H9 in H3. pose proof (dot_erasure_dot s'). rewrite H11 in H3. rewrite H3 in H4. 
+    unfold return_free in H4. inversion H4. apply valid_syntax_after_erasure. auto. 
+
+    intro. 
+    assert (erasure_H_fun_whole (Return  t)
+         (Labeled_frame l0 s0 :: Labeled_frame l2 s2 :: s) =
+       erasure_H_fun_whole (Return (erasure_H_fun ( e')))
+         (Labeled_frame l1 s1 :: s')).
+    apply IHs'; auto. apply valid_syntax_after_erasure. auto. rewrite <- H3. 
+    unfold erasure_H_fun_whole. rewrite H6. auto. 
+
+
+----
+
+
+rewrite H10. 
+    remember (erasure_H_fun_whole
+  (erasure_H_fun (Return (erasure_H_fun (erasure_H_fun e')))) s') as tmp.
+    unfold erasure_H_fun_whole. fold erasure_H_fun_whole. rewrite H2. auto. 
+
+    intro. induction a0.
+unfold erasure_H_fun_whole in H3. rewrite H6 in H3. fold erasure_H_fun_whole in H3. 
+ case_eq (flow_to l3 L_Label). intro. rewrite H7 in H3.  
+    case_eq (return_free (erasure_H_fun t)). intro.
+
+     apply return_free_true_imply_erasure_H_fun_dot in H8. rewrite H8 in H3. 
+    pose proof (dot_erasure_dot s). rewrite H9 in H3. assert (erasure_H_fun e' = dot). auto. 
+    apply erasure_H_fun_imply_return_free in H10. rewrite H10 in H5. inversion H5. auto. 
+    auto. apply valid_syntax_after_erasure. auto. 
+
+    intro. 
+      assert (
+      erasure_H_fun_whole (Return (erasure_H_fun (erasure_H_fun t)))
+        (Labeled_frame l0 s0 :: s) =
+      erasure_H_fun_whole (Return (erasure_H_fun e'))
+        (Labeled_frame l1 s1 :: Labeled_frame l3 s3 :: s')).
+    apply IHs; auto. apply valid_syntax_after_erasure. auto.
+
+    unfold erasure_H_fun_whole. rewrite H7. fold erasure_H_fun_whole. auto. 
+    rewrite <- H9. 
+    unfold erasure_H_fun_whole. rewrite H1. rewrite H6. fold erasure_H_fun_whole. 
+
+    remember (erasure_H_fun_whole
+  (erasure_H_fun (Return (erasure_H_fun (erasure_H_fun t)))) s) as tmp.
+    unfold erasure_H_fun. fold erasure_H_fun.  rewrite H8. auto.  
+ 
+    intro. rewrite H7 in H3. unfold  erasure_H_fun_whole.  rewrite H1. rewrite H6. 
+    rewrite H7. fold erasure_H_fun_whole. rewrite H2.  
+
+    unfold erasure_H_fun. fold erasure_H_fun. 
+    case_eq (return_free (erasure_H_fun t)). intro. 
+    apply return_free_true_imply_erasure_H_fun_dot in H8. rewrite H8 in H3. 
+    case_eq (return_free (erasure_H_fun e')). intro. 
+    pose proof (dot_erasure_dot s). pose proof (dot_erasure_dot s'). 
+    unfold erasure_H_fun. unfold return_free.     rewrite H10. rewrite H11. auto. 
+
+    intro.  pose proof (dot_erasure_dot s). rewrite H10 in H3. 
+    assert (erasure_H_fun_whole
+  (erasure_H_fun (Return (erasure_H_fun (erasure_H_fun e')))) s' = dot).
+    apply return_erasure_dot_helper; auto. rewrite H11. 
+  unfold erasure_H_fun. unfold return_free. rewrite H10. auto. 
+     apply valid_syntax_after_erasure. auto.
+
+    intro. 
+    case_eq (return_free (erasure_H_fun e')). intro. 
+    apply return_free_true_imply_erasure_H_fun_dot in H9. rewrite H9 in H3. 
+    pose proof (dot_erasure_dot s). pose proof (dot_erasure_dot s'). rewrite H11 in H3. 
+
+   assert (erasure_H_fun_whole (erasure_H_fun (Return (erasure_H_fun (erasure_H_fun t)))) s = dot).
+   apply return_erasure_dot_helper; auto. rewrite H12. unfold erasure_H_fun. unfold return_free. 
+    rewrite H11. auto.      apply valid_syntax_after_erasure. auto.
+   intro. 
+   assert (erasure_H_fun_whole (Return (erasure_H_fun t))
+               (Labeled_frame l0 s0 :: Labeled_frame l2 s2 :: s) =
+             erasure_H_fun_whole (Return (erasure_H_fun (erasure_H_fun e')))
+               (Labeled_frame l1 s1 :: s')).
+  apply IHs'; auto.   apply valid_syntax_after_erasure. auto. 
+  unfold erasure_H_fun_whole. fold erasure_H_fun_whole.  rewrite H6.  auto. 
+  unfold erasure_H_fun_whole in H10. rewrite H6 in H10. rewrite H1 in H10. 
+  fold erasure_H_fun_whole in H10. rewrite H2 in H10. 
+  
+  case_eq (return_free (erasure_H_fun t)). intro. rewrite H11 in H8. inversion H8. 
+  intro. 
+  rewrite <- H10. remember (erasure_H_fun_whole
+  (erasure_H_fun (Return (erasure_H_fun (erasure_H_fun t)))) s) as tmp. 
+   unfold erasure_H_fun. fold erasure_H_fun. rewrite H11. auto. 
+Qed.  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    intro. assert ((erasure_H_fun_whole (Return (erasure_H_fun t)) (Labeled_frame l0 s0 :: s)) 
+        = (erasure_H_fun_whole (Return (erasure_H_fun e'))  (Labeled_frame l1 s1 :: s'))).
+
+    apply return_erasure_helper; auto.   
+    apply valid_syntax_preservation with CT t  (SIGMA (Labeled_frame l1 s1 :: s') h')
+                  (Labeled_frame l0 s0 :: s) h T0; auto. 
+    rewrite H11. auto.   
+
+    intro. assert ((erasure_H_fun_whole (Return (erasure_H_fun t)) s) 
+        = (erasure_H_fun_whole (Return (erasure_H_fun e')) s')).
+
+    apply return_erasure_helper; auto.   
+    apply valid_syntax_preservation with CT t  (SIGMA (Labeled_frame l1 s1 :: s') h')
+                  (Labeled_frame l0 s0 :: s) h T0; auto. 
+    rewrite H13. auto.   
+
+
+---------------
+
+    unfold erasure_H_fun_whole.  
+    induction s.
+    pose proof (nil_flow_to_L_Label h). rewrite H4 in H_flow_l. inversion H_flow_l. 
+
+    induction a. apply flow_to_simpl in H_flow_l. rewrite H_flow_l. fold erasure_H_fun_whole.
+    fold erasure_H_fun_whole in IHs. unfold erasure_H_fun. fold erasure_H_fun. 
+
+    unfold erasure_H_fun_whole.   
+        generalize dependent e'. induction s'.
+ intros.  
+    pose proof (nil_flow_to_L_Label h'). rewrite H4 in H_flow_r. inversion H_flow_r. 
+
+    induction a. apply flow_to_simpl in H_flow_r. rewrite H_flow_r. fold erasure_H_fun_whole.
+    fold erasure_H_fun_whole in IHs'. unfold erasure_H_fun. fold erasure_H_fun. 
+
+    intros. unfold erasure_H_fun_whole in H7. fold erasure_H_fun_whole in H7. 
+      rewrite H_flow_l in H7. rewrite H_flow_r in H7.
+
+     inversion H. rewrite H_flow_l in H8. rewrite H_flow_r in H8. subst. auto.  
+
+     case_eq (return_free t). case_eq (return_free e'). intros. 
+     pose proof (dot_erasure_dot s).      pose proof (dot_erasure_dot s').
+
+     assert (s = s'). apply return_free_equal_stack with t CT h l0 s0 l1 s1 h' e' T0; auto. 
+     rewrite H15. auto.  
+    
+     intros. pose proof (dot_erasure_dot s). 
+     assert ( (Labeled_frame l0 s0 :: s) = s'). 
+    apply return_free_change_imply_method_call with t CT h l1 s1 h' e' T0; auto.  
+    apply return_free_true_imply_erasure_H_fun_dot in H11. 
+    rewrite H11 in H8. rewrite H13 in H8.
+    rewrite <- H14 in H8. unfold erasure_H_fun_whole in H8. rewrite H_flow_l in H8. 
+    fold erasure_H_fun_whole in H8. rewrite <- H14. unfold erasure_H_fun_whole.
+    fold erasure_H_fun_whole. rewrite H_flow_l. 
+
+    case_eq (return_free (erasure_H_fun e')). intro. apply return_free_true_imply_erasure_H_fun_dot in H15. 
+    unfold erasure_H_fun. fold erasure_H_fun. apply erasure_H_fun_imply_return_free in H15. 
+     rewrite H15. auto.  apply valid_syntax_after_erasure. auto.
+    apply valid_syntax_preservation with CT t  (SIGMA (Labeled_frame l1 s1 :: s') h')
+                  (Labeled_frame l0 s0 :: s) h T0; auto. 
+    apply valid_syntax_after_erasure. auto.
+    apply valid_syntax_preservation with CT t  (SIGMA (Labeled_frame l1 s1 :: s') h')
+                  (Labeled_frame l0 s0 :: s) h T0; auto. 
+
+    assert (return_free (erasure_H_fun e') = true).
+    apply return_free_change_imply_return_free with t CT (Labeled_frame l0 s0 :: s) h l1 s1 s' h' T0; auto.
+    apply erasure_H_fun_imply_return_free in H11. auto. auto. 
+     intro. rewrite H15 in H16. inversion H16. auto. 
+
+    intro.  fold erasure_H_fun_whole. 
+
+    case_eq (return_free e'). intros.
+    apply return_free_true_imply_erasure_H_fun_dot in H11. rewrite H11 in H8. 
+    pose proof (dot_erasure_dot s'). rewrite H13 in H8. 
+    
+    induction s. unfold erasure_H_fun_whole in H8. 
+    apply erasure_H_fun_imply_return_free in H8.  rewrite H8 in H4. inversion H4. 
+    auto. induction a. unfold erasure_H_fun_whole in H8. 
+    case_eq ( flow_to l2 L_Label). intro. rewrite H14 in H8. 
+    apply erasure_H_fun_imply_return_free in H8.  rewrite H8 in H4. inversion H4. auto. 
+    intro. rewrite H14 in H8.  fold erasure_H_fun_whole in H8. 
+    unfold erasure_H_fun_whole. fold erasure_H_fun_whole. rewrite H14. 
+    unfold erasure_H_fun. fold erasure_H_fun. 
+    assert ((return_free (erasure_H_fun t)) = true).
+    apply return_free_change_imply_return_free_false2true with CT (Labeled_frame l0 s0 :: Labeled_frame l2 s2 :: s)
+                h (Labeled_frame l1 s1 :: s') h'  e' T0; auto. 
+    apply erasure_H_fun_imply_return_free in H11. auto.
+    apply valid_syntax_preservation with CT t  (SIGMA (Labeled_frame l1 s1 :: s') h')
+                  (Labeled_frame l0 s0 :: Labeled_frame l2 s2 :: s) h T0; auto. 
+    rewrite H15. 
+    assert (Labeled_frame l2 s2 :: s = (Labeled_frame l1 s1 :: s')). apply return_free_change_imply_return with 
+        t CT h l0 s0 h' e' T0; auto.  
+        apply erasure_H_fun_imply_return_free in H11. auto.
+    apply valid_syntax_preservation with CT t  (SIGMA (Labeled_frame l1 s1 :: s') h')
+                  (Labeled_frame l0 s0 :: Labeled_frame l2 s2 :: s) h T0; auto. 
+
+     inversion H16. auto.
+        apply valid_syntax_preservation with CT t  (SIGMA (Labeled_frame l1 s1 :: s') h')
+                  (Labeled_frame l0 s0 :: s) h T0; auto. 
+
+    intro. assert ((erasure_H_fun_whole (Return (erasure_H_fun t)) s) 
+        = (erasure_H_fun_whole (Return (erasure_H_fun e')) s')).
+
+    apply return_erasure_helper; auto.   
+    apply valid_syntax_preservation with CT t  (SIGMA (Labeled_frame l1 s1 :: s') h')
+                  (Labeled_frame l0 s0 :: s) h T0; auto. 
+    rewrite H13. auto.   
+
+- (* return v*) inversion H5. inversion H9. subst.
+ intros. unfold dot_free in H_dot_free. fold dot_free in H_dot_free. 
+  inversion H_erasure_l. subst.
+  + rewrite H_flow_l in H2. inversion H2.
+  + subst.  inversion H_erasure_r. subst.
+        rewrite H_flow_r in H3. inversion H3. subst. 
+  ++  inversion H_typing. subst. induction lsf. 
+    apply flow_to_simpl in H_flow_l. unfold erasure_H_fun_whole. 
+    rewrite H_flow_l. fold erasure_H_fun_whole.
+    rewrite H13. unfold get_stack_label. unfold erasure_H_fun.
+    fold erasure_H_fun. assert (return_free t = true). apply value_is_return_free. auto.
+    rewrite H.
+    induction s'0. intuition. induction a. unfold erasure_H_fun_whole.
+    apply flow_to_simpl in H_flow_r. rewrite H_flow_r. fold  erasure_H_fun_whole.
+    unfold erasure_H_fun. fold erasure_H_fun. rewrite H.
+    unfold return_free. rewrite H11. unfold erasure_sigma_fun. fold erasure_sigma_fun.
+    remember (Labeled_frame l1 s0 :: s'0) as s''.
+    unfold erasure_stack. fold erasure_stack. rewrite H_flow_l. auto.
+Qed.
+
+
+
+Lemma simulation_H_revised : forall CT t t0 t' t0' s h s' h' sigma_l_e sigma_r_e,
+      dot_free t = true ->
+      valid_syntax t ->
+      forall T, has_type CT empty_context h t T -> 
+      field_wfe_heap CT h -> wfe_heap CT h -> wfe_stack CT h s ->
+      flow_to (current_label (SIGMA s h)) L_Label = false ->
+      flow_to (current_label (SIGMA s' h')) L_Label = false ->
+      Config CT t (SIGMA s h) ==> Config CT t' (SIGMA s' h') ->
+      (Config CT t (SIGMA s h)) =e=> (Config CT t0 sigma_l_e) ->
+      (Config CT t' (SIGMA s' h')) =e=> (Config CT t0' sigma_r_e) ->
+         (Config CT t0 sigma_l_e) = (Config CT t0' sigma_r_e) 
+              \/ (Config CT t0 sigma_l_e) ==l> (Config CT t0' sigma_r_e).
+Proof. 
+  intros CT t t0 t' t0' s h s' h' sigma_l_e sigma_r_e. intro H_dot_free. intro H_valid_syntax. 
+  intro T. intro H_typing. intro H_wfe_fields. 
+  intro H_wfe_heap. intro H_wfe_stack. 
+  intro H_flow_l.   intro H_flow_r. intro H_reduction. 
+  (*intro H_erasure_sigma_l.  *) intro H_erasure_l. intro H_erasure_r.   
+  
+generalize dependent t'. 
+  generalize dependent t0.
+  generalize dependent t0'.
+  generalize dependent T.
+    generalize dependent sigma_l_e.      generalize dependent sigma_r_e. 
+    generalize dependent s.      generalize dependent h.
+    generalize dependent s'.      generalize dependent h'.
+induction t; intros; try (inversion H_reduction; subst).
+- (* (Tvar i) *) inversion H_typing. inversion H3. 
+- (*(FieldAccess t i)*) intros. 
+unfold dot_free in H_dot_free. fold dot_free in H_dot_free. auto.
+inversion H_erasure_l. subst.
+  + rewrite H_flow_l in H3. inversion H3.
+  + subst.  inversion H_erasure_r. subst.
+        rewrite H_flow_r in H4. inversion H4. subst. 
+  +++  inversion H_typing. subst. 
+    assert (Config CT (erasure_H_fun t) (SIGMA  s'0 h'0) = Config CT (erasure_H_fun e')  (SIGMA s'1 h'1) 
+      \/ (Config CT (erasure_H_fun t) (SIGMA  s'0 h'0) ==l> Config CT (erasure_H_fun e')  (SIGMA s'1 h'1))). 
+    apply IHt with h' s' h s (classTy clsT)  e'; auto.     
+    inversion H_valid_syntax. auto. 
+    apply erasure_H_context; auto.     auto. apply erasure_H_context; auto.
+
+    destruct H.
+    assert (return_free t= return_free e'). 
+    apply erasure_H_fun_equal_return_free. inversion H_valid_syntax. auto.  
+    apply valid_syntax_preservation with CT t (SIGMA s' h') s h (classTy clsT); auto. 
+    inversion H_valid_syntax. auto.   inversion H. auto.
+    unfold erasure_H_fun. fold erasure_H_fun. subst. 
+    case_eq (return_free t). intro.  rewrite H6 in H1. rewrite <- H1. 
+    left. inversion H. auto.  
+    intro. rewrite H6 in H1. rewrite <- H1. inversion H. left. auto. 
+     (*l reduction*)    
+    inversion H. induction c2.
+  ++++ assert (CT = c). apply ct_consist with (erasure_H_fun t)  t0 (SIGMA s'0 h'0) s0; auto. 
+    subst. rename c into CT.    right.  unfold erasure_H_fun. fold erasure_H_fun. subst. 
+    case_eq (return_free t). intro. assert ((erasure_H_fun t) = dot). 
+    apply return_free_true_imply_erasure_H_fun_dot; auto. inversion H_valid_syntax; auto. 
+    rewrite H9 in H1. inversion H1. 
+    
+    intro. case_eq (return_free e'). 
+    intro.  assert (erasure_H_fun e' = dot).
+    apply  return_free_true_imply_erasure_H_fun_dot; auto. 
+    apply valid_syntax_preservation with CT t (SIGMA s' h') s h (classTy clsT); auto. 
+    inversion H_valid_syntax. auto. rewrite H11 in H6. 
+    assert (Config CT (FieldAccess (erasure_H_fun t) i) (SIGMA s'0 h'0) ==> 
+            Config CT (FieldAccess t0 i)  s0 ).
+    apply ST_fieldRead1; auto. induction s0. 
+    assert ((flow_to (current_label ((SIGMA s'1 h'1))) L_Label = flow_to (current_label (SIGMA s0 h0)) L_Label )).
+    apply erasure_preserve_context with t0 dot CT; auto. 
+    assert ( flow_to (current_label (SIGMA s'1 h'1)) L_Label = flow_to (current_label (SIGMA s' h')) L_Label).
+    apply erasure_sigma_preserve_context; auto. rewrite H_flow_r in H15. rewrite H15 in H14. 
+    inversion H6. subst. rewrite H19 in H14. inversion H14. subst. 
+
+    assert (Config CT (FieldAccess t0 i) (SIGMA s0 h0) =e=> Config CT dot (SIGMA s'1 h'1)).
+    apply erasure_H_context; auto. unfold erasure_H_fun. fold erasure_H_fun. 
+    assert (return_free t0 = true). apply  erasure_H_fun_imply_return_free; auto. 
+
+    apply valid_syntax_preservation_erasured with CT (erasure_H_fun t) s h (SIGMA s0 h0) (classTy clsT). auto. 
+    apply valid_syntax_preservation_erasure_H; inversion H_valid_syntax; auto. 
+    apply typing_preservation_erasure; auto. auto.  rewrite <- H8. auto. 
+
+    rewrite H16. auto. apply L_reduction with (Config CT (FieldAccess t0 i) (SIGMA s0 h0)); auto. 
+  
+    intro.  unfold erasure_H_fun. fold erasure_H_fun. subst. 
+    assert (Config CT (FieldAccess (erasure_H_fun t) i) (SIGMA s'0 h'0) ==> 
+            Config CT (FieldAccess t0 i)  s0 ).
+    apply ST_fieldRead1; auto. induction s0. 
+    assert ((flow_to (current_label ((SIGMA s'1 h'1))) L_Label = flow_to (current_label (SIGMA s0 h0)) L_Label )).
+    apply erasure_preserve_context with t0 (erasure_H_fun e') CT; auto. 
+    assert ( flow_to (current_label (SIGMA s'1 h'1)) L_Label = flow_to (current_label (SIGMA s' h')) L_Label).
+    apply erasure_sigma_preserve_context; auto. rewrite H_flow_r in H14. rewrite H14 in H12.  
+    inversion H6. subst. rewrite H18 in H12. inversion H12. subst. 
+
+    assert (Config CT (FieldAccess t0 i) (SIGMA s0 h0) =e=> Config CT (FieldAccess (erasure_H_fun e') i)  (SIGMA s'1 h'1)).
+    apply erasure_H_context; auto. unfold erasure_H_fun. fold erasure_H_fun.
+    apply return_free_imply_erasure_H_fun_dot in H9. rewrite H23 in H9.  
+    assert (return_free t0 = false). apply  erasure_H_fun_imply_return_free_false; auto.
+
+    apply valid_syntax_preservation_erasured with CT (erasure_H_fun t) s h (SIGMA s0 h0) (classTy clsT). auto. 
+    apply valid_syntax_preservation_erasure_H; inversion H_valid_syntax; auto. 
+    apply typing_preservation_erasure; auto. auto.  rewrite <- H8. auto. 
+    
+    rewrite H15. rewrite H23. auto. 
+    apply valid_syntax_preservation with CT t (SIGMA s' h') s h (classTy clsT); auto.
+    inversion H_valid_syntax. auto. 
+    apply L_reduction with (Config CT (FieldAccess t0 i) (SIGMA s0 h0)); auto. 
+
+  ++++ inversion H6. 
+
+
+- (*FieldAccess (ObjId o) i*)  
+  intros. unfold dot_free in H_dot_free. fold dot_free in H_dot_free. auto.
+  inversion H_erasure_l. subst.
+  + rewrite H_flow_l in H2. inversion H2.
+  + subst.  inversion H_erasure_r. subst.
+        rewrite H_flow_r in H3. inversion H3. subst. 
+  +++  inversion H_typing. subst. left. unfold erasure_H_fun. assert (return_free (ObjId o) = true).
+  auto.  rewrite H. fold erasure_H_fun. inversion H5. subst. rename h0 into h.
+  assert (( t' = null \/ exists o',  t' = ObjId o')).  
+  apply field_value with h o cls fields lb i CT cls'; auto. rename s0 into s. 
+    unfold erasure_sigma_fun; 
+      induction s; 
+      unfold flow_to in H_flow_l;  unfold current_label in H_flow_l;  unfold get_stack in H_flow_l; 
+      unfold get_current_label in H_flow_l. unfold L_Label in H_flow_l. 
+      unfold subset in H_flow_l. inversion H_flow_l.
+      induction a.
+      unfold update_current_label;  auto;  fold erasure_H_fun; rewrite H12; rewrite H14; rewrite H10.
+      unfold update_current_label.
+      assert ((erasure_H_fun t') = dot). destruct H0. subst; auto. destruct H0 as [o']. subst. auto.
+      rewrite H9.   
+      assert (l0 = lb). apply label_equivalence; auto; 
+      apply flow_transitive with l0; auto. rewrite H11. auto.   
+
+- (*MethodCall t1' i t2*) 
+  intros. unfold dot_free in H_dot_free. fold dot_free in H_dot_free. 
+  apply dot_free_if in H_dot_free. destruct H_dot_free. auto.
+  inversion H_erasure_l. subst.
+  + rewrite H_flow_l in H5. inversion H5.
+  + subst.  inversion H_erasure_r. subst.
+        rewrite H_flow_r in H6. inversion H6. subst. 
+  ++  inversion H_typing. subst. 
+    assert (Config CT (erasure_H_fun t1) (SIGMA  s'0 h'0) = Config CT (erasure_H_fun e')  (SIGMA s'1 h'1) 
+      \/ (Config CT (erasure_H_fun t1) (SIGMA  s'0 h'0) ==l> Config CT (erasure_H_fun e')  (SIGMA s'1 h'1))). 
+    apply IHt1 with h' s' h s (classTy T0)  e'; auto.   
+    inversion H_valid_syntax. auto.  apply value_is_valid_syntax.  auto. 
+    apply erasure_H_context; auto.     auto. apply erasure_H_context; auto.
+
+    destruct H2.
+    assert (return_free t1= return_free e'). 
+    apply erasure_H_fun_equal_return_free. inversion H_valid_syntax. auto.  
+    apply value_is_valid_syntax.  auto. 
+    apply valid_syntax_preservation with CT t1 (SIGMA s' h') s h (classTy T0); auto. 
+    inversion H_valid_syntax. auto.   auto. apply value_is_valid_syntax; auto.
+    inversion H2. auto. 
+    unfold erasure_H_fun. fold erasure_H_fun. subst. 
+    case_eq (return_free t1). intro.  rewrite H4 in H3. rewrite <- H3. 
+    left. inversion H2. subst. auto. inversion   H_valid_syntax. apply surface_syntax_is_return_free in H21.
+    rewrite H21. auto.  inversion H16; subst; inversion H0. 
+    intro. rewrite <- H3. rewrite H4.  inversion H2. subst. auto. 
+
+     (*l reduction*)    
+    inversion H2. induction c2.
+  +++ assert (CT = c). apply ct_consist with (erasure_H_fun t1)  t (SIGMA s'0 h'0) s0; auto. 
+    subst. rename c into CT.    right.  unfold erasure_H_fun. fold erasure_H_fun. subst. 
+    case_eq (return_free t1). intro. assert ((erasure_H_fun t1) = dot). 
+    apply return_free_true_imply_erasure_H_fun_dot; auto. inversion H_valid_syntax; auto.
+    apply value_is_valid_syntax; auto.
+    rewrite H14 in H3. inversion H3.   
+    
+    intro. case_eq (return_free e'). 
+    intro.  assert (erasure_H_fun e' = dot).
+    apply  return_free_true_imply_erasure_H_fun_dot; auto. 
+    apply valid_syntax_preservation with CT t1 (SIGMA s' h') s h (classTy T0); auto. 
+    inversion H_valid_syntax. auto. apply value_is_valid_syntax; auto.
+    rewrite H15 in H4. 
+    assert (Config CT (MethodCall (erasure_H_fun t1) i t2) (SIGMA s'0 h'0) ==> 
+            Config CT (MethodCall t i t2)  s0 ).
+    apply ST_MethodCall1; auto. induction s0.
+    assert (return_free t2 = true). inversion H_valid_syntax. apply surface_syntax_is_return_free; auto.
+    apply value_is_return_free in H22. rewrite H22 in H13. inversion H13. rewrite H18.  
+    
+    assert ((flow_to (current_label ((SIGMA s'1 h'1))) L_Label = flow_to (current_label (SIGMA s0 h0)) L_Label )).
+    apply erasure_preserve_context with t dot CT; auto. 
+    assert ( flow_to (current_label (SIGMA s'1 h'1)) L_Label = flow_to (current_label (SIGMA s' h')) L_Label).
+    apply erasure_sigma_preserve_context; auto. rewrite H_flow_r in H22. rewrite H22 in H21. 
+    inversion H4. subst. rewrite H26 in H21. inversion H21. subst. 
+
+    assert (Config CT (MethodCall t i t2) (SIGMA s0 h0) =e=> Config CT dot (SIGMA s'1 h'1)).
+    apply erasure_H_context; auto. unfold erasure_H_fun. fold erasure_H_fun. 
+    assert (return_free t = true). apply  erasure_H_fun_imply_return_free; auto. 
+
+    apply valid_syntax_preservation_erasured with CT (erasure_H_fun t1) s h (SIGMA s0 h0) (classTy T0). auto. 
+    apply valid_syntax_preservation_erasure_H; inversion H_valid_syntax; auto. 
+    apply value_is_valid_syntax. auto. 
+    apply typing_preservation_erasure; auto. auto.  rewrite <- H10. auto. 
+
+    rewrite H18. rewrite H23.  auto. apply L_reduction with (Config CT (MethodCall t i t2) (SIGMA s0 h0)); auto.
+  
+    intro.  unfold erasure_H_fun. fold erasure_H_fun. subst. 
+    assert (Config CT (MethodCall (erasure_H_fun t1) i t2) (SIGMA s'0 h'0) ==> 
+            Config CT (MethodCall t i t2)  s0 ).
+    apply ST_MethodCall1; auto. induction s0.
+    assert ((flow_to (current_label ((SIGMA s'1 h'1))) L_Label = flow_to (current_label (SIGMA s0 h0)) L_Label )).
+    apply erasure_preserve_context with t (erasure_H_fun e') CT; auto. 
+    assert ( flow_to (current_label (SIGMA s'1 h'1)) L_Label = flow_to (current_label (SIGMA s' h')) L_Label).
+    apply erasure_sigma_preserve_context; auto. rewrite H_flow_r in H18. rewrite H18 in H16.  
+    inversion H4. subst. rewrite H24 in H16. inversion H16. subst. 
+
+    assert (Config CT (MethodCall t i t2) (SIGMA s0 h0) =e=> Config CT (MethodCall (erasure_H_fun e') i t2) (SIGMA s'1 h'1)).
+    apply erasure_H_context; auto. unfold erasure_H_fun. fold erasure_H_fun.
+    apply return_free_imply_erasure_H_fun_dot in H14. rewrite H29 in H14.  
+    assert (return_free t = false). apply  erasure_H_fun_imply_return_free_false; auto.
+
+    apply valid_syntax_preservation_erasured with CT (erasure_H_fun t1) s h (SIGMA s0 h0) (classTy T0). auto. 
+    apply valid_syntax_preservation_erasure_H; inversion H_valid_syntax; auto.
+    apply value_is_valid_syntax; auto.  
+    apply typing_preservation_erasure; auto. auto.  rewrite <- H10. auto. 
+    
+    rewrite H21. rewrite H29. auto. 
+    apply valid_syntax_preservation with CT t1 (SIGMA s' h') s h (classTy T0); auto.
+    inversion H_valid_syntax. auto. apply value_is_valid_syntax; auto.  
+    apply L_reduction with (Config CT (MethodCall t i t2) (SIGMA s0 h0)); auto. 
+
+  +++ inversion H4. 
+
+- (*MethodCall t1 i t2' *)
+  intros. unfold dot_free in H_dot_free. fold dot_free in H_dot_free. 
+  apply dot_free_if in H_dot_free. destruct H_dot_free. auto.
+  inversion H_erasure_l. subst.
+  + rewrite H_flow_l in H5. inversion H5.
+  + subst.  inversion H_erasure_r. subst.
+        rewrite H_flow_r in H6. inversion H6. subst. 
+  ++  inversion H_typing. subst. 
+    assert (Config CT (erasure_H_fun t2) (SIGMA  s'0 h'0) = Config CT (erasure_H_fun e')  (SIGMA s'1 h'1) 
+      \/ (Config CT (erasure_H_fun t2) (SIGMA  s'0 h'0) ==l> Config CT (erasure_H_fun e')  (SIGMA s'1 h'1))). 
+    apply IHt2 with h' s' h s (classTy arguT)  e'; auto.   
+    inversion H_valid_syntax. apply surface_syntax_is_valid_syntax. auto. auto. 
+    apply erasure_H_context; auto.     auto. apply erasure_H_context; auto.
+
+    destruct H1.
+    assert (return_free t2= return_free e'). 
+    apply erasure_H_fun_equal_return_free. inversion H_valid_syntax. 
+    apply surface_syntax_is_valid_syntax. auto. auto. 
+    apply valid_syntax_preservation with CT t2 (SIGMA s' h') s h (classTy arguT); auto. 
+    inversion H_valid_syntax. apply surface_syntax_is_valid_syntax. auto.   auto.
+    inversion H1. auto. 
+    unfold erasure_H_fun. fold erasure_H_fun. subst. 
+    case_eq (return_free t1). intro. 
+    left. inversion H1. subst.  rewrite H2.  auto. 
+    intro. left. assert (return_free t1 = true). apply value_is_return_free. auto. 
+    rewrite H4 in H16. inversion H16. 
+
+     (*l reduction*)    
+    inversion H1. induction c2.
+  +++ assert (CT = c). apply ct_consist with (erasure_H_fun t2)  t (SIGMA s'0 h'0) s0; auto. 
+    subst. rename c into CT.    right.  unfold erasure_H_fun. fold erasure_H_fun. subst. 
+    case_eq (return_free t2). intro. assert ((erasure_H_fun t2) = dot). 
+    apply return_free_true_imply_erasure_H_fun_dot; auto. inversion H_valid_syntax; auto.
+    apply surface_syntax_is_valid_syntax; auto.
+    rewrite H17 in H2. inversion H2.   
+    
+    assert (return_free t1 = true). apply value_is_return_free. auto. 
+
+    intro. rewrite H16.  case_eq (return_free e'). 
+    intro.  assert (erasure_H_fun e' = dot).
+    apply  return_free_true_imply_erasure_H_fun_dot; auto. 
+    apply valid_syntax_preservation with CT t2 (SIGMA s' h') s h (classTy arguT); auto. 
+    inversion H_valid_syntax. auto. apply surface_syntax_is_valid_syntax; auto. auto. 
+
+    rewrite H19 in H4.
+    assert (Config CT (MethodCall t1 i (erasure_H_fun t2)) (SIGMA s'0 h'0) ==> 
+            Config CT (MethodCall t1 i t)  s0 ).
+    apply ST_MethodCall2; auto. induction s0. 
+    intro v0. intros. intro contra. 
+    apply erasure_unlabelOpaque_return_free in contra. 
+    rewrite contra in H17. inversion H17. inversion H_valid_syntax.
+    apply surface_syntax_is_valid_syntax. auto.  auto. auto. induction s0. 
+
+    assert ((flow_to (current_label ((SIGMA s'1 h'1))) L_Label = flow_to (current_label (SIGMA s0 h0)) L_Label )).
+    apply erasure_preserve_context with t dot CT; auto. 
+    assert ( flow_to (current_label (SIGMA s'1 h'1)) L_Label = flow_to (current_label (SIGMA s' h')) L_Label).
+    apply erasure_sigma_preserve_context; auto. rewrite H_flow_r in H25. rewrite H25 in H24. 
+    inversion H4. subst. rewrite H29 in H24. inversion H24. subst. 
+
+    assert (Config CT (MethodCall t1 i t) (SIGMA s0 h0) =e=> Config CT dot (SIGMA s'1 h'1)).
+    apply erasure_H_context; auto. unfold erasure_H_fun. fold erasure_H_fun.  
+    assert (return_free t = true). apply  erasure_H_fun_imply_return_free; auto. 
+
+    apply valid_syntax_preservation_erasured with CT (erasure_H_fun t2) s h (SIGMA s0 h0) (classTy arguT). auto. 
+    apply valid_syntax_preservation_erasure_H; inversion H_valid_syntax; auto. 
+    apply surface_syntax_is_valid_syntax. auto. 
+    apply typing_preservation_erasure; auto. auto.  rewrite <- H13. auto. 
+
+    rewrite H16. rewrite H26.  auto. apply L_reduction with (Config CT (MethodCall t1 i t) (SIGMA s0 h0)); auto.
+  
+    intro.  unfold erasure_H_fun. fold erasure_H_fun. subst. 
+    assert (Config CT (MethodCall t1 i (erasure_H_fun t2)) (SIGMA s'0 h'0) ==> 
+            Config CT (MethodCall t1 i t)  s0 ).
+    apply ST_MethodCall2; auto. 
+
+    intro v0. intros. intro contra. 
+    apply erasure_unlabelOpaque_return_free in contra. 
+    rewrite contra in H17. inversion H17. inversion H_valid_syntax.
+    apply surface_syntax_is_valid_syntax. auto.  auto. auto. induction s0. 
+
+    assert ((flow_to (current_label ((SIGMA s'1 h'1))) L_Label = flow_to (current_label (SIGMA s0 h0)) L_Label )).
+    apply erasure_preserve_context with t (erasure_H_fun e') CT; auto. 
+    assert ( flow_to (current_label (SIGMA s'1 h'1)) L_Label = flow_to (current_label (SIGMA s' h')) L_Label).
+    apply erasure_sigma_preserve_context; auto. rewrite H_flow_r in H24. rewrite H24 in H21.  
+    inversion H4. subst. rewrite H28 in H21. inversion H21. subst. 
+
+    assert (Config CT (MethodCall t1 i t) (SIGMA s0 h0) =e=> Config CT (MethodCall t1 i (erasure_H_fun e')) (SIGMA s'1 h'1)).
+    apply erasure_H_context; auto. unfold erasure_H_fun. fold erasure_H_fun.
+    apply return_free_imply_erasure_H_fun_dot in H18. rewrite H33 in H18.  
+    assert (return_free t = false). apply  erasure_H_fun_imply_return_free_false; auto.
+
+    apply valid_syntax_preservation_erasured with CT (erasure_H_fun t2) s h (SIGMA s0 h0) (classTy arguT). auto. 
+    apply valid_syntax_preservation_erasure_H; inversion H_valid_syntax; auto.
+    apply surface_syntax_is_valid_syntax; auto.  
+    apply typing_preservation_erasure; auto. auto.  rewrite <- H13. auto. 
+    
+    rewrite H16. rewrite H25. rewrite H33. auto. 
+    apply valid_syntax_preservation with CT t2 (SIGMA s' h') s h (classTy arguT); auto.
+    inversion H_valid_syntax. auto. apply surface_syntax_is_valid_syntax; auto. auto.   
+    apply L_reduction with (Config CT (MethodCall t1 i t) (SIGMA s0 h0) ); auto. 
+
+  +++ inversion H4. 
+
+-  (*  MethodCall (ObjId o) i v  *) 
+inversion H6. subst. inversion H14. subst. rename s0 into s. rename h0 into h. 
+ intros. unfold dot_free in H_dot_free. fold dot_free in H_dot_free. 
+  inversion H_erasure_l. subst.
+  + rewrite H_flow_l in H2. inversion H2.
+  + subst.  inversion H_erasure_r. subst.
+      induction s. 
+      unfold flow_to in H_flow_l;  unfold current_label in H_flow_l;  unfold get_stack in H_flow_l; 
+      unfold get_current_label in H_flow_l. unfold L_Label in H_flow_l. 
+      unfold subset in H_flow_l. inversion H_flow_l.
+      induction a.
+      
+      unfold current_label in H_flow_l;  unfold get_stack in H_flow_l; 
+      unfold get_current_label in H_flow_l. unfold get_stack_label in H_flow_l. 
+      unfold current_label in H3;  unfold get_stack in H3; 
+      unfold get_current_label in H3. unfold get_stack_label in H3. rewrite H_flow_l in H3. inversion H3. 
+
+   ++ subst. right. unfold erasure_H_fun. fold erasure_H_fun. assert (return_free (ObjId o ) = true). auto. 
+      rewrite H. assert (return_free t2 = true). apply value_is_return_free; auto. rewrite H0. 
+      inversion H_typing. subst. inversion H10. subst. destruct H22 as [F']. destruct H1 as [lo']. 
+      rewrite H1 in H7. inversion H7. subst. rewrite <- H15 in H5. inversion H5.  subst.  
+      rewrite H16 in H8. inversion H8. subst. 
+  
+      assert (return_free body0 = true). apply surface_syntax_is_return_free. auto. rewrite H4.  
+
+
+
+
+
+  inversion H_erasure_l. subst.
+  + rewrite H_flow_l in H2. inversion H2.
+  + subst.  inversion H_erasure_r. subst.
+        rewrite H_flow_r in H6. inversion H6. subst. 
+  ++  inversion H_typing. subst. 
+
+
+-  (* MethodCall (ObjId o) i (unlabelOpaque (v_opa_l v lb))  *)  admit.
+
+- (* new exp*) admit. 
+
+- (* label data *) admit. 
+
+- (* v_l t lb *) admit. 
+
+-  (* unlabel *) admit. 
+
+-  (* unlabel v_l *) admit.
+
+-  (* labelOf *) admit.
+
+
+-  (* labelOf v*) admit.
+
+-  (* unlabelOpaque e *) admit.
+
+-  (* (unlabelOpaque (v_opa_l t' lb)) *) admit.
+
+-  (* opaqueCall e' *) admit.
+
+-  (* (opaqueCall (Return e')) *) admit.
+
+-  (* (opaqueCall t) *) admit.
+-  (* (opaqueCall (Return v)) *) admit.
+-  (*Assignment*) 
+      inversion H_typing. inversion H5.
+-  (* Assignment *) 
+     inversion H_typing. inversion H5.
+-  (* (FieldWrite t1 i t2) *) admit.
+-  (* (FieldWrite t1 i t2) *) admit.
+-  (* (FieldWrite t1 i t2) *) admit.
+-  (*(FieldWrite t1 i t2 *) admit.
+-  (* if *) 
+  inversion H_typing. inversion H7. inversion H18. 
+-  (* if *) 
+  inversion H_typing. inversion H7. inversion H18. 
+-  (* Sequence *) 
+ intros. unfold dot_free in H_dot_free. fold dot_free in H_dot_free. 
+  apply dot_free_if in H_dot_free. destruct H_dot_free. auto.
+  inversion H_erasure_l. subst.
+  + rewrite H_flow_l in H5. inversion H5.
+  + subst.  inversion H_erasure_r. subst.
+        rewrite H_flow_r in H6. inversion H6. subst. 
+  ++  inversion H_typing. subst. 
+    assert (Config CT (erasure_H_fun t1) (SIGMA  s'0 h'0) = Config CT (erasure_H_fun s1')  (SIGMA s'1 h'1) 
+      \/ (Config CT (erasure_H_fun t1) (SIGMA  s'0 h'0) ==l> Config CT (erasure_H_fun s1')  (SIGMA s'1 h'1))). 
+    apply IHt1 with h' s' h s T0  s1'; auto.   
+    inversion H_valid_syntax. auto.  apply value_is_valid_syntax.  auto. 
+    apply erasure_H_context; auto.     auto. apply erasure_H_context; auto.
+
+    destruct H2.
+    assert (return_free t1= return_free s1'). 
+    apply erasure_H_fun_equal_return_free. inversion H_valid_syntax. auto.  
+    apply value_is_valid_syntax.  auto. 
+    apply valid_syntax_preservation with CT t1 (SIGMA s' h') s h  T0; auto. 
+    inversion H_valid_syntax. auto.   auto. apply value_is_valid_syntax; auto.
+    inversion H2. auto. 
+    unfold erasure_H_fun. fold erasure_H_fun. subst. 
+    case_eq (return_free t1). intro.  rewrite H4 in H3. rewrite <- H3. 
+    left. inversion H2. subst. auto. intro.  rewrite H4 in H3. rewrite <- H3. left. 
+    inversion H2. subst. auto. auto.  
+
+     (*l reduction*)    
+    inversion H2. induction c2.
+  +++ assert (CT = c). apply ct_consist with (erasure_H_fun t1)  t (SIGMA s'0 h'0) s0; auto. 
+    subst. rename c into CT.    right.  unfold erasure_H_fun. fold erasure_H_fun. subst. 
+    case_eq (return_free t1). intro. assert ((erasure_H_fun t1) = dot). 
+    apply return_free_true_imply_erasure_H_fun_dot; auto. inversion H_valid_syntax; auto.
+    apply value_is_valid_syntax; auto.
+    rewrite H8 in H3. inversion H3.   
+    
+    intro. case_eq (return_free s1'). 
+    intro.  assert (erasure_H_fun s1' = dot).
+    apply  return_free_true_imply_erasure_H_fun_dot; auto. 
+    apply valid_syntax_preservation with CT t1 (SIGMA s' h') s h T0; auto. 
+    inversion H_valid_syntax. auto. apply value_is_valid_syntax; auto.
+    rewrite H11 in H4. 
+    assert (Config CT (Sequence (erasure_H_fun t1) t2) (SIGMA s'0 h'0) ==> 
+            Config CT (Sequence t t2)  s0 ).
+    apply ST_seq1; auto. induction s0.
+    assert (return_free t2 = true). inversion H_valid_syntax. apply surface_syntax_is_return_free; auto.
+    apply value_is_return_free in H17. rewrite H17 in H7. inversion H7. rewrite H15.  
+    
+    assert ((flow_to (current_label ((SIGMA s'1 h'1))) L_Label = flow_to (current_label (SIGMA s0 h0)) L_Label )).
+    apply erasure_preserve_context with t dot CT; auto. 
+    assert ( flow_to (current_label (SIGMA s'1 h'1)) L_Label = flow_to (current_label (SIGMA s' h')) L_Label).
+    apply erasure_sigma_preserve_context; auto. rewrite H_flow_r in H17. rewrite H17 in H16. 
+    inversion H4. subst. rewrite H21 in H16. inversion H16. subst. 
+
+    assert (Config CT (Sequence t t2) (SIGMA s0 h0) =e=> Config CT dot (SIGMA s'1 h'1)).
+    apply erasure_H_context; auto. unfold erasure_H_fun. fold erasure_H_fun. 
+    assert (return_free t = true). apply  erasure_H_fun_imply_return_free; auto. 
+
+    apply valid_syntax_preservation_erasured with CT (erasure_H_fun t1) s h (SIGMA s0 h0) T0. auto. 
+    apply valid_syntax_preservation_erasure_H; inversion H_valid_syntax; auto. 
+    apply value_is_valid_syntax. auto. 
+    apply typing_preservation_erasure; auto. auto.  rewrite <- H10. auto. 
+
+    rewrite H18. rewrite H15.  auto. apply L_reduction with (Config CT (Sequence t t2) (SIGMA s0 h0)); auto.
+  
+    intro.  unfold erasure_H_fun. fold erasure_H_fun. subst. 
+    assert (Config CT (Sequence (erasure_H_fun t1) t2) (SIGMA s'0 h'0) ==> 
+            Config CT (Sequence t t2)  s0 ).
+    apply ST_seq1; auto. induction s0.
+    assert ((flow_to (current_label ((SIGMA s'1 h'1))) L_Label = flow_to (current_label (SIGMA s0 h0)) L_Label )).
+    apply erasure_preserve_context with t (erasure_H_fun s1') CT; auto. 
+    assert ( flow_to (current_label (SIGMA s'1 h'1)) L_Label = flow_to (current_label (SIGMA s' h')) L_Label).
+    apply erasure_sigma_preserve_context; auto. rewrite H_flow_r in H15. rewrite H15 in H14.  
+    inversion H4. subst. rewrite H19 in H14. inversion H14. subst. 
+
+    assert (Config CT (Sequence t t2) (SIGMA s0 h0) =e=> Config CT (Sequence (erasure_H_fun s1') t2) (SIGMA s'1 h'1)).
+    apply erasure_H_context; auto. unfold erasure_H_fun. fold erasure_H_fun.
+    apply return_free_imply_erasure_H_fun_dot in H8. rewrite H24 in H8.  
+    assert (return_free t = false). apply  erasure_H_fun_imply_return_free_false; auto.
+
+    apply valid_syntax_preservation_erasured with CT (erasure_H_fun t1) s h (SIGMA s0 h0) ( T0). auto. 
+    apply valid_syntax_preservation_erasure_H; inversion H_valid_syntax; auto.
+    apply value_is_valid_syntax; auto.  
+    apply typing_preservation_erasure; auto. auto.  rewrite <- H10. auto. 
+    
+    rewrite H16. rewrite H24. auto. 
+    apply valid_syntax_preservation with CT t1 (SIGMA s' h') s h T0; auto.
+    inversion H_valid_syntax. auto. apply value_is_valid_syntax; auto.  
+    apply L_reduction with (Config CT (Sequence t t2) (SIGMA s0 h0)); auto. 
+
+  +++ inversion H4. 
+
+
+-  (* Sequence *) 
+ intros. unfold dot_free in H_dot_free. fold dot_free in H_dot_free. 
+  apply dot_free_if in H_dot_free. destruct H_dot_free. auto.
+  inversion H_erasure_l. subst.
+  + rewrite H_flow_l in H5. inversion H5.
+  + subst.  inversion H_erasure_r. subst.
+        rewrite H_flow_r in H6. inversion H6. subst. 
+        unfold  erasure_H_fun. fold  erasure_H_fun. 
+        assert (return_free t1 = true). apply value_is_return_free. auto. rewrite H2. 
+        rewrite <- H12 in H10. inversion H10. subst.  left. 
+        case_eq (return_free t' ). intro.
+        apply return_free_true_imply_erasure_H_fun_dot in H3. rewrite H3. auto. 
+        inversion H_valid_syntax.  apply surface_syntax_is_valid_syntax. auto. auto. 
+      
+       intro. auto. 
+
+-  (* Return *) 
+ intros. unfold dot_free in H_dot_free. fold dot_free in H_dot_free. 
+  inversion H_erasure_l. subst.
+  + rewrite H_flow_l in H3. inversion H3.
+  + subst.  inversion H_erasure_r. subst.
+        rewrite H_flow_r in H4. inversion H4. subst. 
+  ++  inversion H_typing. subst. 
+    assert (Config CT (erasure_H_fun t) (SIGMA  s'0 h'0) = Config CT (erasure_H_fun e')  (SIGMA s'1 h'1) 
+      \/ (Config CT (erasure_H_fun t) (SIGMA  s'0 h'0) ==l> Config CT (erasure_H_fun e')  (SIGMA s'1 h'1))). 
+    apply IHt with h' s' h s T  e'; auto.   
+    inversion H_valid_syntax. auto. 
+    apply erasure_H_context; auto.     auto. apply erasure_H_context; auto.
+
+    destruct H.
+    assert (return_free t= return_free e'). 
+    apply erasure_H_fun_equal_return_free. inversion H_valid_syntax. auto.  
+    apply valid_syntax_preservation with CT t (SIGMA s' h') s h  T; auto. 
+    inversion H_valid_syntax. auto. 
+    inversion H. auto. 
+    unfold erasure_H_fun. fold erasure_H_fun. subst. 
+    case_eq (return_free t). intro.  rewrite H5 in H2. rewrite <- H2. 
+    left. inversion H. subst. auto. intro.  rewrite H5 in H2. rewrite <- H2. left. 
+    inversion H. subst. auto. auto.  
+
+     (*l reduction*)    
+    inversion H. induction c2.
+  +++ assert (CT = c). apply ct_consist with (erasure_H_fun t)  t0 (SIGMA s'0 h'0) s0; auto. 
+    subst. rename c into CT.    right.  unfold erasure_H_fun. fold erasure_H_fun. subst. 
+    case_eq (return_free t). intro. assert ((erasure_H_fun t) = dot). 
+    apply return_free_true_imply_erasure_H_fun_dot; auto. inversion H_valid_syntax; auto.
+    rewrite H9 in H2. inversion H2.   
+    
+    intro. case_eq (return_free e'). 
+    intro.  assert (erasure_H_fun e' = dot).
+    apply  return_free_true_imply_erasure_H_fun_dot; auto. 
+    apply valid_syntax_preservation with CT t (SIGMA s' h') s h T; auto. 
+    inversion H_valid_syntax. auto. 
+    rewrite H11 in H5. 
+    assert (Config CT (Return (erasure_H_fun t)) (SIGMA s'0 h'0) ==> 
+            Config CT (Return t0) s0 ).
+    apply ST_return1; auto. induction s0.
+    
+    assert ((flow_to (current_label ((SIGMA s'1 h'1))) L_Label = flow_to (current_label (SIGMA s0 h0)) L_Label )).
+    apply erasure_preserve_context with t0 dot CT; auto. 
+    assert ( flow_to (current_label (SIGMA s'1 h'1)) L_Label = flow_to (current_label (SIGMA s' h')) L_Label).
+    apply erasure_sigma_preserve_context; auto. rewrite H_flow_r in H14. rewrite H14 in H13. 
+    inversion H5. subst. rewrite H18 in H13. inversion H13. subst. 
+
+    assert (Config CT (Return t0) (SIGMA s0 h0) =e=> Config CT (Return dot) (SIGMA s'1 h'1)).
+    apply erasure_H_context; auto. unfold erasure_H_fun. fold erasure_H_fun. 
+    assert (return_free t0 = true). apply  erasure_H_fun_imply_return_free; auto. 
+
+    apply valid_syntax_preservation_erasured with CT (erasure_H_fun t) s h (SIGMA s0 h0) T. auto. 
+    apply valid_syntax_preservation_erasure_H; inversion H_valid_syntax; auto. 
+    apply typing_preservation_erasure; auto. auto.  rewrite <- H8. auto. 
+
+    rewrite H15. auto.  auto. apply L_reduction with ( Config CT (Return t0) (SIGMA s0 h0)); auto.
+  
+    intro.  unfold erasure_H_fun. fold erasure_H_fun. subst. 
+    assert (Config CT (Return (erasure_H_fun t)) (SIGMA s'0 h'0) ==> 
+            Config CT (Return t0)  s0 ).
+    apply ST_return1; auto. induction s0.
+    assert ((flow_to (current_label ((SIGMA s'1 h'1))) L_Label = flow_to (current_label (SIGMA s0 h0)) L_Label )).
+    apply erasure_preserve_context with t0 (erasure_H_fun e') CT; auto. 
+    assert ( flow_to (current_label (SIGMA s'1 h'1)) L_Label = flow_to (current_label (SIGMA s' h')) L_Label).
+    apply erasure_sigma_preserve_context; auto. rewrite H_flow_r in H13. rewrite H13 in H12.  
+    inversion H5. subst. rewrite H17 in H12. inversion H12. subst. 
+
+    assert (Config CT (Return t0) (SIGMA s0 h0) =e=> Config CT (Return (erasure_H_fun e')) (SIGMA s'1 h'1)).
+    apply erasure_H_context; auto. unfold erasure_H_fun. fold erasure_H_fun.
+    assert (return_free t0 = false). apply  erasure_H_fun_imply_return_free_false; auto.
+
+    apply valid_syntax_preservation_erasured with CT (erasure_H_fun t) s h (SIGMA s0 h0) T. auto. 
+    apply valid_syntax_preservation_erasure_H; inversion H_valid_syntax; auto. 
+    apply typing_preservation_erasure; auto. auto.  rewrite <- H8. auto. 
+    apply return_free_imply_erasure_H_fun_dot in H9. rewrite H22 in H9. auto.  
+    apply valid_syntax_preservation with CT t (SIGMA s' h') s h T; auto. 
+    inversion H_valid_syntax. auto. rewrite H14.  rewrite H22. auto. 
+    apply L_reduction with (Config CT (Return t0) (SIGMA s0 h0)); auto. 
+
+  +++ inversion H5. 
+- (* Return *) right. inversion H5. subst. 
+ intros. unfold dot_free in H_dot_free. fold dot_free in H_dot_free. 
+  inversion H_erasure_l. subst.
+  + rewrite H_flow_l in H2. inversion H2.
+  + subst.  inversion H_erasure_r. subst.
+        rewrite H_flow_r in H3. inversion H3. subst. 
+  ++rewrite H13. rewrite H11. assert (return_free t' = true).
+       apply value_is_return_free. auto.
+        assert (erasure_H_fun t' = dot). 
+        apply return_free_true_imply_erasure_H_fun_dot. auto. 
+       inversion H_valid_syntax. auto. auto.  
+     unfold erasure_H_fun. fold erasure_H_fun.
+     rewrite H0. rewrite H. unfold erasure_sigma_fun. induction lsf. 
+     inversion H10. subst.  unfold erasure_stack. fold erasure_stack.
+    assert (Config CT (Return dot)
+         (SIGMA (Labeled_frame l0 (fun x : id => erasure_obj_null (s x) h0) :: s'0)
+            (erasure_heap h0)) ==> Config CT dot (SIGMA (update_current_label s'0 (join_label l0 (get_current_label s'0)))
+                                                      (erasure_heap h0)) ).
+    apply ST_return2 with  (Labeled_frame l0 (fun x : id => erasure_obj_null (s x) h0) :: s'0)
+                                        s'0  (update_current_label s'0 (join_label l0 (get_current_label s'0))) 
+                                         (erasure_heap h0) (Labeled_frame l0 (fun x : id => erasure_obj_null (s x) h0))
+                                         (join_label l0 (get_current_label s'0)); auto. 
+    assert (Config CT dot (SIGMA (update_current_label s'0 (join_label l0 (get_current_label s'0)))
+                                                      (erasure_heap h0)) =e=> Config CT dot
+                                                                              (SIGMA
+                                                                                 (erasure_stack
+                                                                                    (update_current_label s'0 (join_label l0 (get_current_label s'0))) h0)
+                                                                                 (erasure_heap h0))).
+    apply erasure_H_context; auto. unfold erasure_sigma_fun.
+    assert ( (erasure_stack
+                    (update_current_label s'0 (join_label l0 (get_current_label s'0))) h0) = 
+                (erasure_stack
+                  (update_current_label s'0 (join_label l0 (get_current_label s'0))) (erasure_heap h0) )).
+    apply multi_erasure_stack_helper with CT. auto. 
+    rewrite H6. 
+    assert ((erasure_heap (erasure_heap h0)) =  (erasure_heap h0)).
+    apply multi_erasure_heap_equal. rewrite H8. auto.  
+    apply L_reduction with (Config CT dot
+                                           (SIGMA
+                                              (update_current_label s'0 (join_label l0 (get_current_label s'0)))
+                                              (erasure_heap h0))) ; auto. 
+Admitted.
+
+
+(*
+Lemma simulation_H_saved : forall CT t t0 t' t0' s h s' h' sigma_l_e sigma_r_e,
+      dot_free t = true ->
+      valid_syntax t ->
+      forall T, has_type CT empty_context h t T -> 
+      field_wfe_heap CT h -> wfe_heap CT h -> wfe_stack CT h s ->
+      flow_to (current_label (SIGMA s h)) L_Label = false ->
+      flow_to (current_label (SIGMA s' h')) L_Label = false ->
+      Config CT t (SIGMA s h) ==> Config CT t' (SIGMA s' h') ->
+      (Config CT t (SIGMA s h)) =e=> (Config CT t0 sigma_l_e) ->
+      (Config CT t' (SIGMA s' h')) =e=> (Config CT t0' sigma_r_e) ->
+         (Config CT t0 sigma_l_e) ==>L*  (Config CT t0' sigma_r_e).
+Proof. 
+  intros CT t t0 t' t0' s h s' h' sigma_l_e sigma_r_e. intro H_dot_free. intro H_valid_syntax. 
+  intro T. intro H_typing. intro H_wfe_fields. 
+  intro H_wfe_heap. intro H_wfe_stack. 
+  intro H_flow_l.   intro H_flow_r. intro H_reduction. 
+  (*intro H_erasure_sigma_l.  *) intro H_erasure_l. intro H_erasure_r.   
+  
+generalize dependent t'. 
+  generalize dependent t0.
+  generalize dependent t0'.
+  generalize dependent T.
+    generalize dependent sigma_l_e.      generalize dependent sigma_r_e. 
+    generalize dependent s.      generalize dependent h.
+    generalize dependent s'.      generalize dependent h'.
+induction t. 
+  - intros.  admit. -intros.  admit.  - intros.  admit. 
+  - intros.  admit. -intros.  admit.  - intros.  admit. 
+  - intros.  admit. -intros.  admit.  - intros.  admit. 
+  - intros.  admit. -intros.  admit.  - intros.  admit. 
+  - intros.  admit. 
+
+- (* (FieldWrite t1 i t2) *) intros. unfold dot_free in H_dot_free. fold dot_free in H_dot_free. auto.
+  apply dot_free_if in H_dot_free. destruct H_dot_free.  inversion H_erasure_l. subst.
+  + rewrite H_flow_l in H4. inversion H4.
+  + subst. inversion H_reduction.  
+  ++ subst. inversion H_erasure_r. subst.
+        rewrite H_flow_r in H6. inversion H6. subst. 
+  +++  inversion H_typing. subst. 
+    assert (Config CT (erasure_H_fun t1) (SIGMA  s'0 h'0) ==>L* Config CT (erasure_H_fun e1')  (SIGMA s'1 h'1)). 
+    apply IHt1 with h' s' h s (classTy clsT)  e1'; auto.     
+    inversion H_valid_syntax. auto. apply value_is_valid_syntax. auto. apply erasure_H_context; auto. 
+    auto. apply erasure_H_context; auto. 
+     inversion H1. unfold erasure_H_fun. fold erasure_H_fun. subst. rewrite H5. 
+    inversion H_valid_syntax. subst. 
+    assert (return_free t1= return_free e1'). 
+    apply erasure_H_fun_equal_return_free. auto. 
+    apply valid_syntax_preservation with CT t1 (SIGMA s' h') s h (classTy clsT); auto. auto. 
+    case_eq (return_free t1). intro.  rewrite H8 in H3. rewrite <- H3.  
+    pose proof (surface_syntax_H_erasure_dot t2 H14).
+    apply erasure_H_fun_imply_return_free in H11. rewrite H11. auto. 
+    apply surface_syntax_is_valid_syntax. auto.
+
+    intro. rewrite H8 in H3. rewrite <- H3. auto. 
+    subst. inversion H10 ; subst; inversion H2. 
+   ++ subst. inversion H_erasure_r. subst.
+        rewrite H_flow_r in H6. inversion H6. subst. 
+  +++  inversion H_typing. subst. 
+    assert (Config CT (erasure_H_fun t2) (SIGMA  s'0 h'0) = Config CT (erasure_H_fun e2')  (SIGMA s'1 h'1)). 
+    apply IHt2 with h' s' h s (classTy cls')  e2'; auto.     
+    inversion H_valid_syntax. apply surface_syntax_is_valid_syntax. auto.  auto. apply erasure_H_context; auto. 
+    auto. apply erasure_H_context; auto. 
+     inversion H1. unfold erasure_H_fun. fold erasure_H_fun. subst. rewrite H3. 
+    inversion H_valid_syntax. subst. 
+    assert (return_free t2= return_free e2'). 
+    apply erasure_H_fun_equal_return_free. apply surface_syntax_is_valid_syntax. auto. 
+    apply valid_syntax_preservation with CT t2 (SIGMA s' h') s h (classTy cls'); auto. 
+    apply surface_syntax_is_valid_syntax. auto. auto.  
+    case_eq (return_free t2). intro.  rewrite H8 in H2. rewrite <- H2.
+    pose proof ( value_is_return_free t1 H11) . rewrite H13. auto. 
+    intro. pose proof ( value_is_return_free t1 H11) . rewrite H13. auto. 
+    rewrite <- H2. rewrite H8. auto. 
+    subst. 
+   pose proof ( value_is_return_free t1 H11) . rewrite H2.
+     assert (return_free t2= return_free e2'). 
+    apply erasure_H_fun_equal_return_free. auto. 
+    apply valid_syntax_preservation with CT t2 (SIGMA s' h') s h (classTy cls'); auto.  auto. 
+    rewrite H8.  auto. 
+  ++ subst. inversion H_erasure_r. subst.
+        rewrite H_flow_r in H5. inversion H5. subst.
+   +++ inversion H10. subst. rename s0 into s. rename h0 into h.
+    unfold erasure_H_fun. fold erasure_H_fun. unfold return_free. fold return_free. 
+    pose proof (value_is_return_free t2 H17). rewrite H1. 
+    rewrite H16 in H14. rewrite H9. rewrite H14. unfold erasure_sigma_fun.
+   
+
+ Lemma update_H_object_equal_erasure : forall h o CT cls F F' lb lb',
+       wfe_heap CT h -> 
+        Some (Heap_OBJ cls F lb) = lookup_heap_obj h o ->
+        flow_to lb' L_Label = false ->
+        flow_to lb L_Label = false ->
+          erasure_heap h = erasure_heap
+                                            (update_heap_obj h o
+                                               (Heap_OBJ cls F' lb')).
+    Proof. intros h o CT cls F F' lb lb'. intros.  induction h. unfold lookup_heap_obj in H0. inversion H0.
+     induction a. case_eq (beq_oid o o0). intro. unfold update_heap_obj. rewrite H3. 
+
+    unfold lookup_heap_obj in H0.  rewrite H3 in H0.  inversion H0. 
+    unfold erasure_heap. fold erasure_heap. rewrite H2. rewrite H1.  auto. 
+    intro. unfold update_heap_obj. rewrite H3.  fold update_heap_obj. 
+    assert (erasure_heap h =
+      erasure_heap (update_heap_obj h o (Heap_OBJ cls F' lb'))).
+    apply IHh. auto.  inversion H. auto. inversion H4. subst. auto.
+    unfold  lookup_heap_obj in H0. rewrite H3 in H0. fold lookup_heap_obj in H0. auto.
+    unfold erasure_heap. fold erasure_heap.
+    rewrite H4. auto. 
+
+    induction h0. 
+    assert ( forall a, 
+     (fun x : id => erasure_obj_null (f x) ((o0, Heap_OBJ c f l0) :: h)) a
+          = (fun x : id => erasure_obj_null (f x)
+                     ((o0, Heap_OBJ c f l0) :: update_heap_obj h o (Heap_OBJ cls F' lb'))) a).
+    Proof. intro  a. 
+assert (forall h o, (exists cls F lb, lookup_heap_obj h o = Some (Heap_OBJ cls F lb) ) 
+      \/ lookup_heap_obj h o = None).
+    intro h1. induction h1.  right. unfold lookup_heap_obj. auto.
+    intro o1.  induction a0. case_eq ( beq_oid o1 o2). unfold lookup_heap_obj.  intro. unfold lookup_heap_obj. rewrite H5.
+    rename h0 into ho. induction ho.     left. exists c0. exists f0. exists l1. auto. 
+    intro. unfold lookup_heap_obj. rewrite H5. fold lookup_heap_obj. apply IHh1. 
+    remember ((o, Heap_OBJ c f l0) :: h) as h'. 
+    case (f a). induction t; try (unfold erasure_obj_null; auto).
+    
+
+    destruct H5 with  ((o0, Heap_OBJ c f l0) :: h)  o1. 
+    destruct H6 as [cls1]. destruct H6 as [F1]. destruct H6 as [lb1]. rewrite H6.
+
+      Lemma lookup_updated_heap_equal : forall cls F lb o h cls1 F1 lb1 F' o1 lb',
+          lookup_heap_obj h o = Some (Heap_OBJ cls F lb) ->
+          lookup_heap_obj h o1 = Some (Heap_OBJ cls1 F1 lb1) -> 
+          (lookup_heap_obj
+               (update_heap_obj h o (Heap_OBJ cls F' lb')) o1  = 
+                      Some (Heap_OBJ cls1 F1 lb1)) \/ 
+              (lookup_heap_obj (update_heap_obj h o (Heap_OBJ cls F' lb')) o1  = 
+                      Some (Heap_OBJ cls F' lb') /\ beq_oid o1 o = true).
+      Proof. intros.  induction h. 
+      unfold lookup_heap_obj in H0. inversion H0.  induction a.
+      case_eq (beq_oid o o0). intro.
+
+      unfold  update_heap_obj. rewrite H1.
+      case_eq (beq_oid o1 o). intro.
+      unfold lookup_heap_obj. rewrite H2.
+      unfold lookup_heap_obj in H0. apply beq_oid_equal in H2. rewrite H2 in H0.
+      rewrite H1 in H0.
+      unfold lookup_heap_obj in H. rewrite H1 in H. rewrite H0 in H. inversion H. subst.  
+      right. auto. 
+      intro. unfold lookup_heap_obj. rewrite H2. fold lookup_heap_obj.
+      unfold lookup_heap_obj in H0. apply beq_oid_equal in H1. rewrite <-H1 in H0.
+      rewrite H2 in H0. fold lookup_heap_obj in H0. rewrite H0. 
+      left. auto.
+      intro. 
+      case_eq (beq_oid o1 o0). intro.
+      unfold update_heap_obj. rewrite H1. fold update_heap_obj.
+       unfold lookup_heap_obj. rewrite H2.
+       unfold lookup_heap_obj in H0.    rewrite H2 in H0. rewrite H0.
+      left. auto. 
+      intro.  unfold lookup_heap_obj in H. 
+       unfold lookup_heap_obj in H0. 
+      rewrite H1 in H. fold lookup_heap_obj in H.
+      rewrite H2 in H0. fold lookup_heap_obj in H0.
+      unfold update_heap_obj.
+       unfold lookup_heap_obj.  rewrite H1. rewrite H2. 
+      fold lookup_heap_obj.
+       fold update_heap_obj. apply IHh; auto.
+      Qed. 
+
+      remember ((o0, Heap_OBJ c f l0) :: h) as h0.
+      assert(  (lookup_heap_obj
+               (update_heap_obj h0 o (Heap_OBJ cls F' lb')) o1  = 
+                      Some (Heap_OBJ cls1 F1 lb1)) \/ 
+              (lookup_heap_obj (update_heap_obj h0 o (Heap_OBJ cls F' lb')) o1  = 
+                      Some (Heap_OBJ cls F' lb')) /\ beq_oid o1 o = true ).
+      apply lookup_updated_heap_equal with F lb; auto. 
+      destruct H7. unfold update_heap_obj in H7. rewrite Heqh0 in H7.  rewrite H3 in H7. 
+      fold update_heap_obj in H7. rewrite H7. auto.
+
+      unfold update_heap_obj in H7. rewrite Heqh0 in H7.  rewrite H3 in H7. 
+      fold update_heap_obj in H7. destruct H7. rewrite H7. apply beq_oid_equal in H8.
+      rewrite H8 in H6. rewrite H6 in H0. inversion H0. subst. rewrite H2.  rewrite H1.  auto.
+
+      rewrite H6. 
+      auto.
+
+      Lemma lookup_updated_heap_none : forall h o1 o ho,
+      o <> o1 ->
+      lookup_heap_obj h o1 = None ->
+      lookup_heap_obj (update_heap_obj h o ho) o1 = None.
+      Proof. intros. induction h.
+      unfold update_heap_obj. unfold lookup_heap_obj. auto. 
+      induction a. case_eq (beq_oid o o0). intro. unfold update_heap_obj. rewrite H1. 
+      unfold lookup_heap_obj in H0. apply beq_oid_equal in H1. 
+      unfold lookup_heap_obj. rewrite <- H1 in H0. 
+      case_eq (beq_oid o1 o). intro. rewrite H2 in H0. inversion H0.
+      intro. rewrite H2 in H0. fold lookup_heap_obj. fold lookup_heap_obj in H0. auto. 
+      intro. unfold update_heap_obj. rewrite H1. 
+      fold update_heap_obj. unfold lookup_heap_obj in H0. 
+      case_eq ( beq_oid o1 o0). intro. rewrite H2 in H0. inversion H0.
+      intro.  rewrite H2 in H0. fold lookup_heap_obj in H0. apply IHh in H0. 
+      unfold lookup_heap_obj.  rewrite H2. fold lookup_heap_obj. auto. 
+      Qed.  
+
+      assert (lookup_heap_obj (update_heap_obj ((o0, Heap_OBJ c f l0) :: h) o (Heap_OBJ cls F' lb')) o1 = None).
+      apply lookup_updated_heap_none; auto. 
+      intro contra. rewrite contra in H0. rewrite <- H0 in H6. inversion H6. 
+      unfold update_heap_obj in H7. rewrite H3 in H7. fold update_heap_obj in H7. rewrite H7. auto. 
+        
+      auto. 
+      apply functional_extensionality in H5. rewrite H5. auto.  
+Qed. 
+
+
+assert (erasure_heap h = erasure_heap
+                                            (update_heap_obj h o
+                                               (Heap_OBJ cls (fields_update F i t2) lb))).
+apply update_H_object_equal_erasure with CT F lb; auto. 
+apply flow_false_trans with (current_label (SIGMA s h)); auto.
+apply flow_false_trans with (current_label (SIGMA s h)); auto.
+rewrite <- H2.
+
+
+assert ( (erasure_stack s h) = erasure_stack s
+        (update_heap_obj h o
+           (Heap_OBJ cls (fields_update F i t2) lb))).
+unfold erasure_stack. induction s. auto. induction a. rename s0 into sf. 
+assert (forall a, (fun x : id => erasure_obj_null (sf x) h) a = (fun x : id =>
+                                                                           erasure_obj_null (sf x)
+                                                                             (update_heap_obj h o
+                                                                                (Heap_OBJ cls (fields_update F i t2) lb))) a) .
+intro a. assert (forall h o, (exists cls F lb, lookup_heap_obj h o = Some (Heap_OBJ cls F lb) ) 
+      \/ lookup_heap_obj h o = None).
+    intro h1. induction h1.  right. unfold lookup_heap_obj. auto.
+    intro o1.  induction a0. case_eq ( beq_oid o1 o0). unfold lookup_heap_obj.  intro. unfold lookup_heap_obj. rewrite H3.
+    rename h0 into ho. induction ho.     left. exists c. exists f. exists l1. auto. 
+    intro. unfold lookup_heap_obj. rewrite H3. fold lookup_heap_obj. apply IHh1. 
+    case (sf a). induction t; try (unfold erasure_obj_null; auto).
+
+    destruct H3 with  h o0. 
+    destruct H6 as [cls1]. destruct H6 as [F1]. destruct H6 as [lb1]. rewrite H6.
+    remember  lb as lb'. 
+    remember (fields_update F i t2) as F'. 
+    assert(  (lookup_heap_obj
+               (update_heap_obj h o (Heap_OBJ cls F' lb')) o0  = 
+                      Some (Heap_OBJ cls1 F1 lb1)) \/ 
+              (lookup_heap_obj (update_heap_obj h o (Heap_OBJ cls F' lb')) o0  = 
+                      Some (Heap_OBJ cls F' lb')) /\ beq_oid o0 o = true ).
+      apply lookup_updated_heap_equal with F lb; auto. rewrite <- Heqlb'. auto.
+      destruct H7. unfold update_heap_obj in H7.
+      fold update_heap_obj in H7. rewrite H7. auto.
+
+      unfold update_heap_obj in H7. 
+      fold update_heap_obj in H7. destruct H7. rewrite H7. apply beq_oid_equal in H8.
+      rewrite H8 in H6. rewrite H6 in H11. inversion H11. subst. 
+      auto.
+      rewrite H6. unfold erasure_obj_null.
+assert (lookup_heap_obj
+    (update_heap_obj h o
+       (Heap_OBJ cls (fields_update F i t2)
+          lb))    o0 = None).
+apply lookup_updated_heap_none; auto.
+intro contra. rewrite contra in H11. rewrite <- H11 in H6.  inversion H6. 
+rewrite H7. auto. auto. 
+apply functional_extensionality in H3.
+rewrite H3. auto. 
+rewrite H3. auto.
+
+(*field write with opaquelabeled value*)
+++ subst. inversion H_erasure_r. subst.
+        rewrite H_flow_r in H5. inversion H5. subst.
+   +++ inversion H11. subst. rename s0 into s. rename h0 into h.
+    unfold erasure_H_fun. fold erasure_H_fun. unfold return_free. fold return_free. 
+    pose proof (value_is_return_free v H18). rewrite H1. 
+    rewrite H17 in H13. rewrite H9. rewrite H13. unfold erasure_sigma_fun.
+
+assert (erasure_heap h = erasure_heap
+                                            (update_heap_obj h o
+                                               (Heap_OBJ cls (fields_update F i v) lo))).
+apply update_H_object_equal_erasure with CT F lo; auto. 
+apply flow_false_trans with (join_label (current_label (SIGMA s h)) lb); auto.
+apply flow_join_label with (current_label (SIGMA s h)) lb; auto.
+apply join_label_commutative. 
+
+apply flow_false_trans with (join_label (current_label (SIGMA s h)) lb); auto.
+apply flow_join_label with (current_label (SIGMA s h)) lb; auto.
+apply join_label_commutative. 
+
+
+rewrite <- H2.
+
+
+assert ( (erasure_stack s h) = erasure_stack s
+        (update_heap_obj h o
+           (Heap_OBJ cls (fields_update F i v) lo))).
+unfold erasure_stack. induction s. auto. induction a. rename s0 into sf. 
+assert (forall a, (fun x : id => erasure_obj_null (sf x) h) a = (fun x : id =>
+                                                                           erasure_obj_null (sf x)
+                                                                             (update_heap_obj h o
+                                                                                (Heap_OBJ cls (fields_update F i v) lo))) a) .
+intro a. assert (forall h o, (exists cls F lb, lookup_heap_obj h o = Some (Heap_OBJ cls F lb) ) 
+      \/ lookup_heap_obj h o = None).
+    intro h1. induction h1.  right. unfold lookup_heap_obj. auto.
+    intro o1.  induction a0. case_eq ( beq_oid o1 o0). unfold lookup_heap_obj.  intro. unfold lookup_heap_obj. rewrite H3.
+    rename h0 into ho. induction ho.     left. exists c. exists f. exists l1. auto. 
+    intro. unfold lookup_heap_obj. rewrite H3. fold lookup_heap_obj. apply IHh1. 
+    case (sf a). induction t; try (unfold erasure_obj_null; auto).
+
+    destruct H3 with  h o0. 
+    destruct H6 as [cls1]. destruct H6 as [F1]. destruct H6 as [lb1]. rewrite H6.
+    remember  lo as lb'. 
+    remember (fields_update F i v) as F'. 
+    assert(  (lookup_heap_obj
+               (update_heap_obj h o (Heap_OBJ cls F' lb')) o0  = 
+                      Some (Heap_OBJ cls1 F1 lb1)) \/ 
+              (lookup_heap_obj (update_heap_obj h o (Heap_OBJ cls F' lb')) o0  = 
+                      Some (Heap_OBJ cls F' lb')) /\ beq_oid o0 o = true ).
+      apply lookup_updated_heap_equal with F lo; auto. rewrite <- Heqlb'. auto.
+      destruct H7. unfold update_heap_obj in H7.
+      fold update_heap_obj in H7. rewrite H7. auto.
+
+      unfold update_heap_obj in H7. 
+      fold update_heap_obj in H7. destruct H7. rewrite H7. apply beq_oid_equal in H8.
+      rewrite H8 in H6. rewrite H6 in H12. inversion H12. subst. 
+      auto.
+      rewrite H6. unfold erasure_obj_null.
+assert (lookup_heap_obj
+    (update_heap_obj h o
+       (Heap_OBJ cls (fields_update F i v)
+          lo))    o0 = None).
+apply lookup_updated_heap_none; auto.
+intro contra. rewrite contra in H12. rewrite <- H12 in H6.  inversion H6. 
+rewrite H7. auto. auto. 
+apply functional_extensionality in H3.
+rewrite H3. auto. 
+rewrite H3. auto.
+
+(*if *)
+- intros. inversion H_typing.  inversion H6. inversion H16.
+
+(*sequence*)
+- intros.  unfold dot_free in H_dot_free. fold dot_free in H_dot_free. auto.
+  apply dot_free_if in H_dot_free. destruct H_dot_free.  inversion H_erasure_l. subst.
+  + rewrite H_flow_l in H4. inversion H4.
+  + subst. inversion H_reduction.  
+  ++ subst. inversion H_erasure_r. subst.
+        rewrite H_flow_r in H6. inversion H6. subst. 
+  +++  inversion H_typing. subst. 
+    assert (Config CT (erasure_H_fun t1) (SIGMA  s'0 h'0) = Config CT (erasure_H_fun s1')  (SIGMA s'1 h'1)). 
+    apply IHt1 with h' s' h s T0  s1'; auto.     
+    inversion H_valid_syntax. auto. apply value_is_valid_syntax. auto. apply erasure_H_context; auto. 
+    auto. apply erasure_H_context; auto. 
+     inversion H1. unfold erasure_H_fun. fold erasure_H_fun. subst. rewrite H5. 
+    inversion H_valid_syntax. subst. 
+    assert (return_free t1= return_free s1'). 
+    apply erasure_H_fun_equal_return_free. auto. 
+    apply valid_syntax_preservation with CT t1 (SIGMA s' h') s h T0; auto. auto. 
+    case_eq (return_free t1). intro.  rewrite H7 in H3. rewrite <- H3.  
+    pose proof (surface_syntax_H_erasure_dot t2 H11).
+    apply erasure_H_fun_imply_return_free in H14. rewrite H14. auto. 
+    apply surface_syntax_is_valid_syntax. auto.
+
+    intro. rewrite H7 in H3. rewrite <- H3. auto. 
+    subst. inversion H8 ; subst; inversion H2. 
+   ++ subst. inversion H_erasure_r. subst.
+        rewrite H_flow_r in H6. inversion H6. subst. 
+  +++  inversion H_typing. subst. 
+    assert (Config CT (erasure_H_fun t') (SIGMA  s'0 h'0) = Config CT (erasure_H_fun t')  (SIGMA s'1 h'1)). 
+    rewrite H9. rewrite H12.  auto. 
+
+    unfold erasure_H_fun. assert (return_free t1 = true). apply value_is_return_free. auto.  rewrite H3. 
+    fold erasure_H_fun.
+    case_eq (return_free t').  intro.  apply return_free_true_imply_erasure_H_fun_dot in H5 . rewrite H5. 
+    inversion H1. subst. auto.  inversion H_valid_syntax. apply surface_syntax_is_valid_syntax. auto. 
+    auto.     intro. auto. 
+    
+(*return *)
+- intros.  unfold dot_free in H_dot_free. fold dot_free in H_dot_free. auto.
+   inversion H_erasure_l. subst.
+  + rewrite H_flow_l in H2. inversion H2.
+  + subst. inversion H_reduction.  
+  ++ subst. inversion H_erasure_r. subst.
+        rewrite H_flow_r in H4. inversion H4. subst. 
+  +++  inversion H_typing. subst. 
+    assert (Config CT (erasure_H_fun t) (SIGMA  s'0 h'0) = Config CT (erasure_H_fun e')  (SIGMA s'1 h'1)). 
+    apply IHt with h' s' h s T e'; auto.     
+    inversion H_valid_syntax. auto. apply erasure_H_context; auto. 
+    auto. apply erasure_H_context; auto. inversion H. subst. 
+    unfold  erasure_H_fun. fold erasure_H_fun. subst. rewrite H5. 
+    inversion H_valid_syntax. subst. 
+    assert (return_free t= return_free e'). 
+    apply erasure_H_fun_equal_return_free. auto. 
+    apply valid_syntax_preservation with CT t (SIGMA s' h') s h T; auto. auto. 
+    case_eq (return_free t). intro.  rewrite H9 in H3. rewrite <- H3. auto.   
+
+    intro. rewrite H9 in H3. rewrite <- H3. auto. 
+   ++ subst. inversion H6. subst.  inversion H_erasure_r. subst.
+        rewrite H_flow_r in H3. inversion H3. subst. 
+
+
+
+Admitted. 
+*)
+
+
+
+
+
+
+
+Inductive L_equivalence_object : oid -> heap -> oid -> heap -> Prop :=
+   | object_equal_H : forall o1 o2 h1 h2 lb1 lb2 cls1 cls2 F1 F2,
+        Some (Heap_OBJ cls1 F1 lb1) = lookup_heap_obj h1 o1 -> 
+        Some (Heap_OBJ cls2 F2 lb2) = lookup_heap_obj h2 o2 ->
+        flow_to lb1 L_Label = false ->
+        flow_to lb2 L_Label = false ->
+        L_equivalence_object o1 h1 o2 h2
+   | object_equal_L : forall o1 o2 h1 h2 lb1 lb2 cls1 cls2 F1 F2,
+        Some (Heap_OBJ cls1 F1 lb1) = lookup_heap_obj h1 o1 -> 
+        Some (Heap_OBJ cls2 F2 lb2) = lookup_heap_obj h2 o2 ->
+        flow_to lb1 L_Label = true ->
+        flow_to lb2 L_Label = true ->
+        ((cls1 = cls2) /\ (lb1 = lb2) /\ 
+            (forall fname, F1 fname = Some null -> F2 fname = Some null ) /\
+            (forall fname fo1 fo2, F1 fname = Some (ObjId fo1) -> F2 fname = Some (ObjId fo2) ->
+              L_equivalence_object fo1 h1 fo2 h2 )
+        )-> L_equivalence_object o1 h1 o2 h2.
+
+Inductive L_equivalence_tm : tm -> heap -> tm -> heap -> Prop :=
+  | L_equivalence_tm_eq_Tvar : forall id1 id2 h1 h2, 
+      id1 = id2 -> L_equivalence_tm (Tvar id1) h1 (Tvar id2) h2
+  | L_equivalence_tm_eq_null : forall h1 h2,  
+      L_equivalence_tm null h1 null h2
+  | L_equivalence_tm_eq_fieldaccess : forall e1 e2 f h1 h2,
+      L_equivalence_tm e1 h1 e2 h2 ->
+      L_equivalence_tm (FieldAccess e1 f) h1 (FieldAccess e2 f) h2
+  | L_equivalence_tm_eq_methodcall : forall e1 e2 a1 a2 meth h1 h2,
+      L_equivalence_tm e1 h1 e2 h2->
+      L_equivalence_tm a1 h1 a2 h2 ->
+      L_equivalence_tm (MethodCall e1 meth a1) h1 (MethodCall e1 meth a1) h2
+  | L_equivalence_tm_eq_newexp : forall cls1 cls2 h1 h2,
+      cls1 = cls2 ->
+      L_equivalence_tm (NewExp cls1) h1 (NewExp cls2) h2
+  | L_equivalence_tm_eq_label : forall l1 l2 h1 h2, 
+      l1 = l2 ->
+      L_equivalence_tm (l l1) h1 (l l2) h2
+  | L_equivalence_tm_eq_labelData : forall e1 e2 l1 l2 h1 h2,
+      L_equivalence_tm e1 h1 e2 h2->
+      l1 = l2 ->
+      L_equivalence_tm (labelData e1 l1) h1 (labelData e2 l2) h2
+  | L_equivalence_tm_eq_unlabel : forall e1 e2 h1 h2,
+      L_equivalence_tm e1 h1 e2 h2->
+      L_equivalence_tm (unlabel e1) h1 (unlabel e2) h2
+  | L_equivalence_tm_eq_labelOf : forall e1 e2 h1 h2,
+      L_equivalence_tm e1 h1 e2 h2 ->
+      L_equivalence_tm (labelOf e1) h1 (labelOf e2) h2
+  | L_equivalence_tm_eq_unlabelOpaque : forall e1 e2 h1 h2,
+      L_equivalence_tm e1 h1 e2 h2 ->
+      L_equivalence_tm (unlabelOpaque e1) h1 (unlabelOpaque e2) h2
+  | L_equivalence_tm_eq_opaqueCall : forall e1 e2 h1 h2,
+      L_equivalence_tm e1 h1 e2 h2 ->
+      L_equivalence_tm (opaqueCall e1) h1 (opaqueCall e2) h2
+  | L_equivalence_tm_eq_skip : forall h1 h2,
+      L_equivalence_tm Skip h1 Skip h2
+  | L_equivalence_tm_eq_Assignment : forall e1 e2 x1 x2 h1 h2, 
+      L_equivalence_tm e1 h1 e2 h2 ->
+      x1 = x2->
+      L_equivalence_tm (Assignment x1 e1) h1 (Assignment x2 e2) h2
+  | L_equivalence_tm_eq_FieldWrite : forall e1 e2 f1 f2 e1' e2' h1 h2,
+      L_equivalence_tm e1 h1 e2 h2 ->
+      f1 = f2 ->
+      L_equivalence_tm e1' h1 e2' h2 ->
+      L_equivalence_tm (FieldWrite e1 f1 e1') h1 (FieldWrite e2 f2 e2') h2
+  | L_equivalence_tm_eq_if : forall s1 s2 s1' s2' id1 id2 id1' id2' h1 h2,
+      L_equivalence_tm s1 h1 s1' h2 ->
+      L_equivalence_tm s2 h1 s2' h2 ->
+      id1 = id1' ->
+      id2 = id2' ->
+      L_equivalence_tm (If id1 id2 s1 s2) h1 (If id1' id2' s1' s2') h2
+  | L_equivalence_tm_eq_Sequence : forall s1 s2 s1' s2' h1 h2, 
+      L_equivalence_tm s1 h1 s1' h2 ->
+      L_equivalence_tm s2 h1 s2' h2->
+      L_equivalence_tm (Sequence s1 s2) h1 (Sequence s1' s2') h2
+  | L_equivalence_tm_eq_sequence_dot1 : forall s1 s2 h1 h2, 
+      L_equivalence_tm s1 h1 s2 h2 ->
+      L_equivalence_tm s1 h1 (Sequence dot s2) h2
+  | L_equivalence_tm_eq_sequence_dot2 : forall s1 s2 h1 h2, 
+      L_equivalence_tm s1 h1 s2 h2 ->
+      L_equivalence_tm (Sequence dot s1) h1 s2 h2
+  | L_equivalence_tm_eq_return : forall e1 e2 h1 h2,  
+      L_equivalence_tm e1 h1 e2 h2 ->
+      L_equivalence_tm (Return e1) h1 (Return e2) h2
+  | L_equivalence_tm_eq_object : forall o1 o2 h1 h2, 
+      L_equivalence_object o1 h1 o2 h2 ->
+      L_equivalence_tm (ObjId o1) h1 (ObjId o2) h2
+  | L_equivalence_tm_eq_v_l_L : forall lb e1 e2 h1 h2, 
+      flow_to lb L_Label = true ->
+      L_equivalence_tm e1 h1 e2 h2 ->
+      L_equivalence_tm (v_l e1 lb) h1 (v_l e2 lb) h2
+  | L_equivalence_tm_eq_v_l_H : forall e1 e2 l1 l2 h1 h2, 
+      flow_to l1 L_Label = false ->
+      flow_to l2 L_Label = false ->
+      L_equivalence_tm (v_l e1 l1) h1 (v_l e2 l2) h2
+  | L_equivalence_tm_eq_v_opa_l_L : forall lb e1 e2 h1 h2, 
+      flow_to lb L_Label = true ->
+      L_equivalence_tm e1 h1 e2 h2 ->
+      L_equivalence_tm (v_opa_l e1 lb) h1 (v_opa_l e2 lb) h2
+  | L_equivalence_tm_eq_v_opa_l_H : forall e1 e2 l1 l2 h1 h2, 
+      flow_to l1 L_Label = false ->
+      flow_to l2 L_Label = false ->
+      L_equivalence_tm (v_opa_l e1 l1) h1 (v_opa_l e2 l2) h2
+  | L_equivalence_tm_eq_dot : forall h1 h2,
+      L_equivalence_tm (dot) h1 (dot) h2.
+
+
+
+
+
+Lemma simulation_L : forall CT t t0 t' t0' sigma_l sigma_r sigma_l_e sigma_r_e s h,
+      sigma_l = SIGMA s h ->
+      field_wfe_heap CT h -> wfe_heap CT h -> wfe_stack CT h s ->
+      flow_to (current_label sigma_l) L_Label = true ->
+      Config CT t sigma_l ==> Config CT t' sigma_r ->
+      (erasure (Config CT t sigma_l) (Config CT t0 sigma_l_e)) ->
+      (erasure (Config CT t' sigma_r) (Config CT t0' sigma_r_e)) ->
+      l_reduction (Config CT t0 sigma_l_e) (Config CT t0' sigma_r_e).
+Proof. 
+  intros CT t t0 t' t0' sigma_l sigma_r sigma_l_e sigma_r_e s h.
+  intro H_sigma. intro H_wfe_fields. 
+  intro H_wfe_heap. intro H_wfe_stack. intro H_flow. intro H_reduction. 
+  (*intro H_erasure_sigma_l.  *) intro H_erasure_l. intro H_erasure_r.  
+    generalize dependent t0.     generalize dependent t0'. induction H_reduction; subst.
+ 
+(*Tvar *)
+  (*- admit.  inversion H_erasure_l.
+      + subst. inversion H_wfe_stack. rewrite <- H4 in H3. inversion H3. 
+          rewrite <- H9 in H7.  inversion H7.
+        subst. inversion H2. inversion H. inversion H3. subst. destruct H4 with id0 t'. auto. 
+        rewrite H5 in H_erasure_r. inversion H_erasure_r. subst. 
+         apply L_ST_var with (s:= (Labeled_frame lb sf :: s')) (h:=h0) (lb:=lb) 
+                (sf:=sf) (lsf:=(Labeled_frame lb sf)) (s':=s'); auto.
+         subst. rewrite H6 in H13. inversion H13. 
+
+         destruct H5 as [cls_name].          destruct H5 as [o]. destruct H5.  
+         rewrite H5 in H_erasure_r. inversion H_erasure_r. subst. 
+         apply L_ST_var with (s:= (Labeled_frame lb sf :: s')) (h:=h0) (lb:=lb) 
+                (sf:=sf) (lsf:=(Labeled_frame lb sf)) (s':=s'); auto.
+         subst. rewrite H6 in H15. inversion H15. 
+    + subst. rewrite H_flow in H6. inversion H6. 
+
+  - intro t0'. intro. intro t0. intro.    inversion H_erasure_l. 
+    + subst. inversion H_erasure_r. subst. 
+      *)
+Admitted. 
+
+
+
+Inductive L_equivalence_store : stack -> heap -> stack -> heap -> Prop :=
+  | L_equivalence_empty : forall lb h, 
+      L_equivalence_store (cons (Labeled_frame lb empty_stack_frame) nil) h
+                                       (cons (Labeled_frame lb empty_stack_frame) nil) h
+  | L_equivalence_equal_store : forall s h,
+      L_equivalence_store s h s h
+  | L_equivalence_store_L : forall s1 lb1 sf1 s0 s2 lb2 sf2 s0' h1 h2 v1 v2, 
+      s1 = cons (Labeled_frame lb1 sf1) s0->
+      s2 = cons (Labeled_frame lb2 sf2) s0'->
+      L_equivalence_store s0 h1 s0' h2 ->
+      flow_to lb1 L_Label = true ->
+      flow_to lb2 L_Label = true ->
+      (forall x, sf1 x = Some v1 -> sf2 x = Some v2 -> L_equivalence_tm v1 h1 v2 h2) ->
+      L_equivalence_store s1 h1 s2 h2.
+
+Lemma erasure_equal_input : forall ct t s h s' h' sigma_r sigma_r' t_r t_r', 
+      L_equivalence_store s h s' h' ->
+      erasure (Config ct t (SIGMA s h)) (Config ct t_r sigma_r) -> 
+      erasure (Config ct t (SIGMA s' h')) (Config ct t_r' sigma_r') -> 
+      (Config ct t_r sigma_r) = (Config ct t_r' sigma_r').
+Proof. Admitted. 
+
+Lemma erasue_target : forall ct t sigma, 
+    exists t' sigma',  (Config ct t sigma) =e=> (Config ct t' sigma').
+  Proof. intros ct t sigma. 
+   induction t. 
+   Admitted. 
+
+Theorem preservation : forall CT s s' h h' sigma sigma',
+    field_wfe_heap CT h -> sigma = SIGMA s h ->  
+    wfe_heap CT h -> wfe_stack CT h s -> sigma' = SIGMA s' h' -> 
+    forall t T, has_type CT empty_context h t T -> 
+     forall t',  Config CT t sigma ==> Config CT t' sigma' ->
+     ( has_type CT empty_context h' t' T) .
+Proof. Admitted. 
+
+
+Lemma error_state_cannot_reach_valid_state : forall ct t sigma, 
+    ~ (Error_state ==>* Config ct t sigma).
+Proof. 
+  intros. intro contra. induction t; inversion contra; inversion H. 
+Qed. 
+
+Lemma return_free_preserve_context : forall CT t t' s h s' h',
+      dot_free t = true ->
+      valid_syntax t ->
+      return_free t = true ->
+      forall T, has_type CT empty_context h t T -> 
+      field_wfe_heap CT h -> wfe_heap CT h -> wfe_stack CT h s ->
+      flow_to (current_label (SIGMA s h)) L_Label = false ->
+      Config CT t (SIGMA s h) ==> Config CT t' (SIGMA s' h') ->
+      flow_to (current_label (SIGMA s' h')) L_Label = false.
+Proof. intros CT t t' s h s' h'.       intro H_dot_free. intro H_valid_syntax. 
+  intro H_return_free. 
+  intro T. intro H_typing. intro H_wfe_fields. 
+  intro H_wfe_heap. intro H_wfe_stack. intro H_flow. intro H_reduction. 
+  generalize dependent t'. 
+  generalize dependent T.
+    generalize dependent s.      generalize dependent h.
+    generalize dependent s'.      generalize dependent h'.
+induction t; intros; try (inversion H_reduction; subst).
+(*Tvar *)
+  - inversion H_typing. inversion H3.
+
+(*Field access*)
+  -  inversion H_typing. apply IHt with h s (classTy clsT) e'; auto. subst. 
+      inversion H_valid_syntax. auto. 
+  -  inversion H5. subst. rewrite H10. rename s0 into s. induction s.  
+      unfold flow_to in H_flow.  unfold current_label in H_flow.  unfold get_stack in H_flow. 
+      unfold get_current_label in H_flow. unfold L_Label in H_flow. 
+      unfold subset in H_flow. inversion H_flow.
+      induction a.   unfold update_current_label. 
+          
+          unfold current_label in H_flow.       unfold get_current_label in H_flow. 
+          unfold get_stack_label in H_flow. unfold get_stack in H_flow.
+         unfold current_label. unfold get_current_label. unfold get_stack_label. 
+        unfold get_stack.
+          assert (  flow_to (join_label lb l0)  L_Label = false).
+          apply flow_join_label with l0 lb; auto. auto. 
+        apply flow_transitive with l0. auto.  unfold current_label in H8. 
+        unfold get_current_label in H8. unfold get_stack in H8. unfold get_stack_label in H8. auto. 
+
+(*method e1 context*)
+- inversion H_typing. apply IHt1 with h s (classTy T0) e'; auto. subst. 
+      inversion H_dot_free. auto. apply dot_free_if in H1. destruct H1. rewrite H. rewrite H1. auto. 
+      subst.        inversion H_valid_syntax. auto. apply value_is_valid_syntax. auto. subst.  
+      inversion H_return_free.  apply return_free_if in H1. destruct H1. rewrite H. rewrite H1. auto. 
+(*method e2 context*)
+- inversion H_typing. apply IHt2 with h s (classTy arguT) e'; auto. subst. 
+      inversion H_dot_free. auto. apply dot_free_if in H0. destruct H0. rewrite H. rewrite H0. auto. 
+      subst.        inversion H_valid_syntax. auto. apply surface_syntax_is_valid_syntax. auto. subst.  
+      auto. subst. inversion H_return_free.  apply return_free_if in H0. destruct H0. rewrite H. rewrite H0. auto. 
+(*method normal call*)
+-  inversion H6. subst. rewrite H14. rename s0 into s. induction s.  
+      unfold flow_to in H_flow.  unfold current_label in H_flow.  unfold get_stack in H_flow. 
+      unfold get_current_label in H_flow. unfold L_Label in H_flow. 
+      unfold subset in H_flow. inversion H_flow.
+      induction a.   unfold update_current_label. 
+          
+          unfold current_label in H_flow.       unfold get_current_label in H_flow. 
+          unfold get_stack_label in H_flow. unfold get_stack in H_flow.
+         unfold current_label. unfold get_current_label. unfold get_stack_label. 
+        unfold get_stack. auto. 
+(*method opaque call*)
+-  inversion H6. subst. rewrite H14. rename s0 into s. induction s.  
+      unfold flow_to in H_flow.  unfold current_label in H_flow.  unfold get_stack in H_flow. 
+      unfold get_current_label in H_flow. unfold L_Label in H_flow. 
+      unfold subset in H_flow. inversion H_flow.
+      induction a.   unfold update_current_label. 
+          
+          unfold current_label in H_flow.       unfold get_current_label in H_flow. 
+          unfold get_stack_label in H_flow. unfold get_stack in H_flow.
+         unfold current_label. unfold get_current_label. unfold get_stack_label. 
+        unfold get_stack. assert (  flow_to (join_label lb l0)  L_Label = false).
+          apply flow_join_label with l0 lb; auto. auto.
+(*new cls()*)
+- inversion H5. subst. rewrite H11.  
+         unfold current_label. unfold get_stack. 
+        unfold current_label in H_flow. unfold get_stack in H_flow. auto.  
+(*labelData *)
+  (* context rule *)
+- inversion H_typing. apply IHt with h s T0 e'; auto. subst. 
+      inversion H_valid_syntax. auto. 
+  (* label data *)
+- auto. 
+
+(* unlabel *)
+  (* context rule *)
+- inversion H_typing. apply IHt with h s (LabelelTy T) e'; auto. subst. 
+      inversion H_valid_syntax. auto. 
+
+  (* unlabel *)
+-  inversion H4. subst. rewrite H7. rename s0 into s. induction s.  
+      unfold flow_to in H_flow.  unfold current_label in H_flow.  unfold get_stack in H_flow. 
+      unfold get_current_label in H_flow. unfold L_Label in H_flow. 
+      unfold subset in H_flow. inversion H_flow.
+      induction a.   unfold update_current_label. 
+          
+          unfold current_label in H_flow.       unfold get_current_label in H_flow. 
+          unfold get_stack_label in H_flow. unfold get_stack in H_flow.
+         unfold current_label. unfold get_current_label. unfold get_stack_label. 
+        unfold get_stack.
+          assert (  flow_to (join_label lb l0)  L_Label = false).
+          apply flow_join_label with l0 lb; auto. auto.
+
+(* Label of *)
+  (* context rule *)
+- inversion H_typing. apply IHt with h s (LabelelTy T0) e'; auto. subst. 
+      inversion H_valid_syntax. auto. 
+
+  (* label of  *)
+- auto. 
+
+(* unlabel opaque*)
+  (* context rule *)
+- inversion H_typing. apply IHt with h s  (OpaqueLabeledTy T) e'; auto. subst. 
+      inversion H_valid_syntax. auto. 
+  (* unlabel opaque *)
+-  inversion H4. subst. rewrite H7. rename s0 into s. induction s.  
+      unfold flow_to in H_flow.  unfold current_label in H_flow.  unfold get_stack in H_flow. 
+      unfold get_current_label in H_flow. unfold L_Label in H_flow. 
+      unfold subset in H_flow. inversion H_flow.
+      induction a.   unfold update_current_label. 
+          
+          unfold current_label in H_flow.       unfold get_current_label in H_flow. 
+          unfold get_stack_label in H_flow. unfold get_stack in H_flow.
+         unfold current_label. unfold get_current_label. unfold get_stack_label. 
+        unfold get_stack.
+          assert (  flow_to (join_label lb l0)  L_Label = false).
+          apply flow_join_label with l0 lb; auto. auto.
+
+(* Opaque call *)
+  (* context rule *)
+- inversion H_typing. apply IHt with h s T0 e'; auto. subst. 
+      inversion H_valid_syntax. auto. 
+  (* return context rule*)
+- inversion H_return_free.
+
+  (* opaque call with value, without method call inside *)
+- auto.
+- inversion H_return_free.
+
+(* assignment *)
+  (* context rule *)
+- inversion H_typing. inversion H5.   
+  (* assignment *)
+- inversion H_typing. inversion H5.   
+
+(* Field Write *)
+(*context e1 *)
+- inversion H_typing. apply IHt1 with h s (classTy clsT) e1'; auto. subst. 
+      inversion H_dot_free. auto. apply dot_free_if in H1. destruct H1. rewrite H. rewrite H1. auto. 
+      subst.        inversion H_valid_syntax. auto. apply value_is_valid_syntax. auto. subst.  
+      inversion H_return_free.  apply return_free_if in H1. destruct H1. rewrite H. rewrite H1. auto. 
+(*method e2 context*)
+- inversion H_typing. apply IHt2 with h s (classTy cls') e2'; auto. subst. 
+      inversion H_dot_free. auto. apply dot_free_if in H0. destruct H0. rewrite H. rewrite H0. auto. 
+      subst.        inversion H_valid_syntax. auto. apply surface_syntax_is_valid_syntax. auto. subst.  
+      auto. subst. inversion H_return_free.  apply return_free_if in H0. destruct H0. rewrite H. rewrite H0. auto. 
+(*method normal call*)
+-  inversion H6. subst. rewrite H12. rename s0 into s. induction s.  
+      unfold flow_to in H_flow.  unfold current_label in H_flow.  unfold get_stack in H_flow. 
+      unfold get_current_label in H_flow. unfold L_Label in H_flow. 
+      unfold subset in H_flow. inversion H_flow.
+      induction a.   unfold update_current_label. 
+
+      unfold current_label in H_flow.       unfold get_current_label in H_flow. 
+      unfold get_stack_label in H_flow. unfold get_stack in H_flow.
+      unfold current_label. unfold get_current_label. unfold get_stack_label. 
+      unfold get_stack. auto. 
+(*method opaque call*)
+-  inversion H7. subst. rewrite H13. rename s0 into s. induction s.  
+      unfold flow_to in H_flow.  unfold current_label in H_flow.  unfold get_stack in H_flow. 
+      unfold get_current_label in H_flow. unfold L_Label in H_flow. 
+      unfold subset in H_flow. inversion H_flow.
+      induction a.   unfold update_current_label. 
+          
+          unfold current_label in H_flow.       unfold get_current_label in H_flow. 
+          unfold get_stack_label in H_flow. unfold get_stack in H_flow.
+         unfold current_label. unfold get_current_label. unfold get_stack_label. 
+        unfold get_stack. assert (  flow_to (join_label lb l0)  L_Label = false).
+          apply flow_join_label with l0 lb; auto. auto.
+
+(* if statement *)
+- auto. 
+- auto. 
+
+(* sequence *)
+   (* context rule *)
+- inversion H_typing. apply IHt1 with h s T0 s1'; auto. subst. 
+      inversion H_dot_free. auto. apply dot_free_if in H1. destruct H1. rewrite H. rewrite H1. auto. 
+      subst.        inversion H_valid_syntax. auto. apply value_is_valid_syntax. auto. subst.  
+      inversion H_return_free.  apply return_free_if in H1. destruct H1. rewrite H. rewrite H1. auto. 
+- auto. 
+(* return *)
+- inversion H_return_free. 
+- inversion H_return_free.
+Qed. 
+
+
+(*
+Lemma erasure_v_opa_l : forall t v0 lb, 
+  return_free t = false ->
+  erasure_H_fun t = v_opa_l v0 lb -> value v0 ->
+  t = v_opa_l v0 lb.
+Proof. induction t; intros v0 lb; intro H_return_free; intros; try (unfold erasure_H_fun in H; inversion H; fail);
+try (inversion H; case_eq (return_free t); intro; rewrite H1 in H2; inversion H2);
+inversion H; unfold erasure_H_fun in H; fold erasure_H_fun in H;
+        case_eq (return_free t1);
+        intro; try (case_eq (return_free t2);  intro; rewrite H1 in H;  rewrite H3 in H; inversion H);
+        try (case_eq (return_free t2);
+        intro; rewrite H1 in H; inversion H).
+
+Qed. 
+
+Lemma erasure_value_unlabelOpaque : forall v t, 
+   valid_syntax t -> 
+   value v -> return_free t = false ->
+   erasure_H_fun t = unlabelOpaque v ->
+   t =  unlabelOpaque v.
+Proof. intros v t. intro H_valid. intros.  induction t; subst;
+    try (inversion H1; case_eq (return_free t); intro; rewrite H2 in H1; inversion H1);
+    try (unfold erasure_H_fun in H1; fold erasure_H_fun in H1; case_eq (return_free t); intro;  rewrite H2 in H1; inversion H1);
+    try (unfold erasure_H_fun in H1; fold erasure_H_fun in H1; 
+        case_eq (return_free t1); 
+        intro;     try (case_eq (return_free t2); 
+        intro; rewrite H2 in H1; rewrite H3 in H1; inversion H1);
+        try (case_eq (return_free t2); 
+        intro; rewrite H2 in H1; inversion H1)).
+
+    inversion H_valid. inversion H; try (rewrite <- H6 in H4; 
+    pose proof (erasure_H_fun_preserve_return_free_false t H5 H2); rewrite H4 in H7; 
+    unfold return_free in H7; fold return_free in H7; inversion H7). 
+    subst. pose proof (erasure_H_fun_preserve_return_free_false t H5 H2).
+    rewrite <- H7 in H3. unfold return_free in H3. fold return_free in H3. 
+    pose proof (value_is_return_free v0 H6) . rewrite H4 in H3. inversion H3.
+    
+    subst.  assert (t = v_opa_l v0 lb). apply erasure_v_opa_l; auto. subst.
+    rewrite H7. rewrite <- H7. rewrite <- H7.  auto.  
+Qed. 
+
+Lemma erasure_value : forall v t, 
+   valid_syntax t -> 
+   value v -> return_free t = false ->
+   erasure_H_fun t = v ->
+   t = v.
+Proof. intros v t. intro H_valid. intros.  induction t; subst;
+    try (inversion H0; case_eq (return_free t); intro; rewrite H1 in H0; inversion H0; fail);
+    try (unfold erasure_H_fun in H;  fold erasure_H_fun in H; 
+    unfold return_free in H0;  fold return_free in H0;  rewrite H0 in H; inversion H);
+    try (unfold erasure_H_fun in H;  fold erasure_H_fun in H);
+    try (unfold return_free in H0;  fold return_free in H0);
+    try (apply return_free_if_false in H0; destruct H0; try (rewrite H0 in H; inversion H);
+    try (destruct H0; rewrite H0 in H; rewrite H1 in H; inversion H)).
+    inversion H_valid. assert (return_free t1 = true). apply surface_syntax_is_return_free. auto. 
+    rewrite H7 in H0. inversion H0. 
+     destruct H0.   inversion H_valid. assert (return_free t2 = true). apply surface_syntax_is_return_free. auto. 
+    rewrite H8 in H1. inversion H1. 
+
+*)
+
+
+
+
+Lemma simulation_H_L : forall CT t t0 t' t0' sigma_l sigma_r sigma_l_e sigma_r_e s h,
+      dot_free t = true ->
+      valid_syntax t ->
+      sigma_l = SIGMA s h ->
+      forall T, has_type CT empty_context h t T -> 
+      field_wfe_heap CT h -> wfe_heap CT h -> wfe_stack CT h s ->
+      flow_to (current_label sigma_l) L_Label = false ->
+      flow_to (current_label sigma_r) L_Label = true ->
+      Config CT t sigma_l ==> Config CT t' sigma_r ->
+      (erasure (Config CT t sigma_l) (Config CT t0 sigma_l_e)) ->
+      (erasure (Config CT t' sigma_r) (Config CT t0' sigma_r_e)) ->
+      l_reduction (Config CT t0 sigma_l_e) (Config CT t0' sigma_r_e).
+ Proof.  intros CT t t0 t' t0' sigma_l sigma_r sigma_l_e sigma_r_e s h. intro H_dot_free. intro H_valid_syntax. 
+  intro H_sigma_l.  
+  intro T. intro H_typing. intro H_wfe_fields. 
+  intro H_wfe_heap. intro H_wfe_stack. intro H_flow_l. intro H_flow_r.  intro H_reduction. 
+  (*intro H_erasure_sigma_l.  *) intro H_erasure_l. intro H_erasure_r.   
+
+  generalize dependent t'.   
+  generalize dependent t0.
+  generalize dependent t0'.
+  generalize dependent T.
+    generalize dependent sigma_l_e.      generalize dependent sigma_r_e. 
+    generalize dependent sigma_l.      generalize dependent sigma_r. 
+    generalize dependent s.      generalize dependent h.
+induction t; intros; try (inversion H_reduction; subst).
+  - inversion H_typing. inversion H4. 
+  (*Field access context rule*)
+  - inversion H_erasure_l. 
+   + rewrite  H_flow_l in H3. inversion H3. 
+   + inversion H_erasure_r. 
+    ++ subst. 
+     unfold erasure_L_fun. unfold erasure_H_fun. subst. 
+     fold erasure_L_fun. fold erasure_H_fun.
+     case_eq (return_free t). 
+    +++ intro H_return_free. 
+     assert (return_free (FieldAccess t i) = true). unfold return_free. fold return_free. auto. 
+     assert ( flow_to (current_label (SIGMA s1 h1)) L_Label = false). 
+     inversion H_typing.
+     apply return_free_preserve_context with CT t e' s h (classTy clsT); auto.
+     inversion H_valid_syntax. auto.  rewrite H1 in H_flow_r. inversion H_flow_r.
+
+     +++ intro. assert (Config CT (erasure_H_fun t) (SIGMA s' h') ==l>
+     Config CT (erasure_L_fun e') (SIGMA s'0 h'0)). 
+     inversion H_typing.
+     apply IHt with h s (SIGMA s1 h1) (SIGMA s h)  (classTy clsT) e'; auto.
+     inversion H_valid_syntax. auto. apply erasure_H_context; auto. 
+      apply erasure_L_context; auto.
+    inversion H1. induction c2. assert (CT = c). 
+    apply ct_consist with (erasure_H_fun t) t0 (SIGMA s' h') s0; auto.
+    subst. rename c into CT.
+    assert (Config CT (FieldAccess (erasure_H_fun t) i)  (SIGMA s' h') 
+                ==> Config CT (FieldAccess t0 i) s0). apply ST_fieldRead1. auto.
+    apply L_reduction with ( Config CT (FieldAccess t0 i) s0); auto.
+    inversion H4. subst. apply erasure_L_context; auto. rewrite H15.
+     unfold erasure_L_fun. fold erasure_L_fun. auto.
+    
+    subst. assert (flow_to (current_label (SIGMA s'0 h'0)) L_Label = 
+                  flow_to (current_label (SIGMA s2 h0)) L_Label). 
+    apply erasure_sigma_preserve_context; auto. 
+
+    subst. assert (flow_to (current_label (SIGMA s'0 h'0)) L_Label = 
+                  flow_to (current_label (SIGMA s1 h1)) L_Label). 
+    apply erasure_sigma_preserve_context; auto.
+    rewrite H13 in H7. rewrite H11 in H6. rewrite H7 in H6. inversion H6.  
+    inversion H4.
+    ++ subst.     rewrite H_flow_r in H13. inversion H13.
+
+(*field access with obj*)
+-  inversion H5.  subst. rename s0 into s. rename h0 into h.
+    induction s.  
+      unfold flow_to in H_flow_l.  unfold current_label in H_flow_l.  unfold get_stack in H_flow_l. 
+      unfold get_current_label in H_flow_l. unfold L_Label in H_flow_l. 
+      unfold subset in H_flow_l. inversion H_flow_l.
+
+      induction a. 
+          unfold current_label in H_flow_l.       unfold get_current_label in H_flow_l. 
+          unfold get_stack_label in H_flow_l. unfold get_stack in H_flow_l.
+          unfold current_label in H_flow_r.       unfold get_current_label in H_flow_r. 
+          unfold get_stack_label in H_flow_r. unfold get_stack in H_flow_r.
+          unfold update_current_label in H_flow_r. 
+
+          assert (  flow_to (join_label lb l0)  L_Label = false).
+          apply flow_join_label with l0 lb; auto. auto.  
+          assert (flow_to lb l0 = false). apply flow_no_H_to_L; auto.  
+           unfold current_label in H8.       unfold get_current_label in H8. 
+          unfold get_stack_label in H8. unfold get_stack in H8. rewrite H0 in H8. inversion H8. 
+
+(* method call e1  *)
+-  inversion H_erasure_l. 
+   + rewrite  H_flow_l in H3. inversion H3. 
+   + inversion H_erasure_r. 
+    ++ subst. 
+     unfold erasure_L_fun. unfold erasure_H_fun. subst. 
+     fold erasure_L_fun. fold erasure_H_fun.
+     case_eq (return_free t1). 
+    +++ intro H_return_free. 
+     assert ( flow_to (current_label (SIGMA s1 h1)) L_Label = false). 
+     inversion H_typing.
+     apply return_free_preserve_context with CT t1 e' s h (classTy T0); auto.  
+     unfold dot_free in H_dot_free. fold dot_free in H_dot_free.  apply dot_free_if in H_dot_free. 
+      apply H_dot_free. inversion H_valid_syntax.  auto. apply value_is_valid_syntax. auto.  
+     rewrite H in H_flow_r. inversion H_flow_r.
+
+     +++ intro. assert (Config CT (erasure_H_fun t1) (SIGMA s' h') ==l>
+     Config CT (erasure_L_fun e') (SIGMA s'0 h'0)). 
+     inversion H_typing.
+     apply IHt1 with h s (SIGMA s1 h1) (SIGMA s h)  (classTy T0) e'; auto.
+     inversion H_valid_syntax. auto.
+     unfold dot_free in H_dot_free. fold dot_free in H_dot_free.  apply dot_free_if in H_dot_free. 
+     apply H_dot_free. 
+     unfold dot_free in H_dot_free. fold dot_free in H_dot_free.  apply dot_free_if in H_dot_free. 
+     apply H_dot_free.  inversion H_valid_syntax.  auto. apply value_is_valid_syntax. auto.  
+
+     apply erasure_H_context; auto. 
+      apply erasure_L_context; auto.
+    inversion H1. induction c2. assert (CT = c). 
+    apply ct_consist with (erasure_H_fun t1) t (SIGMA s' h') s0; auto.
+    subst. rename c into CT.
+    assert (Config CT (MethodCall (erasure_H_fun t1) i t2)  (SIGMA s' h') 
+                ==> Config CT (MethodCall t i t2) s0 ). apply ST_MethodCall1. auto.
+    apply L_reduction with ( Config CT (MethodCall t i t2) s0); auto.
+    inversion H4. subst. apply erasure_L_context; auto. rewrite H15.
+     unfold erasure_L_fun. fold erasure_L_fun. auto.
+    
+    subst. assert (flow_to (current_label (SIGMA s'0 h'0)) L_Label = 
+                  flow_to (current_label (SIGMA s2 h0)) L_Label). 
+    apply erasure_sigma_preserve_context; auto. 
+
+    subst. assert (flow_to (current_label (SIGMA s'0 h'0)) L_Label = 
+                  flow_to (current_label (SIGMA s1 h1)) L_Label). 
+    apply erasure_sigma_preserve_context; auto.
+    rewrite H13 in H7. rewrite H11 in H6. rewrite H7 in H6. inversion H6.  
+    inversion H4.
+    ++ subst.     rewrite H_flow_r in H13. inversion H13.
+
+(* method call e2*)
+-  inversion H_erasure_l. 
+   + rewrite  H_flow_l in H3. inversion H3. 
+   + inversion H_erasure_r. 
+    ++ subst. 
+     unfold erasure_L_fun. unfold erasure_H_fun. subst. 
+     fold erasure_L_fun. fold erasure_H_fun. pose proof (value_is_return_free t1 H8).
+     case_eq (return_free t2). 
+    +++ intro H_return_free. 
+     assert ( flow_to (current_label (SIGMA s1 h1)) L_Label = false). 
+     inversion H_typing.
+     apply return_free_preserve_context with CT t2 e' s h (classTy arguT); auto.  
+     unfold dot_free in H_dot_free. fold dot_free in H_dot_free.  apply dot_free_if in H_dot_free. 
+      apply H_dot_free. inversion H_valid_syntax.  auto. apply surface_syntax_is_valid_syntax. auto. auto. 
+     rewrite H0 in H_flow_r. inversion H_flow_r.
+
+     +++ intro. assert (Config CT (erasure_H_fun t2) (SIGMA s' h') ==l>
+     Config CT (erasure_L_fun e') (SIGMA s'0 h'0)). 
+     inversion H_typing.
+     apply IHt2 with h s (SIGMA s1 h1) (SIGMA s h)  (classTy arguT) e'; auto.
+     inversion H_valid_syntax. auto.
+     unfold dot_free in H_dot_free. fold dot_free in H_dot_free.  apply dot_free_if in H_dot_free. 
+     apply H_dot_free. 
+     unfold dot_free in H_dot_free. fold dot_free in H_dot_free.  apply dot_free_if in H_dot_free. 
+     apply H_dot_free.  inversion H_valid_syntax.  apply surface_syntax_is_valid_syntax. auto. auto.   
+
+     apply erasure_H_context; auto. 
+      apply erasure_L_context; auto.
+    inversion H1. induction c2. assert (CT = c). 
+    apply ct_consist with (erasure_H_fun t2) t (SIGMA s' h') s0; auto.
+    subst. rename c into CT.
+    assert (Config CT (MethodCall t1 i (erasure_H_fun t2))  (SIGMA s' h') 
+                ==> Config CT (MethodCall t1 i t) s0 ). apply ST_MethodCall2; auto.
+    intro t0. intros. intro contra. rewrite contra in H4. inversion H4. subst. 
+    inversion H6; subst; inversion H12. subst. inversion H17. subst.
+    
+    pose proof (erasure_sigma_preserve_context s h s2 h0 H10). rewrite H_flow_l in H11.
+    
+    assert (flow_to (current_label (SIGMA s'0 h'0)) L_Label = flow_to (current_label (SIGMA
+                                                                (update_current_label s2
+                                                                   (join_label lb (current_label (SIGMA s2 h0))) ) (get_heap (SIGMA s2 h0)) )) L_Label).   
+    apply erasure_preserve_context with t (erasure_L_fun e') CT; auto. 
+    pose proof (erasure_sigma_preserve_context s1 h1 s'0 h'0 H18). rewrite H_flow_r in H13. rewrite H13 in H12.
+    induction s2.  
+      unfold flow_to in H11.  unfold current_label in H11.  unfold get_stack in H11. 
+      unfold get_current_label in H11. unfold L_Label in H11. 
+      unfold subset in H11. inversion H11.
+
+      induction a. 
+          unfold current_label in H11.       unfold get_current_label in H11. 
+          unfold get_stack_label in H11. unfold get_stack in H11.
+          unfold current_label in H12.       unfold get_current_label in H12. 
+          unfold get_stack_label in H12. unfold get_stack in H12.
+          unfold update_current_label in H12.   assert (  flow_to (join_label lb l0)  L_Label = false).
+          apply flow_join_label with l0 lb; auto. rewrite H14 in H12. inversion H12.
+
+    rewrite H.  
+
+    apply L_reduction with ( Config CT (MethodCall t1 i t) s0); auto.
+    inversion H5. subst. apply erasure_L_context; auto. 
+    unfold erasure_L_fun. fold erasure_L_fun. rewrite H19. auto. 
+    
+    subst. assert (flow_to (current_label (SIGMA s'0 h'0)) L_Label = 
+                  flow_to (current_label (SIGMA s2 h0)) L_Label). 
+    apply erasure_sigma_preserve_context; auto. 
+
+    subst. assert (flow_to (current_label (SIGMA s'0 h'0)) L_Label = 
+                  flow_to (current_label (SIGMA s1 h1)) L_Label). 
+    apply erasure_sigma_preserve_context; auto.
+    rewrite H11 in H9. rewrite H14 in H9. rewrite H15 in H9. inversion H9.  
+    inversion H5.
+    ++ subst.     rewrite H_flow_r in H15. inversion H15.
+(*method call normal *)
+-  inversion H6.  subst. rename s0 into s. rename h0 into h.
+    induction s.  
+      unfold flow_to in H_flow_l.  unfold current_label in H_flow_l.  unfold get_stack in H_flow_l. 
+      unfold get_current_label in H_flow_l. unfold L_Label in H_flow_l. 
+      unfold subset in H_flow_l. inversion H_flow_l.
+
+      induction a. 
+          unfold current_label in H_flow_l.       unfold get_current_label in H_flow_l. 
+          unfold get_stack_label in H_flow_l. unfold get_stack in H_flow_l.
+          unfold current_label in H_flow_r.       unfold get_current_label in H_flow_r. 
+          unfold get_stack_label in H_flow_r. unfold get_stack in H_flow_r.
+          unfold update_current_label in H_flow_r. 
+
+          rewrite H_flow_r in H_flow_l. inversion H_flow_l.
+(*method call opaque *)
+-  inversion H6.  subst. rename s0 into s. rename h0 into h.
+    induction s.  
+      unfold flow_to in H_flow_l.  unfold current_label in H_flow_l.  unfold get_stack in H_flow_l. 
+      unfold get_current_label in H_flow_l. unfold L_Label in H_flow_l. 
+      unfold subset in H_flow_l. inversion H_flow_l.
+
+      induction a. 
+          unfold current_label in H_flow_l.       unfold get_current_label in H_flow_l. 
+          unfold get_stack_label in H_flow_l. unfold get_stack in H_flow_l.
+          unfold current_label in H_flow_r.       unfold get_current_label in H_flow_r. 
+          unfold get_stack_label in H_flow_r. unfold get_stack in H_flow_r.
+          unfold update_current_label in H_flow_r. 
+
+          assert (  flow_to (join_label lb l0)  L_Label = false).
+          apply flow_join_label with l0 lb; auto. auto. rewrite H in H_flow_r. inversion H_flow_r.
+(*new expression*)
+-  inversion H5.  subst. rename s0 into s. rename h0 into h.
+    induction s.  
+      unfold flow_to in H_flow_l.  unfold current_label in H_flow_l.  unfold get_stack in H_flow_l. 
+      unfold get_current_label in H_flow_l. unfold L_Label in H_flow_l. 
+      unfold subset in H_flow_l. inversion H_flow_l.
+
+      induction a. 
+          unfold current_label in H_flow_l.       unfold get_current_label in H_flow_l. 
+          unfold get_stack_label in H_flow_l. unfold get_stack in H_flow_l.
+          unfold current_label in H_flow_r.       unfold get_current_label in H_flow_r. 
+          unfold get_stack_label in H_flow_r. unfold get_stack in H_flow_r.
+          unfold update_current_label in H_flow_r. 
+
+          rewrite H_flow_r in H_flow_l. inversion H_flow_l.
+
+  (*label data context rule*)
+- inversion H_erasure_l. 
+   + rewrite  H_flow_l in H3. inversion H3. 
+   + inversion H_erasure_r. 
+    ++ subst. 
+     unfold erasure_L_fun. unfold erasure_H_fun. subst. 
+     fold erasure_L_fun. fold erasure_H_fun.
+     case_eq (return_free t). 
+    +++ intro H_return_free. 
+     assert (return_free (labelData t l0) = true). unfold return_free. fold return_free. auto. 
+     assert ( flow_to (current_label (SIGMA s1 h1)) L_Label = false). 
+     inversion H_typing.
+     apply return_free_preserve_context with CT t e' s h T0; auto.
+     inversion H_valid_syntax. auto.  rewrite H1 in H_flow_r. inversion H_flow_r.
+
+     +++ intro. assert (Config CT (erasure_H_fun t) (SIGMA s' h') ==l>
+     Config CT (erasure_L_fun e') (SIGMA s'0 h'0)). 
+     inversion H_typing.
+     apply IHt with h s (SIGMA s1 h1) (SIGMA s h)  T0 e'; auto.
+     inversion H_valid_syntax. auto. apply erasure_H_context; auto. 
+      apply erasure_L_context; auto.
+    inversion H1. induction c2. assert (CT = c). 
+    apply ct_consist with (erasure_H_fun t) t0 (SIGMA s' h') s0; auto.
+    subst. rename c into CT.
+    assert (Config CT (labelData (erasure_H_fun t) l0)  (SIGMA s' h') 
+                ==> Config CT (labelData t0 l0) s0). apply ST_LabelData1. auto.
+    apply L_reduction with ( Config CT (labelData t0 l0) s0); auto.
+    inversion H4. subst. apply erasure_L_context; auto. rewrite H15.
+     unfold erasure_L_fun. fold erasure_L_fun. auto.
+    
+    subst. assert (flow_to (current_label (SIGMA s'0 h'0)) L_Label = 
+                  flow_to (current_label (SIGMA s2 h0)) L_Label). 
+    apply erasure_sigma_preserve_context; auto. 
+
+    subst. assert (flow_to (current_label (SIGMA s'0 h'0)) L_Label = 
+                  flow_to (current_label (SIGMA s1 h1)) L_Label). 
+    apply erasure_sigma_preserve_context; auto.
+    rewrite H13 in H7. rewrite H11 in H6. rewrite H7 in H6. inversion H6.  
+    inversion H4.
+    ++ subst.     rewrite H_flow_r in H13. inversion H13.
+
+(*label data*)
+-  rewrite H_flow_r in H_flow_l. inversion H_flow_l.
+
+(*unlabel e*)
+- inversion H_erasure_l. 
+   + rewrite  H_flow_l in H3. inversion H3. 
+   + inversion H_erasure_r. 
+    ++ subst. 
+     unfold erasure_L_fun. unfold erasure_H_fun. subst. 
+     fold erasure_L_fun. fold erasure_H_fun.
+     case_eq (return_free t). 
+    +++ intro H_return_free. 
+     assert (return_free (unlabel t) = true). unfold return_free. fold return_free. auto. 
+     assert ( flow_to (current_label (SIGMA s1 h1)) L_Label = false). 
+     inversion H_typing.
+     apply return_free_preserve_context with CT t e' s h (LabelelTy T); auto.
+     inversion H_valid_syntax. auto.  rewrite H1 in H_flow_r. inversion H_flow_r.
+
+     +++ intro. assert (Config CT (erasure_H_fun t) (SIGMA s' h') ==l>
+     Config CT (erasure_L_fun e') (SIGMA s'0 h'0)). 
+     inversion H_typing.
+     apply IHt with h s (SIGMA s1 h1) (SIGMA s h)  (LabelelTy T) e'; auto.
+     inversion H_valid_syntax. auto. apply erasure_H_context; auto. 
+      apply erasure_L_context; auto.
+    inversion H1. induction c2. assert (CT = c). 
+    apply ct_consist with (erasure_H_fun t) t0 (SIGMA s' h') s0; auto.
+    subst. rename c into CT.
+    assert (Config CT (unlabel (erasure_H_fun t))  (SIGMA s' h') 
+                ==> Config CT (unlabel t0) s0). apply ST_unlabel1. auto.
+    apply L_reduction with ( Config CT (unlabel t0) s0); auto.
+    inversion H4. subst. apply erasure_L_context; auto. rewrite H15.
+     unfold erasure_L_fun. fold erasure_L_fun. auto.
+    
+    subst. assert (flow_to (current_label (SIGMA s'0 h'0)) L_Label = 
+                  flow_to (current_label (SIGMA s2 h0)) L_Label). 
+    apply erasure_sigma_preserve_context; auto. 
+
+    subst. assert (flow_to (current_label (SIGMA s'0 h'0)) L_Label = 
+                  flow_to (current_label (SIGMA s1 h1)) L_Label). 
+    apply erasure_sigma_preserve_context; auto.
+    rewrite H13 in H7. rewrite H11 in H6. rewrite H7 in H6. inversion H6.  
+    inversion H4.
+    ++ subst.     rewrite H_flow_r in H13. inversion H13.
+
+(* unlabel v*)
+-  inversion H4.  subst. rename s0 into s. rename h0 into h.
+    induction s.  
+      unfold flow_to in H_flow_l.  unfold current_label in H_flow_l.  unfold get_stack in H_flow_l. 
+      unfold get_current_label in H_flow_l. unfold L_Label in H_flow_l. 
+      unfold subset in H_flow_l. inversion H_flow_l.
+
+      induction a. 
+          unfold current_label in H_flow_l.       unfold get_current_label in H_flow_l. 
+          unfold get_stack_label in H_flow_l. unfold get_stack in H_flow_l.
+          unfold current_label in H_flow_r.       unfold get_current_label in H_flow_r. 
+          unfold get_stack_label in H_flow_r. unfold get_stack in H_flow_r.
+          unfold update_current_label in H_flow_r. 
+
+          assert (  flow_to (join_label lb l0)  L_Label = false).
+          apply flow_join_label with l0 lb; auto. auto. rewrite H in H_flow_r. inversion H_flow_r.
+
+(*labelOf e*)
+- inversion H_erasure_l. 
+   + rewrite  H_flow_l in H3. inversion H3. 
+   + inversion H_erasure_r. 
+    ++ subst. 
+     unfold erasure_L_fun. unfold erasure_H_fun. subst. 
+     fold erasure_L_fun. fold erasure_H_fun.
+     case_eq (return_free t). 
+    +++ intro H_return_free. 
+     assert (return_free (labelOf t) = true). unfold return_free. fold return_free. auto. 
+     assert ( flow_to (current_label (SIGMA s1 h1)) L_Label = false). 
+     inversion H_typing.
+     apply return_free_preserve_context with CT t e' s h (LabelelTy T0); auto.
+     inversion H_valid_syntax. auto.  rewrite H1 in H_flow_r. inversion H_flow_r.
+
+     +++ intro. assert (Config CT (erasure_H_fun t) (SIGMA s' h') ==l>
+     Config CT (erasure_L_fun e') (SIGMA s'0 h'0)). 
+     inversion H_typing.
+     apply IHt with h s (SIGMA s1 h1) (SIGMA s h)  (LabelelTy T0) e'; auto.
+     inversion H_valid_syntax. auto. apply erasure_H_context; auto. 
+      apply erasure_L_context; auto.
+    inversion H1. induction c2. assert (CT = c). 
+    apply ct_consist with (erasure_H_fun t) t0 (SIGMA s' h') s0; auto.
+    subst. rename c into CT.
+    assert (Config CT ( labelOf (erasure_H_fun t))  (SIGMA s' h') 
+                ==> Config CT (labelOf t0) s0). apply ST_labelof1. auto.
+    apply L_reduction with ( Config CT (labelOf t0) s0); auto.
+    inversion H4. subst. apply erasure_L_context; auto. rewrite H15.
+     unfold erasure_L_fun. fold erasure_L_fun. auto.
+    
+    subst. assert (flow_to (current_label (SIGMA s'0 h'0)) L_Label = 
+                  flow_to (current_label (SIGMA s2 h0)) L_Label). 
+    apply erasure_sigma_preserve_context; auto. 
+
+    subst. assert (flow_to (current_label (SIGMA s'0 h'0)) L_Label = 
+                  flow_to (current_label (SIGMA s1 h1)) L_Label). 
+    apply erasure_sigma_preserve_context; auto.
+    rewrite H13 in H7. rewrite H11 in H6. rewrite H7 in H6. inversion H6.  
+    inversion H4.
+    ++ subst.     rewrite H_flow_r in H13. inversion H13.
+
+(*labelof *)
+- rewrite H_flow_r in H_flow_l. inversion H_flow_l.
+
+(*unlabelOpaque e*)
+- inversion H_erasure_l. 
+   + rewrite  H_flow_l in H3. inversion H3. 
+   + inversion H_erasure_r. 
+    ++ subst. 
+     unfold erasure_L_fun. unfold erasure_H_fun. subst. 
+     fold erasure_L_fun. fold erasure_H_fun.
+     case_eq (return_free t). 
+    +++ intro H_return_free. 
+     assert (return_free (unlabelOpaque t) = true). unfold return_free. fold return_free. auto. 
+     assert ( flow_to (current_label (SIGMA s1 h1)) L_Label = false). 
+     inversion H_typing.
+     apply return_free_preserve_context with CT t e' s h (OpaqueLabeledTy T); auto.
+     inversion H_valid_syntax. auto.  rewrite H1 in H_flow_r. inversion H_flow_r.
+
+     +++ intro. assert (Config CT (erasure_H_fun t) (SIGMA s' h') ==l>
+     Config CT (erasure_L_fun e') (SIGMA s'0 h'0)). 
+     inversion H_typing.
+     apply IHt with h s (SIGMA s1 h1) (SIGMA s h) (OpaqueLabeledTy T) e'; auto.
+     inversion H_valid_syntax. auto. apply erasure_H_context; auto. 
+      apply erasure_L_context; auto.
+    inversion H1. induction c2. assert (CT = c). 
+    apply ct_consist with (erasure_H_fun t) t0 (SIGMA s' h') s0; auto.
+    subst. rename c into CT.
+    assert (Config CT ( unlabelOpaque (erasure_H_fun t))  (SIGMA s' h') 
+                ==> Config CT (unlabelOpaque t0) s0). apply ST_unlabel_opaque1. auto.
+    apply L_reduction with ( Config CT (unlabelOpaque t0) s0); auto.
+    inversion H4. subst. apply erasure_L_context; auto. rewrite H15.
+     unfold erasure_L_fun. fold erasure_L_fun. auto.
+    
+    subst. assert (flow_to (current_label (SIGMA s'0 h'0)) L_Label = 
+                  flow_to (current_label (SIGMA s2 h0)) L_Label). 
+    apply erasure_sigma_preserve_context; auto. 
+
+    subst. assert (flow_to (current_label (SIGMA s'0 h'0)) L_Label = 
+                  flow_to (current_label (SIGMA s1 h1)) L_Label). 
+    apply erasure_sigma_preserve_context; auto.
+    rewrite H13 in H7. rewrite H11 in H6. rewrite H7 in H6. inversion H6.  
+    inversion H4.
+    ++ subst.     rewrite H_flow_r in H13. inversion H13.
+
+(*unlabelOpaque v*)
+-  inversion H4.  subst. rename s0 into s. rename h0 into h.
+    induction s.  
+      unfold flow_to in H_flow_l.  unfold current_label in H_flow_l.  unfold get_stack in H_flow_l. 
+      unfold get_current_label in H_flow_l. unfold L_Label in H_flow_l. 
+      unfold subset in H_flow_l. inversion H_flow_l.
+
+      induction a. 
+          unfold current_label in H_flow_l.       unfold get_current_label in H_flow_l. 
+          unfold get_stack_label in H_flow_l. unfold get_stack in H_flow_l.
+          unfold current_label in H_flow_r.       unfold get_current_label in H_flow_r. 
+          unfold get_stack_label in H_flow_r. unfold get_stack in H_flow_r.
+          unfold update_current_label in H_flow_r. 
+
+          assert (  flow_to (join_label lb l0)  L_Label = false).
+          apply flow_join_label with l0 lb; auto. auto. rewrite H in H_flow_r. inversion H_flow_r.
+
+(*opaque call e*)
+- inversion H_erasure_l. 
+   + rewrite  H_flow_l in H3. inversion H3. 
+   + inversion H_erasure_r. 
+    ++ subst. 
+     unfold erasure_L_fun. unfold erasure_H_fun. subst. 
+     fold erasure_L_fun. fold erasure_H_fun.
+     case_eq (return_free t). 
+    +++ intro H_return_free. 
+     assert (return_free (opaqueCall t) = true). unfold return_free. fold return_free. auto. 
+     assert ( flow_to (current_label (SIGMA s1 h1)) L_Label = false). 
+     inversion H_typing.
+     apply return_free_preserve_context with CT t e' s h T0; auto.
+     inversion H_valid_syntax. auto.  rewrite H14 in H0. inversion H0.
+
+     +++ intro. assert (Config CT (erasure_H_fun t) (SIGMA s' h') ==l>
+     Config CT (erasure_L_fun e') (SIGMA s'0 h'0)). 
+     inversion H_typing.
+     apply IHt with h s (SIGMA s1 h1) (SIGMA s h) T0 e'; auto.
+     inversion H_valid_syntax. auto. apply erasure_H_context; auto. 
+      apply erasure_L_context; auto.
+    inversion H0. induction c2. assert (CT = c). 
+    apply ct_consist with (erasure_H_fun t) t0 (SIGMA s' h') s0; auto.
+    subst. rename c into CT.
+    assert (Config CT ( opaqueCall (erasure_H_fun t))  (SIGMA s' h') 
+                ==> Config CT (opaqueCall t0) s0). apply ST_opaquecall1. auto.
+    intro v. intro. intro contra.   apply erasure_H_fun_preserve_return_free_false in H.
+
+    rewrite contra in H. unfold return_free in H. 
+    rewrite contra in H2. inversion H2. subst. inversion H6; subst; inversion H8.
+    subst. inversion H15. subst. 
+
+    subst. assert (flow_to (current_label (SIGMA (lsf :: s'1) h0)) L_Label = 
+                  flow_to (current_label (SIGMA s h)) L_Label). 
+    apply erasure_sigma_preserve_context; auto. 
+
+    subst. assert (flow_to (current_label (SIGMA s'0 h'0)) L_Label = 
+                  flow_to (current_label (SIGMA s1 h1)) L_Label). 
+    apply erasure_sigma_preserve_context; auto. 
+    inversion H4. subst. 
+    subst. assert (flow_to (current_label (SIGMA s'0 h'0)) L_Label = 
+                  flow_to (current_label (SIGMA
+                           (update_current_label s'1
+                              (join_label (get_stack_label lsf) (get_current_label s'1))) h0)) L_Label). 
+    apply erasure_sigma_preserve_context; auto. rewrite H14 in H8. rewrite H8 in H10. 
+    rewrite H3 in H7. induction lsf.   
+    unfold current_label in H7.       unfold get_current_label in H7. 
+    unfold get_stack_label in H7. unfold get_stack in H7.
+    unfold current_label in H10.  unfold get_stack in H10.   induction s'1. intuition.
+
+    unfold get_stack_label in H10.  induction a.   unfold update_current_label in H10.     
+    unfold get_current_label in H10. unfold get_stack_label in H10. 
+    assert (flow_to (join_label l0 l1) L_Label = false). 
+    apply flow_join_label with l0 l1; auto. apply join_label_commutative. auto. 
+    rewrite <- H10 in H11. inversion H11.
+    subst.   assert (flow_to (current_label (SIGMA s'0 h'0)) L_Label = 
+                  flow_to (current_label (SIGMA
+                           (update_current_label s'1
+                              (join_label (get_stack_label lsf) (get_current_label s'1))) h0)) L_Label). 
+    apply erasure_sigma_preserve_context; auto. rewrite H14 in H8. rewrite H8 in H10. 
+    rewrite H3 in H7. induction lsf.   
+    unfold current_label in H7.       unfold get_current_label in H7. 
+    unfold get_stack_label in H7. unfold get_stack in H7.
+    unfold current_label in H10.  unfold get_stack in H10.   induction s'1. intuition.
+
+    unfold get_stack_label in H10.  induction a.   unfold update_current_label in H10.     
+    unfold get_current_label in H10. unfold get_stack_label in H10. 
+    assert (flow_to (join_label l0 l1) L_Label = false). 
+    apply flow_join_label with l0 l1; auto. apply join_label_commutative. auto. 
+    rewrite <- H10 in H11. inversion H11.
+    inversion H_valid_syntax. auto. auto. 
+
+
+    apply L_reduction with ( Config CT (opaqueCall t0) s0); auto.
+    inversion H4. subst. apply erasure_L_context; auto. rewrite H16.
+     unfold erasure_L_fun. fold erasure_L_fun. auto.
+    
+    subst. assert (flow_to (current_label (SIGMA s'0 h'0)) L_Label = 
+                  flow_to (current_label (SIGMA s2 h0)) L_Label). 
+    apply erasure_sigma_preserve_context; auto. 
+
+    subst. assert (flow_to (current_label (SIGMA s'0 h'0)) L_Label = 
+                  flow_to (current_label (SIGMA s1 h1)) L_Label). 
+    apply erasure_sigma_preserve_context; auto.
+    rewrite H12 in H7. rewrite H14 in H8. rewrite H7 in H8. inversion H8.  
+    inversion H4.
+    ++ subst.     rewrite H_flow_r in H14. inversion H14.
+
+(* opaque (return v) *)
+- inversion H_erasure_l. 
+   + rewrite  H_flow_l in H3. inversion H3. 
+   + inversion H_erasure_r. 
+    ++ subst. 
+     unfold erasure_L_fun. unfold erasure_H_fun. subst. 
+     fold erasure_L_fun. fold erasure_H_fun.
+     assert (return_free (Return e) = false). unfold return_free.  auto. 
+    rewrite H. 
+    case_eq (return_free e). 
+    +++ intro H_return_free. 
+     assert ( flow_to (current_label (SIGMA s1 h1)) L_Label = false). 
+     inversion H_typing.
+     apply return_free_preserve_context with CT e e' s h T0; auto.
+     inversion H_valid_syntax. inversion H10. auto. inversion H6. auto. 
+      rewrite H1 in H_flow_r. inversion H_flow_r.
+     +++ intro. assert (Config CT (erasure_H_fun (Return e)) (SIGMA s' h') ==l>
+     Config CT (erasure_L_fun (Return e')) (SIGMA s'0 h'0)). 
+     inversion H_typing.
+     apply IHt with h s (SIGMA s1 h1) (SIGMA s h) T0 (Return e'); auto.
+     inversion H_valid_syntax. auto. apply erasure_H_context; auto. 
+     apply ST_return1; auto.   apply erasure_L_context; auto.
+    inversion H2. induction c2. assert (CT = c). 
+    apply ct_consist with (erasure_H_fun (Return e)) t (SIGMA s' h') s0; auto.
+    subst. rename c into CT.
+    assert (Config CT ( opaqueCall (erasure_H_fun (Return e)))  (SIGMA s' h') 
+                ==> Config CT (opaqueCall t) s0). apply ST_opaquecall1. auto.
+    intro v. intro. intro contra.  unfold erasure_H_fun in contra. 
+    fold erasure_H_fun in contra. rewrite H1 in contra. inversion contra.
+    assert (erasure_H_fun (Return e) = Return v).
+    unfold erasure_H_fun. fold erasure_H_fun. rewrite H1. auto. 
+    rewrite H7 in H4. inversion H4. inversion H6; try (rewrite <-H18 in H11; inversion H11);  
+    try (rewrite <-H19 in H11; inversion H11). subst. inversion H18. subst. 
+
+
+    pose proof (erasure_sigma_preserve_context s h (lsf :: s'1) h0 H8). rewrite H_flow_l in H9.
+    assert (flow_to (current_label (SIGMA s'0 h'0)) L_Label = flow_to (current_label (SIGMA
+                                                                (update_current_label s'1
+                                                                   (join_label  (get_current_label (lsf :: s'1)) (get_current_label s'1)) ) h0 )) L_Label).   
+    apply erasure_preserve_context with (erasure_H_fun e) (erasure_L_fun (Return e')) CT; auto. 
+    pose proof (erasure_sigma_preserve_context s1 h1 s'0 h'0 H16). rewrite H_flow_r in H11. rewrite H11 in H10.
+    induction lsf. induction s'1. intuition.  
+
+      induction a. 
+          unfold current_label in H9.       unfold get_current_label in H9. 
+          unfold get_stack_label in H9. unfold get_stack in H9.
+          unfold current_label in H10.       unfold get_current_label in H10. 
+          unfold get_stack_label in H10. unfold get_stack in H10.
+          unfold update_current_label in H10.   assert (  flow_to (join_label l1 l0)  L_Label = false).
+          apply flow_join_label with l0 l1; auto. assert ((join_label l1 l0) = (join_label l0 l1)).
+          apply join_label_commutative; auto. rewrite H14 in H12.  rewrite H12 in H10. inversion H10.
+    auto. 
+    apply L_reduction with ( Config CT (opaqueCall t) s0); auto. 
+    unfold erasure_H_fun in H6. fold erasure_H_fun in H6. rewrite H1 in H6. auto. 
+    inversion H5. subst. apply erasure_L_context; auto. rewrite H17.
+     unfold erasure_L_fun. fold erasure_L_fun. auto.
+    
+    subst. assert (flow_to (current_label (SIGMA s'0 h'0)) L_Label = 
+                  flow_to (current_label (SIGMA s2 h0)) L_Label). 
+    apply erasure_sigma_preserve_context; auto. 
+
+    subst. assert (flow_to (current_label (SIGMA s'0 h'0)) L_Label = 
+                  flow_to (current_label (SIGMA s1 h1)) L_Label). 
+    apply erasure_sigma_preserve_context; auto.
+    rewrite H13 in H9. rewrite H12 in H7. rewrite H7 in H9. inversion H9.  
+    inversion H5.
+    ++ subst.     rewrite H_flow_r in H13. inversion H13.
+(*v_opa_l*)
+- rewrite H_flow_l in H_flow_r. inversion H_flow_r.
+(*opaqueCall (Return v)*) 
+-inversion H4. subst. 
+  inversion H_erasure_l. 
+   + rewrite  H_flow_l in H2. inversion H2. 
+   + inversion H_erasure_r. 
+    ++ subst. assert (return_free (Return v) = false).
+      unfold return_free. auto. unfold  erasure_H_fun. rewrite H. 
+      fold  erasure_H_fun. assert (return_free v = true). apply value_is_return_free. auto. 
+      rewrite H0. unfold erasure_L_fun. fold erasure_L_fun. rewrite  H2.
+      rewrite H10. unfold erasure_sigma_fun. unfold erasure_stack. fold erasure_stack.
+      induction lsf. 
+      assert (Config CT (opaqueCall (Return dot))
+                      (SIGMA (Labeled_frame l0 (fun x : id => erasure_obj_null (s x) h0) :: s')
+                         (erasure_heap h0)) 
+          ==> (Config CT (v_opa_l dot l0) (SIGMA s' (erasure_heap h0))) ).
+      apply ST_opaquecall_return2 with (Labeled_frame l0 (fun x : id => erasure_obj_null (s x) h0) :: s')
+                        (erasure_heap h0) s' (Labeled_frame l0 (fun x : id => erasure_obj_null (s x) h0)); auto.
+      assert (Config CT (v_opa_l dot l0) (SIGMA s' (erasure_heap h0)) =e=> 
+            (Config CT (v_opa_l dot (current_label (SIGMA (Labeled_frame l0 s :: s') h0)))
+                      (SIGMA s'1 h'0))).
+      rewrite H19. apply erasure_L_context; auto.
+      unfold erasure_L_fun. 
+      unfold current_label in H2. unfold get_stack in H2. unfold get_current_label in H2. 
+      unfold get_stack_label in H2. rewrite H2. unfold current_label. 
+      unfold get_stack. unfold get_current_label.
+      unfold get_stack_label. auto. 
+      unfold erasure_sigma_fun.
+
+
+
+  assert (  (erasure_stack s' h0)  = (erasure_stack s' (erasure_heap h0))).
+  apply multi_erasure_stack_helper with CT. auto. rewrite H3.
+  pose proof (multi_erasure_heap_equal h0). rewrite H5. auto.
+  apply L_reduction with ( Config CT (v_opa_l dot l0) (SIGMA s' (erasure_heap h0))); auto. 
+
+ ++ subst. 
+    rewrite H14 in H_flow_r. inversion H_flow_r.
+
+(*assignment *)
+- inversion H_typing. inversion H5.
+
+- inversion H_typing. inversion H5.
+
+(* field write  *)
+-  inversion H_erasure_l. 
+   + rewrite  H_flow_l in H3. inversion H3. 
+   + inversion H_erasure_r. 
+    ++ subst. 
+     unfold erasure_L_fun. unfold erasure_H_fun. subst. 
+     fold erasure_L_fun. fold erasure_H_fun.
+     case_eq (return_free t1). 
+    +++ intro H_return_free. 
+     assert ( flow_to (current_label (SIGMA s1 h1)) L_Label = false). 
+     inversion H_typing.
+     apply return_free_preserve_context with CT t1 e1' s h (classTy clsT); auto.  
+     unfold dot_free in H_dot_free. fold dot_free in H_dot_free.  apply dot_free_if in H_dot_free. 
+      apply H_dot_free. inversion H_valid_syntax.  auto. apply value_is_valid_syntax. auto.  
+     rewrite H in H_flow_r. inversion H_flow_r.
+
+     +++ intro. assert (Config CT (erasure_H_fun t1) (SIGMA s' h') ==l>
+     Config CT (erasure_L_fun e1') (SIGMA s'0 h'0)). 
+     inversion H_typing.
+     apply IHt1 with h s (SIGMA s1 h1) (SIGMA s h)  (classTy clsT) e1'; auto.
+     inversion H_valid_syntax. auto.
+     unfold dot_free in H_dot_free. fold dot_free in H_dot_free.  apply dot_free_if in H_dot_free. 
+     apply H_dot_free. 
+     unfold dot_free in H_dot_free. fold dot_free in H_dot_free.  apply dot_free_if in H_dot_free. 
+     apply H_dot_free.  inversion H_valid_syntax.  auto. apply value_is_valid_syntax. auto.  
+
+     apply erasure_H_context; auto. 
+      apply erasure_L_context; auto.
+    inversion H1. induction c2. assert (CT = c). 
+    apply ct_consist with (erasure_H_fun t1) t (SIGMA s' h') s0; auto.
+    subst. rename c into CT.
+    assert (Config CT (FieldWrite (erasure_H_fun t1) i t2)  (SIGMA s' h') 
+                ==> Config CT (FieldWrite t i t2) s0 ). apply ST_fieldWrite1. auto.
+    apply L_reduction with ( Config CT (FieldWrite t i t2) s0); auto.
+    inversion H4. subst. apply erasure_L_context; auto. rewrite H15.
+     unfold erasure_L_fun. fold erasure_L_fun. auto.
+    
+    subst. assert (flow_to (current_label (SIGMA s'0 h'0)) L_Label = 
+                  flow_to (current_label (SIGMA s2 h0)) L_Label). 
+    apply erasure_sigma_preserve_context; auto. 
+
+    subst. assert (flow_to (current_label (SIGMA s'0 h'0)) L_Label = 
+                  flow_to (current_label (SIGMA s1 h1)) L_Label). 
+    apply erasure_sigma_preserve_context; auto.
+    rewrite H13 in H7. rewrite H11 in H6. rewrite H7 in H6. inversion H6.  
+    inversion H4.
+    ++ subst.     rewrite H_flow_r in H13. inversion H13.
+
+(* Field write e2*)
+-  inversion H_erasure_l. 
+   + rewrite  H_flow_l in H3. inversion H3. 
+   + inversion H_erasure_r. 
+    ++ subst. 
+     unfold erasure_L_fun. unfold erasure_H_fun. subst. 
+     fold erasure_L_fun. fold erasure_H_fun. pose proof (value_is_return_free t1 H7).
+     case_eq (return_free t2). 
+    +++ intro H_return_free. 
+     assert ( flow_to (current_label (SIGMA s1 h1)) L_Label = false). 
+     inversion H_typing.
+     apply return_free_preserve_context with CT t2 e2' s h (classTy cls'); auto.  
+     unfold dot_free in H_dot_free. fold dot_free in H_dot_free.  apply dot_free_if in H_dot_free. 
+      apply H_dot_free. inversion H_valid_syntax.  auto. apply surface_syntax_is_valid_syntax. auto. auto. 
+     rewrite H0 in H_flow_r. inversion H_flow_r.
+
+     +++ intro. assert (Config CT (erasure_H_fun t2) (SIGMA s' h') ==l>
+     Config CT (erasure_L_fun e2') (SIGMA s'0 h'0)). 
+     inversion H_typing.
+     apply IHt2 with h s (SIGMA s1 h1) (SIGMA s h)  (classTy cls') e2'; auto.
+     inversion H_valid_syntax. auto.
+     unfold dot_free in H_dot_free. fold dot_free in H_dot_free.  apply dot_free_if in H_dot_free. 
+     apply H_dot_free. 
+     unfold dot_free in H_dot_free. fold dot_free in H_dot_free.  apply dot_free_if in H_dot_free. 
+     apply H_dot_free.  inversion H_valid_syntax.  apply surface_syntax_is_valid_syntax. auto. auto.   
+
+     apply erasure_H_context; auto. 
+      apply erasure_L_context; auto.
+    inversion H1. induction c2. assert (CT = c). 
+    apply ct_consist with (erasure_H_fun t2) t (SIGMA s' h') s0; auto.
+    subst. rename c into CT.
+    assert (Config CT (FieldWrite t1 i (erasure_H_fun t2))  (SIGMA s' h') 
+                ==> Config CT (FieldWrite t1 i t) s0 ). apply ST_fieldWrite2; auto.
+    intro t0. intros. intro contra. rewrite contra in H4. inversion H4. subst. 
+    inversion H6; subst; inversion H12. subst. inversion H17. subst.
+    
+    pose proof (erasure_sigma_preserve_context s h s2 h0 H10). rewrite H_flow_l in H11.
+    assert (flow_to (current_label (SIGMA s'0 h'0)) L_Label = flow_to (current_label (SIGMA
+                                                                (update_current_label s2
+                                                                   (join_label lb (current_label (SIGMA s2 h0))) ) (get_heap (SIGMA s2 h0)) )) L_Label).   
+    apply erasure_preserve_context with t (erasure_L_fun e2') CT; auto. 
+    pose proof (erasure_sigma_preserve_context s1 h1 s'0 h'0 H18). rewrite H_flow_r in H13. rewrite H13 in H12.
+    induction s2.  
+      unfold flow_to in H11.  unfold current_label in H11.  unfold get_stack in H11. 
+      unfold get_current_label in H11. unfold L_Label in H11. 
+      unfold subset in H11. inversion H11.
+
+      induction a. 
+          unfold current_label in H11.       unfold get_current_label in H11. 
+          unfold get_stack_label in H11. unfold get_stack in H11.
+          unfold current_label in H12.       unfold get_current_label in H12. 
+          unfold get_stack_label in H12. unfold get_stack in H12.
+          unfold update_current_label in H12.   assert (  flow_to (join_label lb l0)  L_Label = false).
+          apply flow_join_label with l0 lb; auto. rewrite H14 in H12. inversion H12.
+
+
+    rewrite H.  
+
+    apply L_reduction with ( Config CT (FieldWrite t1 i t) s0); auto.
+    inversion H5. subst. apply erasure_L_context; auto. 
+    unfold erasure_L_fun. fold erasure_L_fun. rewrite H19. auto. 
+    
+    subst. assert (flow_to (current_label (SIGMA s'0 h'0)) L_Label = 
+                  flow_to (current_label (SIGMA s2 h0)) L_Label). 
+    apply erasure_sigma_preserve_context; auto. 
+
+    subst. assert (flow_to (current_label (SIGMA s'0 h'0)) L_Label = 
+                  flow_to (current_label (SIGMA s1 h1)) L_Label). 
+    apply erasure_sigma_preserve_context; auto.
+    rewrite H11 in H9. rewrite H14 in H9. rewrite H15 in H9. inversion H9.  
+    inversion H5.
+    ++ subst.     rewrite H_flow_r in H15. inversion H15.
+(*field write normal *)
+-  inversion H6.  subst. rename s0 into s. rename h0 into h.
+    induction s.  
+      unfold flow_to in H_flow_l.  unfold current_label in H_flow_l.  unfold get_stack in H_flow_l. 
+      unfold get_current_label in H_flow_l. unfold L_Label in H_flow_l. 
+      unfold subset in H_flow_l. inversion H_flow_l.
+
+      induction a. 
+          unfold current_label in H_flow_l.       unfold get_current_label in H_flow_l. 
+          unfold get_stack_label in H_flow_l. unfold get_stack in H_flow_l.
+          unfold current_label in H_flow_r.       unfold get_current_label in H_flow_r. 
+          unfold get_stack_label in H_flow_r. unfold get_stack in H_flow_r.
+          unfold update_current_label in H_flow_r. 
+
+          rewrite H_flow_r in H_flow_l. inversion H_flow_l.
+(*field write opaque *)
+-  inversion H7.  subst. rename s0 into s. rename h0 into h.
+    induction s.  
+      unfold flow_to in H_flow_l.  unfold current_label in H_flow_l.  unfold get_stack in H_flow_l. 
+      unfold get_current_label in H_flow_l. unfold L_Label in H_flow_l. 
+      unfold subset in H_flow_l. inversion H_flow_l.
+
+      induction a. 
+          unfold current_label in H_flow_l.       unfold get_current_label in H_flow_l. 
+          unfold get_stack_label in H_flow_l. unfold get_stack in H_flow_l.
+          unfold current_label in H_flow_r.       unfold get_current_label in H_flow_r. 
+          unfold get_stack_label in H_flow_r. unfold get_stack in H_flow_r.
+          unfold update_current_label in H_flow_r. 
+
+          assert (  flow_to (join_label lb l0)  L_Label = false).
+          apply flow_join_label with l0 lb; auto. auto. rewrite H_flow_l in H_flow_r. inversion H_flow_r.
+
+(* if  *)
+- inversion H7. subst. rewrite H_flow_l in H_flow_r. inversion H_flow_r.
+
+- inversion H7. subst. rewrite H_flow_l in H_flow_r. inversion H_flow_r.
+
+(*sequence *)
+- inversion H_erasure_l. 
+   + rewrite  H_flow_l in H3. inversion H3. 
+   + inversion H_erasure_r. 
+    ++ subst. 
+     unfold erasure_L_fun. unfold erasure_H_fun. subst. 
+     fold erasure_L_fun. fold erasure_H_fun.
+     case_eq (return_free t1). 
+    +++ intro H_return_free. 
+     assert ( flow_to (current_label (SIGMA s1 h1)) L_Label = false). 
+     inversion H_typing.
+     apply return_free_preserve_context with CT t1 s1' s h T0; auto.  
+     unfold dot_free in H_dot_free. fold dot_free in H_dot_free.  apply dot_free_if in H_dot_free. 
+      apply H_dot_free. inversion H_valid_syntax.  auto. apply value_is_valid_syntax. auto.  
+     rewrite H in H_flow_r. inversion H_flow_r.
+
+     +++ intro. assert (Config CT (erasure_H_fun t1) (SIGMA s' h') ==l>
+     Config CT (erasure_L_fun s1') (SIGMA s'0 h'0)). 
+     inversion H_typing.
+     apply IHt1 with h s (SIGMA s1 h1) (SIGMA s h) T0 s1'; auto.
+     inversion H_valid_syntax. auto.
+     unfold dot_free in H_dot_free. fold dot_free in H_dot_free.  apply dot_free_if in H_dot_free. 
+     apply H_dot_free. 
+     unfold dot_free in H_dot_free. fold dot_free in H_dot_free.  apply dot_free_if in H_dot_free. 
+     apply H_dot_free.  inversion H_valid_syntax.  auto. apply value_is_valid_syntax. auto.  
+
+     apply erasure_H_context; auto. 
+      apply erasure_L_context; auto.
+    inversion H1. induction c2. assert (CT = c). 
+    apply ct_consist with (erasure_H_fun t1) t (SIGMA s' h') s0; auto.
+    subst. rename c into CT.
+    assert (Config CT (Sequence (erasure_H_fun t1) t2)  (SIGMA s' h') 
+                ==> Config CT (Sequence t t2) s0 ). apply ST_seq1. auto.
+    apply L_reduction with ( Config CT (Sequence t t2) s0); auto.
+    inversion H4. subst. apply erasure_L_context; auto. rewrite H15.
+     unfold erasure_L_fun. fold erasure_L_fun. auto.
+
+      subst. assert (flow_to (current_label (SIGMA s'0 h'0)) L_Label = 
+                  flow_to (current_label (SIGMA s2 h0)) L_Label). 
+    apply erasure_sigma_preserve_context; auto. 
+
+    subst. assert (flow_to (current_label (SIGMA s'0 h'0)) L_Label = 
+                  flow_to (current_label (SIGMA s1 h1)) L_Label). 
+    apply erasure_sigma_preserve_context; auto.
+    rewrite H13 in H7. rewrite H11 in H6. rewrite H7 in H6. inversion H6.  
+    inversion H4.
+    ++ subst.     rewrite H_flow_r in H13. inversion H13.
+
+- rewrite H_flow_r in H_flow_l. inversion H_flow_l. 
+
+(*Return *)
+- inversion H_erasure_l. 
+   + rewrite  H_flow_l in H3. inversion H3. 
+   + inversion H_erasure_r. 
+    ++ subst. 
+     unfold erasure_L_fun. unfold erasure_H_fun. subst. 
+     fold erasure_L_fun. fold erasure_H_fun.
+     case_eq (return_free t). 
+    +++ intro H_return_free. 
+     assert ( flow_to (current_label (SIGMA s1 h1)) L_Label = false). 
+     inversion H_typing.
+     apply return_free_preserve_context with CT t e' s h T; auto.  
+     inversion H_valid_syntax.  auto. rewrite H in H13. inversion H13. 
+
+     +++ intro. assert (Config CT (erasure_H_fun t) (SIGMA s' h') ==l>
+     Config CT (erasure_L_fun e') (SIGMA s'0 h'0)). 
+     inversion H_typing.
+     apply IHt with h s (SIGMA s1 h1) (SIGMA s h) T e'; auto. 
+     inversion H_valid_syntax.  auto.
+
+
+     apply erasure_H_context; auto. 
+      apply erasure_L_context; auto.
+    inversion H1. induction c2. assert (CT = c). 
+    apply ct_consist with (erasure_H_fun t) t0 (SIGMA s' h') s0; auto.
+    subst. rename c into CT.
+    assert (Config CT (Return (erasure_H_fun t))  (SIGMA s' h') 
+                ==> Config CT (Return t0 ) s0 ). apply ST_return1. auto.
+    apply L_reduction with ( Config CT (Return t0) s0); auto.
+    inversion H4. subst. apply erasure_L_context; auto. rewrite H15.
+     unfold erasure_L_fun. fold erasure_L_fun. auto.
+
+      subst. assert (flow_to (current_label (SIGMA s'0 h'0)) L_Label = 
+                  flow_to (current_label (SIGMA s2 h0)) L_Label). 
+    apply erasure_sigma_preserve_context; auto. 
+
+    subst. assert (flow_to (current_label (SIGMA s'0 h'0)) L_Label = 
+                  flow_to (current_label (SIGMA s1 h1)) L_Label). 
+    apply erasure_sigma_preserve_context; auto.
+    rewrite H13 in H7. rewrite H11 in H6. rewrite H7 in H6. inversion H6.  
+    inversion H4.
+    ++ subst.     rewrite H_flow_r in H13. inversion H13.
+
+- inversion H5.  subst. 
+    induction s'. intuition. 
+
+      induction lsf. induction a. 
+          unfold current_label in H_flow_l.       unfold get_current_label in H_flow_l. 
+          unfold get_stack_label in H_flow_l. unfold get_stack in H_flow_l.
+          unfold current_label in H_flow_r.       unfold get_current_label in H_flow_r. 
+          unfold get_stack_label in H_flow_r. unfold get_stack in H_flow_r.
+          unfold update_current_label in H_flow_r. 
+
+          assert (  flow_to (join_label l1 l0)  L_Label = false).
+          apply flow_join_label with l0 l1; auto. assert ((join_label l1 l0) = (join_label l0 l1)).
+          apply join_label_commutative; auto. rewrite H0 in H.  rewrite H in H_flow_r. inversion H_flow_r.
+Qed. 
+
+
+
+Lemma multi_step_simulation_revised : forall CT t t0 t' t0' sigma_l sigma_r sigma_l_e sigma_r_e s h,
+      dot_free t = true -> valid_syntax t ->
+      sigma_l = SIGMA s h ->
+      field_wfe_heap CT h -> wfe_heap CT h -> wfe_stack CT h s ->
+      Config CT t sigma_l ==>* Config CT t' sigma_r ->
+      (Config CT t sigma_l) =e=> (Config CT t0 sigma_l_e) ->
+      (Config CT t' sigma_r) =e=> (Config CT t0' sigma_r_e) ->
+      forall T, has_type CT empty_context h t T -> 
+      (Config CT t0 sigma_l_e) ==>L* (Config CT t0' sigma_r_e).
+Proof.
+    intros CT t t0 t' t0' sigma_l sigma_r sigma_l_e sigma_r_e s h.
+    intro H_dot_free. intro H_valid_syntax.
+    intro H_sigma_l.  intro H_wfe_field. intro H_wfe_heap. intro H_wfe_stack.
+    intro H_multistep_reduction. intro H_erasure_l. intro H_erasure_r. intro T. intro H_typing. 
+    remember (Config CT t sigma_l) as t_config. 
+    remember (Config CT t' sigma_r) as t'_config. 
+
+    generalize dependent t0'. generalize dependent t0. generalize dependent t. 
+    generalize dependent sigma_l. generalize dependent t'. generalize dependent sigma_r.
+    generalize dependent sigma_l_e. generalize dependent sigma_r_e.
+    generalize dependent s. generalize dependent h.
+    induction H_multistep_reduction.
+    intros. 
+    assert ((Config CT t0 sigma_l_e) = (Config CT t0' sigma_r_e)).
+    apply erasure_equal_input with t s h s h.
+    apply L_equivalence_equal_store.
+    rewrite Heqt_config in H_erasure_l. 
+    rewrite <- H_sigma_l.  auto.
+    rewrite Heqt_config in H_erasure_r. 
+    rewrite <- H_sigma_l.  auto. 
+    rewrite H. apply multi_reduction_l_refl.
+
+
+    intros.   induction c2. 
+    assert ( exists t1_r s0_r, erasure (Config c t1 s0) (Config c t1_r s0_r)).
+    apply erasue_target. destruct H0 as [t1_r]. destruct H0 as [s0_r].
+
+    remember (current_label (SIGMA s h)) as cur_lbl.
+    assert ((flow_to cur_lbl L_Label = true) \/ (flow_to cur_lbl L_Label = false)).
+    apply excluded_middle_label.  destruct H1.
+    apply multi_reduction_l_step with (Config c t1_r s0_r).
+    assert (CT=c). apply ct_consist with t t1 sigma_l s0. 
+    rewrite Heqt_config in H. auto. subst. 
+
+    apply simulation_L with (CT:=c) (t:=t) (t0:=t0) (t':=t1) (t0':=t1_r) 
+      (sigma_l:=(SIGMA s h)) (sigma_r:=s0) (sigma_l_e:=sigma_l_e) (s:=s) (h:=h); auto.
+    subst. induction s0.
+    assert (CT=c). apply ct_consist with t t1 (SIGMA s h) (SIGMA s0 h0); auto.  
+    subst; auto.  
+
+    assert (wfe_heap c h0 /\ wfe_stack c h0 s0 /\  field_wfe_heap c h0).
+    apply reduction_preserve_wfe with s h (SIGMA s h) (SIGMA s0 h0) t
+    T t1; auto. 
+    destruct IHH_multistep_reduction with (h:=h0) (s:=s0) (sigma_r_e:=sigma_r_e)
+           (sigma_l_e:=s0_r) (t0':=t0')
+    (sigma_r0:=sigma_r) (t'0:=t') (sigma_l:=(SIGMA s0 h0)) (t:=t1) (t0:= t1_r). 
+    apply H2.  apply H2. apply H2. auto. auto. auto. 
+    apply dot_free_preservation with t s h s0 h0 c T; auto. 
+    apply valid_syntax_preservation with c t (SIGMA s0 h0) s h T; auto. 
+    auto. 
+    apply preservation with s s0 h (SIGMA s h) (SIGMA s0 h0) t; auto.
+    auto. auto. apply multi_reduction_l_refl. 
+    apply multi_reduction_l_step with c2; auto.
+
+    subst. induction s0.
+    assert (CT=c). apply ct_consist with t t1 (SIGMA s h) (SIGMA s0 h0); auto.  
+    subst; auto.  
+
+    assert (wfe_heap c h0 /\ wfe_stack c h0 s0 /\  field_wfe_heap c h0).
+    apply reduction_preserve_wfe with s h (SIGMA s h) (SIGMA s0 h0) t
+    T t1; auto. 
+    assert (Config c t1_r s0_r ==>L* Config c t0' sigma_r_e).
+    apply IHH_multistep_reduction with (h:=h0) (s:=s0) (sigma_r_e:=sigma_r_e)
+           (sigma_l_e:=s0_r) (t0':=t0')
+    (sigma_r0:=sigma_r) (t'0:=t') (sigma_l:=(SIGMA s0 h0)) (t:=t1) (t0:= t1_r); auto. 
+    apply H2.  apply H2. apply H2.
+    apply dot_free_preservation with t s h s0 h0 c T; auto. 
+    apply valid_syntax_preservation with c t (SIGMA s0 h0) s h T; auto. 
+    apply preservation with s s0 h (SIGMA s h) (SIGMA s0 h0) t; auto.
+
+
+    assert ((flow_to (current_label (SIGMA s h)) L_Label = true) \/ (flow_to (current_label (SIGMA s h)) L_Label = false)).
+    apply excluded_middle_label.  destruct H4.
+    assert (Config c t0 sigma_l_e ==l> (Config c t1_r s0_r)).
+    apply simulation_L with t t1 (SIGMA s h)  (SIGMA s0 h0) s h; auto. 
+    apply multi_reduction_l_step with (Config c t1_r s0_r); auto.
+
+    assert ((flow_to (current_label (SIGMA s0 h0)) L_Label = true) \/ (flow_to (current_label (SIGMA s0 h0)) L_Label = false)).
+        apply excluded_middle_label.  destruct H5.
+    assert (Config c t0 sigma_l_e ==l> (Config c t1_r s0_r)).
+    apply simulation_H_L with t t1 (SIGMA s h)  (SIGMA s0 h0)   s h T; auto. 
+    apply multi_reduction_l_step with (Config c t1_r s0_r); auto.
+(*    assert (Config c t0 sigma_l_e = (Config c t1_r s0_r)). *)
+
+     assert  (  (Config c t0 sigma_l_e) = (Config c t1_r s0_r) 
+              \/ (Config c t0 sigma_l_e) ==l> (Config c t1_r s0_r) ).
+
+    apply simulation_H_revised with t t1 s h s0 h0 T; auto.
+    destruct H6. rewrite <- H6 in H3. auto.
+    apply multi_reduction_l_step with (Config c t1_r s0_r); auto.
+
+(*
+    (*case for return v*)
+    + pose proof (exclude_middle_return t). destruct H4. 
+    destruct H4 as [a].
+    ++      pose proof (excluded_middle_value a). destruct H5. 
+    +++  
+    assert (l_reduction (Config c t0 sigma_l_e) (Config c t1_r s0_r)).
+     subst. inversion H_typing.
+    apply simulation_return_v with a s h s0 h0 t1 T; auto. 
+    apply multi_reduction_l_step with (Config c t1_r s0_r); auto.
+    +++ 
+    assert ((flow_to (current_label (SIGMA s0 h0)) L_Label = true) \/ (flow_to (current_label (SIGMA s0 h0)) L_Label = false)).
+    apply excluded_middle_label.  destruct H6.
+    ++++ 
+    assert (Config c t0 sigma_l_e ==l> (Config c t1_r s0_r)).
+    apply simulation_H_L with (CT:=c) (t:=t) (t0:=t0) (t':=t1) (t0':=t1_r) 
+      (sigma_l:=(SIGMA s h)) (sigma_r:= (SIGMA s0 h0)) (sigma_l_e:=sigma_l_e) (s:=s) (h:=h) (T:=T); auto.
+     apply multi_reduction_l_step with (Config c t1_r s0_r); auto.
+    ++++  
+    assert ( Config c t0 sigma_l_e = Config c t1_r s0_r).
+    apply simulation_H with t t1 s h s0 h0 T; auto. rewrite H7. auto. 
+    (*case for opaque call (return v)*)
+    ++ pose proof (exclude_middle_opaque_return t). destruct H5.  destruct H5 as [a].
+          pose proof (excluded_middle_value a). destruct H6. 
+    +++ subst. assert (l_reduction (Config c t0 sigma_l_e) (Config c t1_r s0_r)).
+     subst. inversion H_typing.
+    apply simulation_opaque_return_v with a s h s0 h0 t1 T0; auto. inversion H10. auto.  
+    apply multi_reduction_l_step with (Config c t1_r s0_r); auto.
+    +++ assert ((flow_to (current_label (SIGMA s0 h0)) L_Label = true) \/ (flow_to (current_label (SIGMA s0 h0)) L_Label = false)).
+    apply excluded_middle_label.  destruct H7.
+    ++++ 
+    assert (Config c t0 sigma_l_e ==l> (Config c t1_r s0_r)).
+    apply simulation_H_L with (CT:=c) (t:=t) (t0:=t0) (t':=t1) (t0':=t1_r) 
+      (sigma_l:=(SIGMA s h)) (sigma_r:= (SIGMA s0 h0)) (sigma_l_e:=sigma_l_e) (s:=s) (h:=h) (T:=T); auto.
+     apply multi_reduction_l_step with (Config c t1_r s0_r); auto.
+    ++++  
+    assert ( Config c t0 sigma_l_e = Config c t1_r s0_r).
+    apply simulation_H with t t1 s h s0 h0 T; auto. rewrite H8. auto. 
+    +++ 
+    assert ((flow_to (current_label (SIGMA s0 h0)) L_Label = true) \/ (flow_to (current_label (SIGMA s0 h0)) L_Label = false)).
+    apply excluded_middle_label.  destruct H6.
+
+    assert (Config c t0 sigma_l_e ==l> (Config c t1_r s0_r)).
+    apply simulation_H_L with (CT:=c) (t:=t) (t0:=t0) (t':=t1) (t0':=t1_r) 
+      (sigma_l:=(SIGMA s h)) (sigma_r:= (SIGMA s0 h0)) (sigma_l_e:=sigma_l_e) (s:=s) (h:=h) (T:=T); auto.
+    apply multi_reduction_l_step with (Config c t1_r s0_r). auto. auto. 
+
+    assert ( Config c t0 sigma_l_e = Config c t1_r s0_r).
+    apply simulation_H with t t1 s h s0 h0 T; auto.
+    rewrite <- H7 in H3. auto.  
+*)
++
+    subst.  apply error_state_cannot_reach_valid_state in H_multistep_reduction. intuition. 
+Qed. 
+
+
+
+
+
+
+Inductive L_equivalence_config : config -> config -> Prop :=
+  | L_equal_config : forall s h t ct, 
+      L_equivalence_config (Config ct t (SIGMA s h))  (Config ct t (SIGMA s h))
+  | L_equivalence_config_L : forall s h s' h' t t' lb1 lb2 ct, 
+      lb1 = current_label (SIGMA s h) ->
+      lb2 = current_label (SIGMA s' h') ->
+      lb1 = lb2 ->
+      flow_to lb2 L_Label = true ->
+      L_equivalence_tm t h t' h'->
+      L_equivalence_store s h s' h' ->
+      L_equivalence_config (Config ct t (SIGMA s h)) (Config ct t' (SIGMA s' h'))
+  | L_equivalence_config_H : forall s h s' h' t t' lb1 lb2 ct, 
+      L_equivalence_store s h s' h' ->
+      lb1 = current_label (SIGMA s h) ->
+      lb2 = current_label (SIGMA s' h') ->
+      flow_to lb1 L_Label = false ->
+      flow_to lb2 L_Label = false ->
+      L_equivalence_config (Config ct t (SIGMA s h)) (Config ct t' (SIGMA s' h')).
+
+
+Lemma erasure_equal_imply_L_equivalence : forall ct v1 v2 s1 s2 h1 h2 v_r s_r h_r, 
+      value v1 -> value v2 ->
+      (Config ct v1 (SIGMA s1 h1)) =e=> (Config ct v_r (SIGMA s_r h_r)) ->
+      (Config ct v2 (SIGMA s2 h2)) =e=> (Config ct v_r (SIGMA s_r h_r)) ->
+      L_equivalence_config (Config ct v1 (SIGMA s1 h1)) (Config ct v2 (SIGMA s2 h2)).
+Proof.
+  intros  ct v1 v2 s1 s2 h1 h2 v_r s_r h_r. intro H_v1. intro H_v2. 
+  intro H_erasure1.   intro H_erasure2. 
+  remember  (Config ct v1 (SIGMA s1 h1) ) as v1_config. 
+  generalize dependent v2.      generalize dependent v1.
+  induction H_erasure1; intros; inversion Heqv1_config; subst; try (inversion H_v1); subst.
+      - unfold erasure_L_fun in H_erasure2. admit.
+      - unfold erasure_L_fun in H_erasure2. 
+
+      (*
+      -  (*inversion H_erasure2; subst; auto.
+        inversion H_v2. rewrite H1 in H11. admit. *) admit.
+    - subst. unfold erasure_L_fun in H_erasure2. inversion H_v2. subst. inversion H_erasure2; try (subst; 
+      unfold erasure_L_fun in H9; inversion H9). subst. inversion H3. subst. 
+      
+      try (subst; remember (current_label (SIGMA s1 h1))  as lb0; inversion H_erasure2; apply L_equivalence_config_H with lb0 lb0; auto;
+          apply L_equivalence_equal_store).
+    - inversion H_v2; subst;  inversion H_erasure2; 
+      try (subst; remember (current_label (SIGMA s1 h1))  as lb0; inversion H_erasure2; apply L_equivalence_config_H with lb0 lb0; auto;
+          apply L_equivalence_equal_store). apply L_equal_config.
+    - inversion H_v2; subst;  inversion H_erasure2; 
+      try (subst; remember (current_label (SIGMA s1 h1))  as lb0; inversion H_erasure2; apply L_equivalence_config_H with lb0 lb0; auto;
+          apply L_equivalence_equal_store). 
+    - inversion H_v2; subst;  inversion H_erasure2; 
+      try (subst; remember (current_label (SIGMA s1 h1))  as lb0; inversion H_erasure2; apply L_equivalence_config_H with lb0 lb0; auto;
+          apply L_equivalence_equal_store); try (apply L_equal_config).
+    - inversion H_v2; subst;  inversion H_erasure2; 
+      try (subst; remember (current_label (SIGMA s1 h1))  as lb0; inversion H_erasure2; apply L_equivalence_config_H with lb0 lb0; auto;
+          apply L_equivalence_equal_store); try (apply L_equal_config); try (apply L_equivalence_config_H with cur_lbl cur_lbl; auto;
+          apply L_equivalence_equal_store).
+    - inversion H_v2; subst;  inversion H_erasure2; 
+      try (subst; remember (current_label (SIGMA s1 h1))  as lb0; inversion H_erasure2; apply L_equivalence_config_H with lb0 lb0; auto;
+          apply L_equivalence_equal_store); try (apply L_equal_config); try (apply L_equivalence_config_H with cur_lbl cur_lbl; auto;
+          apply L_equivalence_equal_store). 
+      subst. assert (L_equivalence_config (Config ct v (SIGMA s1 h1))
+                 (Config ct v1 (SIGMA s1 h1))). apply IHH_erasure1 with v; auto.
+      inversion H. apply L_equal_config.
+      subst. remember (current_label (SIGMA s1 h1)) as cur_lb.
+      apply L_equivalence_config_L with cur_lb cur_lb; auto.
+      assert (flow_to lb L_Label = true \/ flow_to lb L_Label = false). 
+      apply excluded_middle_label.
+      destruct H2.       apply L_equivalence_tm_eq_v_l_L; auto.
+      apply L_equivalence_tm_eq_v_l_H; auto.
+    
+      apply L_equivalence_config_H with lb1 lb2; auto.
+
+    - inversion H_v2; subst;  inversion H_erasure2; 
+      try (subst; remember (current_label (SIGMA s1 h1))  as lb0; inversion H_erasure2; apply L_equivalence_config_H with lb0 lb0; auto;
+          apply L_equivalence_equal_store); try (apply L_equal_config); try (apply L_equivalence_config_H with cur_lbl cur_lbl; auto;
+          apply L_equivalence_equal_store).
+    - inversion H_v2; subst;  inversion H_erasure2.
+      subst. assert (L_equivalence_config (Config ct v (SIGMA s1 h1))
+                 (Config ct v1 (SIGMA s1 h1))). apply IHH_erasure1 with v; auto.
+      inversion H. apply L_equal_config.
+      subst. remember (current_label (SIGMA s1 h1)) as cur_lb.
+      apply L_equivalence_config_L with cur_lb cur_lb; auto.
+      assert (flow_to lb L_Label = true \/ flow_to lb L_Label = false). 
+      apply excluded_middle_label.
+      destruct H2.       apply L_equivalence_tm_eq_v_opa_l_L; auto.
+      apply L_equivalence_tm_eq_v_opa_l_H; auto.
+    
+      apply L_equivalence_config_H with lb1 lb2; auto.
+  -  inversion H_v2; subst;  inversion H_erasure2; 
+      try (subst; remember (current_label (SIGMA s1 h1))  as lb0; inversion H_erasure2; apply L_equivalence_config_H with lb0 lb0; auto;
+          apply L_equivalence_equal_store); try (apply L_equal_config); try (apply L_equivalence_config_H with cur_lbl cur_lbl; auto;
+          apply L_equivalence_equal_store).
+*)
+Admitted. 
+
+Lemma erasure_L_fun_preserve_value : forall v, 
+  value v ->
+  value (erasure_L_fun v).
+Proof. 
+  intros. induction v; try (inversion H); try ( unfold erasure_L_fun; auto; fail).
+  unfold erasure_L_fun. fold erasure_L_fun. case_eq (flow_to l0 L_Label).  intro. auto. auto. 
+  unfold erasure_L_fun. fold erasure_L_fun. case_eq (flow_to l0 L_Label).  intro. auto. auto. 
+Qed.  
+
+
+Lemma erasure_preserve_value : forall v v' sigma sigma' CT, 
+  Config CT v sigma =e=> Config CT v' sigma' -> value v ->
+  value v'.
+Proof. intros. inversion H. subst. apply erasure_L_fun_preserve_value. auto. 
+          subst. apply erasure_H_fun_preserve_value. auto.
+Qed.  
+
+
+Theorem Non_interference : forall ct t s s' h h' sf sf' lb x s0 s1 h1 s2 h2 v1 v2 final_v1 final_v2,
+      dot_free t = true -> valid_syntax t ->
+      field_wfe_heap ct h -> wfe_heap ct h -> wfe_stack ct h s->
+      field_wfe_heap ct h' -> wfe_heap ct h' -> wfe_stack ct h' s'->
+      s = cons (Labeled_frame lb sf) s0 ->
+      s' = cons (Labeled_frame lb sf') s0 ->
+      sf x = Some (v_l v1 H_Label) ->
+      sf' x = Some (v_l v2 H_Label) ->
+      L_equivalence_store s h s' h' ->
+      (Config ct t (SIGMA s h)) ==>* (Config ct final_v1 (SIGMA s1 h1)) -> 
+      (Config ct t (SIGMA s' h')) ==>* (Config ct final_v2 (SIGMA s2 h2)) ->
+      value final_v1-> value final_v2 -> 
+      forall T, has_type ct empty_context h t T -> has_type ct empty_context h' t T ->
+      L_equivalence_config (Config ct final_v1 (SIGMA s1 h1)) (Config ct final_v2 (SIGMA s2 h2)).
+
+Proof. 
+    intros ct t s s' h h' sf sf' lb x s0 s1 h1 s2 h2 v1 v2 final_v1 final_v2.
+    intro H_dot_free. intro H_valid_syntax.
+    intro H_wfe_field. intro H_wfe_heap. intro H_wfe_stack. 
+    intro H_wfe_field'. intro H_wfe_heap'. intro H_wfe_stack'. 
+    intro H_stack1. intro H_stack2. intro H_high_v1. intro H_high_v2.
+    intro H_equal_start.  intro H_execution1.  intro H_execution2. intro H_final_v1. intro H_final_v2.
+    intro T. intro H_typing_h. intro H_typing_h'. 
+    assert (exists t_r sigma_r, erasure (Config ct t (SIGMA s h)) (Config ct t_r sigma_r)).
+    apply erasue_target.
+    assert (exists t_r' sigma_r', erasure (Config ct t (SIGMA s' h')) (Config ct t_r' sigma_r')).
+    apply erasue_target.
+    destruct H as [t_r]. destruct H as [sigma_r]. 
+    destruct H0 as [t_r']. destruct H0 as [sigma_r'].
+    assert  ((Config ct t_r sigma_r) = (Config ct t_r' sigma_r')).
+    apply erasure_equal_input with t s h s' h'; auto.
+
+    assert (exists final_v1_r sigma1_r, erasure (Config ct final_v1 (SIGMA s1 h1)) (Config ct final_v1_r sigma1_r)).
+    apply erasue_target. destruct H2 as [final_v1_r]. destruct H2 as [sigma1_r].
+    assert ((Config ct t_r sigma_r) ==>L* (Config ct final_v1_r sigma1_r)).
+    apply multi_step_simulation_revised with t final_v1 (SIGMA s h) (SIGMA s1 h1) s h T; auto.
+
+    assert (exists final_v2_r sigma2_r, erasure (Config ct final_v2 (SIGMA s2 h2)) (Config ct final_v2_r sigma2_r)).
+    apply erasue_target. destruct H4 as [final_v2_r]. destruct H4 as [sigma2_r].
+    assert ((Config ct t_r' sigma_r') ==>L* (Config ct final_v2_r sigma2_r)).
+    apply multi_step_simulation_revised with t final_v2 (SIGMA s' h') (SIGMA s2 h2) s' h' T; auto.
+
+    rewrite H1 in H3.
+
+    assert (final_v1_r = final_v2_r /\ sigma1_r = sigma2_r). 
+    apply  L_reduction_multistep_determinacy with ct t_r' sigma_r'; auto. 
+    apply erasure_preserve_value with final_v1 (SIGMA s1 h1) sigma1_r ct; auto.
+
+    apply erasure_preserve_value with final_v2 (SIGMA s2 h2) sigma2_r ct; auto. 
+    induction sigma1_r.     induction sigma2_r.  inversion H1. subst. 
+    apply erasure_equal_imply_L_equivalence with final_v1_r s3 h0; auto. 
+    destruct H6. subst. inversion H7. auto.
+Qed.  
+
+
+
+
+
+
+(*-----------------------------------------------------------------------------------------------*)

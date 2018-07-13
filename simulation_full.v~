@@ -1,0 +1,100 @@
+Require Import Coq.Arith.Arith.
+Require Import Coq.Bool.Bool.
+Require Import Coq.Strings.String.
+Require Import Coq.Arith.EqNat.
+Require Import Coq.omega.Omega.
+Require Import Coq.Lists.List.
+
+Require Import Language.
+Require Import Lemmas.
+Require Import Low_eq.
+Require Import Label.
+
+Lemma simulation_L : forall ct t1 fs1 lb1 sf1 ctns1 h1  t2 fs2 lb2 sf2 ctns2 h2 
+      ctn1' ctns1' h1'  ctn2' ctns2' h2' φ T, 
+      valid_config (Config ct (Container t1 fs1 lb1 sf1) ctns1 h1 ) ->
+      valid_config (Config ct (Container t2 fs2 lb2 sf2) ctns2 h2 ) ->
+      config_has_type ct empty_context (Config ct (Container t1 fs1 lb1 sf1)  ctns1 h1) T ->
+      config_has_type ct empty_context (Config ct (Container t2 fs2 lb2 sf2)  ctns2 h2) T ->
+      flow_to lb1 L_Label = true ->
+      flow_to lb2 L_Label = true ->
+      L_equivalence_config (Config ct (Container t1 fs1 lb1 sf1) ctns1 h1 )
+            (Config ct (Container t2 fs2 lb2 sf2) ctns2 h2)  φ ->
+     Config ct (Container t1 fs1 lb1 sf1) ctns1 h1 
+      ==> Config ct ctn1' ctns1' h1' ->
+     Config ct (Container t2 fs2 lb2 sf2) ctns2 h2
+      ==> Config ct ctn2' ctns2' h2' ->
+     L_equivalence_heap h1 h2 φ ->
+      exists  φ', L_equivalence_heap h1' h2' φ' /\ L_equivalence_config (Config ct ctn1' ctns1' h1')
+                                      (Config ct ctn2' ctns2' h2')  φ'.
+Proof. Admitted.
+Hint Resolve  simulation_L.
+
+Lemma simulation_H2H_H : forall ct t1 fs1 lb1 sf1 ctns1 h1
+                              t2 fs2 lb2 sf2 ctns2 h2 
+                              t1' fs1' lb1' sf1' ctns1' h1' φ T, 
+      valid_config (Config ct (Container t1 fs1 lb1 sf1) ctns1 h1 ) ->
+      valid_config (Config ct (Container t2 fs2 lb2 sf2) ctns2 h2 ) ->
+      config_has_type ct empty_context (Config ct (Container t1 fs1 lb1 sf1)  ctns1 h1) T ->
+      config_has_type ct empty_context (Config ct (Container t2 fs2 lb2 sf2)  ctns2 h2) T ->
+      Config ct (Container t1 fs1 lb1 sf1) ctns1 h1
+             ==> Config ct (Container t1' fs1' lb1' sf1') ctns1' h1' ->
+      flow_to lb1 L_Label = false ->
+      flow_to lb2 L_Label = false ->
+      flow_to lb1' L_Label = false ->
+      L_equivalence_config (Config ct (Container t1 fs1 lb1 sf1) ctns1 h1 )
+            (Config ct (Container t2 fs2 lb2 sf2) ctns2 h2)  φ ->
+     L_equivalence_heap h1 h2 φ ->
+     L_equivalence_heap h1' h2 φ /\  L_equivalence_config (Config ct (Container t1' fs1' lb1' sf1') ctns1' h1')
+                          (Config ct (Container t2 fs2 lb2 sf2) ctns2 h2 )  φ.
+Proof with eauto. Admitted. 
+Hint Resolve simulation_H2H_H. 
+
+Lemma simulation_H_H2H : forall ct t1 fs1 lb1 sf1 ctns1 h1
+                              t2 fs2 lb2 sf2 ctns2 h2 
+                              t1' fs1' lb1' sf1' ctns1' h1'
+                              t2' fs2' lb2' sf2' ctns2' h2' φ T, 
+      valid_config (Config ct (Container t1 fs1 lb1 sf1) ctns1 h1 ) ->
+      valid_config (Config ct (Container t2 fs2 lb2 sf2) ctns2 h2 ) ->
+      config_has_type ct empty_context (Config ct (Container t1 fs1 lb1 sf1)  ctns1 h1) T ->
+      config_has_type ct empty_context (Config ct (Container t2 fs2 lb2 sf2)  ctns2 h2) T ->
+      Config ct (Container t1 fs1 lb1 sf1) ctns1 h1
+             ==> Config ct (Container t1' fs1' lb1' sf1') ctns1' h1' ->
+      Config ct (Container t2 fs2 lb2 sf2) ctns2 h2
+             ==> Config ct (Container t2' fs2' lb2' sf2') ctns2' h2' ->
+      flow_to lb1 L_Label = false ->
+      flow_to lb2 L_Label = false ->
+      flow_to lb1' L_Label = true ->
+      flow_to lb2' L_Label = false ->
+      L_equivalence_config (Config ct (Container t1 fs1 lb1 sf1) ctns1 h1 )
+                           (Config ct (Container t2 fs2 lb2 sf2) ctns2 h2)  φ ->
+     L_equivalence_heap h1 h2 φ ->
+     L_equivalence_heap h1 h2' φ /\ L_equivalence_config (Config ct (Container t1 fs1 lb1 sf1) ctns1 h1)
+                          (Config ct (Container t2' fs2' lb2' sf2') ctns2' h2' )  φ.
+Proof with eauto. Admitted. 
+Hint Resolve simulation_H_H2H. 
+
+
+Lemma simulation_H2L_H2L : forall ct t1 fs1 lb1 sf1 ctns1 h1
+                              t2 fs2 lb2 sf2 ctns2 h2 
+                              t1' fs1' lb1' sf1' ctns1' h1'
+                              t2' fs2' lb2' sf2' ctns2' h2' φ T, 
+      valid_config (Config ct (Container t1 fs1 lb1 sf1) ctns1 h1 ) ->
+      valid_config (Config ct (Container t2 fs2 lb2 sf2) ctns2 h2 ) ->
+      config_has_type ct empty_context (Config ct (Container t1 fs1 lb1 sf1)  ctns1 h1) T ->
+      config_has_type ct empty_context (Config ct (Container t2 fs2 lb2 sf2)  ctns2 h2) T ->
+      Config ct (Container t1 fs1 lb1 sf1) ctns1 h1
+             ==> Config ct (Container t1' fs1' lb1' sf1') ctns1' h1' ->
+      Config ct (Container t2 fs2 lb2 sf2) ctns2 h2
+             ==> Config ct (Container t2' fs2' lb2' sf2') ctns2' h2' ->
+      flow_to lb1 L_Label = false ->
+      flow_to lb2 L_Label = false ->
+      flow_to lb1' L_Label = true ->
+      flow_to lb2' L_Label = true ->
+      L_equivalence_config (Config ct (Container t1 fs1 lb1 sf1) ctns1 h1 )
+                           (Config ct (Container t2 fs2 lb2 sf2) ctns2 h2)  φ ->
+     L_equivalence_heap h1 h2 φ ->
+     L_equivalence_heap h1' h2' φ /\ L_equivalence_config (Config ct (Container t1' fs1' lb1' sf1') ctns1' h1')
+                          (Config ct (Container t2' fs2' lb2' sf2') ctns2' h2' )  φ.
+Proof with eauto. Admitted. 
+Hint Resolve simulation_H2L_H2L. 
