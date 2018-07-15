@@ -1,0 +1,275 @@
+DIGEST 9dce4eba3e58a7b6d48af0f060a3e5f5
+FLabel
+R15:18 Coq.Lists.List <> <> lib
+R36:53 Coq.Strings.String <> <> lib
+ind 68:76 <> principal
+constr 92:100 <> Principal
+R110:113 Coq.Init.Logic <> :type_scope:x_'->'_x not
+R114:122 Label <> principal ind
+R104:109 Coq.Strings.String <> string ind
+ind 185:189 <> Label
+constr 205:206 <> LB
+R210:210 Coq.Init.Logic <> :type_scope:x_'->'_x not
+R225:229 Coq.Init.Logic <> :type_scope:x_'->'_x not
+R230:234 Label <> Label ind
+R211:214 Coq.Init.Datatypes <> list ind
+R216:224 Label <> principal ind
+def 249:261 <> beq_principal
+R280:280 Label <> y var
+R278:278 Label <> x var
+R293:301 Label <> Principal constr
+R307:315 Label <> Principal constr
+R326:335 Coq.Strings.String <> string_dec def
+R358:362 Coq.Init.Datatypes <> false constr
+R348:351 Coq.Init.Datatypes <> true constr
+def 381:395 <> principals_find
+R402:410 Label <> principal ind
+R419:422 Coq.Init.Datatypes <> list ind
+R424:432 Label <> principal ind
+R446:447 Label <> pl var
+R460:462 Coq.Init.Datatypes <> nil constr
+R467:471 Coq.Init.Datatypes <> false constr
+R480:483 Coq.Init.Datatypes <> :list_scope:x_'::'_x not
+R492:504 Label <> beq_principal def
+R506:506 Label <> p var
+R526:540 Label <> principals_find def
+R542:542 Label <> p var
+R515:518 Coq.Init.Datatypes <> true constr
+def 566:579 <> principals_add
+R586:594 Label <> principal ind
+R603:606 Coq.Init.Datatypes <> list ind
+R608:616 Label <> principal ind
+R628:642 Label <> principals_find def
+R646:647 Label <> pl var
+R644:644 Label <> p var
+R670:671 Label <> pl var
+R655:658 Coq.Init.Datatypes <> cons constr
+R662:663 Label <> pl var
+R660:660 Label <> p var
+def 684:700 <> principals_remove
+R707:715 Label <> principal ind
+R724:727 Coq.Init.Datatypes <> list ind
+R729:737 Label <> principal ind
+R752:753 Label <> pl var
+R766:768 Coq.Init.Datatypes <> nil constr
+R773:775 Coq.Init.Datatypes <> nil constr
+R784:787 Coq.Init.Datatypes <> :list_scope:x_'::'_x not
+R796:808 Label <> beq_principal def
+R810:810 Label <> p var
+R858:862 Coq.Init.Datatypes <> :list_scope:x_'::'_x not
+R884:884 Coq.Init.Datatypes <> :list_scope:x_'::'_x not
+R863:879 Label <> principals_remove def
+R881:881 Label <> p var
+R820:836 Label <> principals_remove def
+R838:838 Label <> p var
+def 903:918 <> principals_inter
+R927:930 Coq.Init.Datatypes <> list ind
+R932:940 Label <> principal ind
+R950:953 Coq.Init.Datatypes <> list ind
+R955:963 Label <> principal ind
+R977:979 Label <> pl1 var
+R993:995 Coq.Init.Datatypes <> nil constr
+R1000:1002 Coq.Init.Datatypes <> nil constr
+R1011:1014 Coq.Init.Datatypes <> :list_scope:x_'::'_x not
+R1024:1038 Label <> principals_find def
+R1042:1044 Label <> pl2 var
+R1107:1122 Label <> principals_inter def
+R1126:1128 Label <> pl2 var
+R1054:1058 Coq.Init.Datatypes <> :list_scope:x_'::'_x not
+R1081:1081 Coq.Init.Datatypes <> :list_scope:x_'::'_x not
+R1059:1074 Label <> principals_inter def
+R1078:1080 Label <> pl2 var
+def 1148:1163 <> principals_union
+R1172:1175 Coq.Init.Datatypes <> list ind
+R1177:1185 Label <> principal ind
+R1195:1198 Coq.Init.Datatypes <> list ind
+R1200:1208 Label <> principal ind
+R1222:1224 Label <> pl1 var
+R1238:1240 Coq.Init.Datatypes <> nil constr
+R1245:1247 Label <> pl2 var
+R1256:1259 Coq.Init.Datatypes <> :list_scope:x_'::'_x not
+R1265:1278 Label <> principals_add def
+R1283:1298 Label <> principals_union def
+R1302:1304 Label <> pl2 var
+def 1326:1335 <> join_label
+R1343:1347 Label <> Label ind
+R1357:1361 Label <> Label ind
+R1376:1378 Label <> lb1 var
+R1393:1394 Label <> LB constr
+R1408:1410 Label <> lb2 var
+R1437:1438 Label <> LB constr
+R1446:1447 Label <> LB constr
+R1450:1465 Label <> principals_inter def
+def 1515:1524 <> meet_label
+R1532:1536 Label <> Label ind
+R1546:1550 Label <> Label ind
+R1565:1567 Label <> lb1 var
+R1582:1583 Label <> LB constr
+R1597:1599 Label <> lb2 var
+R1626:1627 Label <> LB constr
+R1635:1650 Label <> principals_union def
+def 1698:1703 <> subset
+R1711:1714 Coq.Init.Datatypes <> list ind
+R1716:1724 Label <> principal ind
+R1733:1736 Coq.Init.Datatypes <> list ind
+R1738:1746 Label <> principal ind
+R1763:1764 Label <> p1 var
+R1781:1783 Coq.Init.Datatypes <> nil constr
+R1788:1791 Coq.Init.Datatypes <> true constr
+R1804:1807 Coq.Init.Datatypes <> :list_scope:x_'::'_x not
+R1817:1831 Label <> principals_find def
+R1835:1836 Label <> p2 var
+R1863:1867 Coq.Init.Datatypes <> false constr
+R1845:1850 Label <> subset def
+R1854:1855 Label <> p2 var
+def 1893:1899 <> flow_to
+R1908:1912 Label <> Label ind
+R1923:1927 Label <> Label ind
+R1941:1943 Label <> lb1 var
+R1957:1958 Label <> LB constr
+R1973:1975 Label <> lb2 var
+R2011:2012 Label <> LB constr
+R2020:2025 Label <> subset def
+def 2074:2081 <> label_eq
+R2090:2094 Label <> Label ind
+R2104:2108 Label <> Label ind
+R2119:2125 Label <> flow_to def
+R2131:2133 Label <> lb2 var
+R2127:2129 Label <> lb1 var
+R2161:2165 Coq.Init.Datatypes <> false constr
+R2140:2146 Label <> flow_to def
+R2152:2154 Label <> lb1 var
+R2148:2150 Label <> lb2 var
+def 2210:2216 <> L_Label
+R2221:2222 Label <> LB constr
+R2224:2226 Coq.Init.Datatypes <> nil constr
+def 2268:2274 <> H_Label
+R2279:2280 Label <> LB constr
+R2283:2286 Coq.Init.Datatypes <> cons constr
+R2307:2309 Coq.Init.Datatypes <> nil constr
+R2289:2297 Label <> Principal constr
+ax 2321:2335 <> flow_join_label
+R2388:2393 Coq.Init.Logic <> :type_scope:x_'->'_x not
+R2423:2428 Coq.Init.Logic <> :type_scope:x_'->'_x not
+R2442:2444 Coq.Init.Logic <> :type_scope:x_'='_x not
+R2429:2435 Label <> flow_to def
+R2441:2441 Label <> L var
+R2437:2439 Label <> lb' var
+R2445:2449 Coq.Init.Datatypes <> false constr
+R2397:2399 Coq.Init.Logic <> :type_scope:x_'='_x not
+R2394:2396 Label <> lb' var
+R2400:2409 Label <> join_label def
+R2421:2422 Label <> lb var
+R2411:2419 Label <> joined_lb var
+R2380:2382 Coq.Init.Logic <> :type_scope:x_'='_x not
+R2368:2374 Label <> flow_to def
+R2379:2379 Label <> L var
+R2376:2377 Label <> lb var
+R2383:2387 Coq.Init.Datatypes <> false constr
+ax 2459:2473 <> flow_transitive
+R2521:2526 Coq.Init.Logic <> :type_scope:x_'->'_x not
+R2548:2553 Coq.Init.Logic <> :type_scope:x_'->'_x not
+R2572:2574 Coq.Init.Logic <> :type_scope:x_'='_x not
+R2554:2560 Label <> flow_to def
+R2565:2571 Label <> L_Label def
+R2562:2563 Label <> lb var
+R2575:2579 Coq.Init.Datatypes <> false constr
+R2541:2543 Coq.Init.Logic <> :type_scope:x_'='_x not
+R2527:2533 Label <> flow_to def
+R2539:2540 Label <> lb var
+R2535:2537 Label <> lb' var
+R2544:2547 Coq.Init.Datatypes <> true constr
+R2513:2515 Coq.Init.Logic <> :type_scope:x_'='_x not
+R2494:2500 Label <> flow_to def
+R2506:2512 Label <> L_Label def
+R2502:2504 Label <> lb' var
+R2516:2520 Coq.Init.Datatypes <> false constr
+ax 2590:2603 <> flow_no_H_to_L
+R2649:2654 Coq.Init.Logic <> :type_scope:x_'->'_x not
+R2682:2687 Coq.Init.Logic <> :type_scope:x_'->'_x not
+R2702:2704 Coq.Init.Logic <> :type_scope:x_'='_x not
+R2688:2694 Label <> flow_to def
+R2699:2701 Label <> lb' var
+R2696:2697 Label <> lb var
+R2705:2709 Coq.Init.Datatypes <> false constr
+R2674:2676 Coq.Init.Logic <> :type_scope:x_'='_x not
+R2655:2661 Label <> flow_to def
+R2667:2673 Label <> L_Label def
+R2663:2665 Label <> lb' var
+R2677:2681 Coq.Init.Datatypes <> false constr
+R2642:2644 Coq.Init.Logic <> :type_scope:x_'='_x not
+R2624:2630 Label <> flow_to def
+R2635:2641 Label <> L_Label def
+R2632:2633 Label <> lb var
+R2645:2648 Coq.Init.Datatypes <> true constr
+ax 2720:2741 <> join_label_commutative
+R2780:2782 Coq.Init.Logic <> :type_scope:x_'='_x not
+R2764:2773 Label <> join_label def
+R2778:2779 Label <> l2 var
+R2775:2776 Label <> l1 var
+R2783:2792 Label <> join_label def
+R2797:2798 Label <> l1 var
+R2794:2795 Label <> l2 var
+ax 2810:2830 <> H_Label_not_flow_to_L
+R2875:2878 Coq.Init.Logic <> :type_scope:x_'->'_x not
+R2881:2883 Coq.Init.Logic <> :type_scope:x_'='_x not
+R2879:2880 Label <> lb var
+R2884:2890 Label <> H_Label def
+R2867:2869 Coq.Init.Logic <> :type_scope:x_'='_x not
+R2849:2855 Label <> flow_to def
+R2860:2866 Label <> L_Label def
+R2857:2858 Label <> lb var
+R2870:2874 Coq.Init.Datatypes <> false constr
+ax 2901:2917 <> L_Label_flow_to_L
+R2961:2964 Coq.Init.Logic <> :type_scope:x_'->'_x not
+R2967:2969 Coq.Init.Logic <> :type_scope:x_'='_x not
+R2965:2966 Label <> lb var
+R2970:2976 Label <> L_Label def
+R2954:2956 Coq.Init.Logic <> :type_scope:x_'='_x not
+R2936:2942 Label <> flow_to def
+R2947:2953 Label <> L_Label def
+R2944:2945 Label <> lb var
+R2957:2960 Coq.Init.Datatypes <> true constr
+ax 2987:3008 <> join_L_label_flow_to_L
+R3057:3062 Coq.Init.Logic <> :type_scope:x_'->'_x not
+R3089:3094 Coq.Init.Logic <> :type_scope:x_'->'_x not
+R3131:3133 Coq.Init.Logic <> :type_scope:x_'='_x not
+R3095:3101 Label <> flow_to def
+R3124:3130 Label <> L_Label def
+R3104:3113 Label <> join_label def
+R3119:3121 Label <> lb2 var
+R3115:3117 Label <> lb1 var
+R3134:3137 Coq.Init.Datatypes <> true constr
+R3082:3084 Coq.Init.Logic <> :type_scope:x_'='_x not
+R3063:3069 Label <> flow_to def
+R3075:3081 Label <> L_Label def
+R3071:3073 Label <> lb2 var
+R3085:3088 Coq.Init.Datatypes <> true constr
+R3050:3052 Coq.Init.Logic <> :type_scope:x_'='_x not
+R3031:3037 Label <> flow_to def
+R3043:3049 Label <> L_Label def
+R3039:3041 Label <> lb1 var
+R3053:3056 Coq.Init.Datatypes <> true constr
+ax 3147:3169 <> join_L_Label_irrelevant
+R3188:3188 Coq.Init.Logic <> :type_scope:x_'='_x not
+R3210:3213 Coq.Init.Logic <> :type_scope:x_'='_x not
+R3189:3198 Label <> join_label def
+R3203:3209 Label <> L_Label def
+R3200:3201 Label <> lb var
+R3214:3215 Label <> lb var
+ax 3227:3246 <> exclude_middle_label
+R3262:3266 Label <> Label ind
+R3274:3278 Label <> Label ind
+R3295:3298 Coq.Init.Logic <> :type_scope:x_'\/'_x not
+R3289:3291 Coq.Init.Logic <> :type_scope:x_'='_x not
+R3286:3288 Label <> lb1 var
+R3292:3294 Label <> lb2 var
+R3302:3305 Coq.Init.Logic <> :type_scope:x_'<>'_x not
+R3299:3301 Label <> lb1 var
+R3306:3308 Label <> lb2 var
+R3320:3326 Label <> flow_to def
+R3336:3342 Label <> L_Label def
+R3328:3334 Label <> H_Label def
+R3353:3359 Label <> flow_to def
+R3369:3375 Label <> H_Label def
+R3361:3367 Label <> H_Label def
