@@ -44,4 +44,6 @@ sp_e :=  Object_identifer    (* pointers to objects *)
 The details of the language are in the file [language.v](updated/language.v).
 
 ## Semantics
-Stack frames and heap are abstractly modeled. Stack frames are 
+
+A function `id -> option tm` is used to abstractly model stack frames. The heap is simply modeled as a list of heap objects (* garbage collections not modeled*). Heap objects are indexed using their object identifers. Contents of a heap objects are modeled as `CLASS -> FieldMap -> Label -> heapObj`.
+
