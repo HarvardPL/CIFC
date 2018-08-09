@@ -1,3 +1,5 @@
+## CIFC
+
 Coq formalization of a Java-like language, including
 
 1. semantics of the language
@@ -6,7 +8,7 @@ Coq formalization of a Java-like language, including
 
 timing-sensitive noninterference (TINI) for a Java-like language. Currently compiles with version 8.7.2. 
 
-## Language
+### Language
 The language is the imperative core of a Java-like language, extended with security label related expressions. This language doesn't distinginsh expression and statement, instead, it uses expressions to uniformally describe all terms. 
 
 ```
@@ -43,7 +45,7 @@ sp_e :=  Object_identifer    (* pointers to objects *)
 
 The details of the language are in the file [language.v](updated/language.v).
 
-## Semantics
+### Semantics
 
 A function `id -> option tm` is used to abstractly model stack frames. The heap is simply modeled as a list of heap objects (* garbage collections not modeled*). Heap objects are indexed using their object identifers. Contents of a heap objects are modeled as `CLASS -> FieldMap -> Label -> heapObj`.
 
