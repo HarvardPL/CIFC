@@ -1,4 +1,4 @@
-## CIFC
+## Coarse-grained Information Flow Control for Java
 
 Coq formalization of a Java-like language, including
 
@@ -47,5 +47,54 @@ The details of the language are in the file [language.v](updated/language.v).
 
 ### Semantics
 
-Object addresses are modeled as object identifers, `id`. A function `id -> option tm` is used to abstractly model stack frames. The heap is simply modeled as a list of heap objects (* garbage collections not modeled *). Heap objects are indexed using their object identifers. Contents of a heap objects are modeled as `CLASS -> FieldMap -> Label -> heapObj`.
+#### Important types
 
+Runtime environment of valid programs comprises several essential pieces of information. We model the information using the following types:
+
+- **Method Definition**: A method definition is composed of class name, method identifier, class for the parameters, parameter identifiers, and the body of the method: `cn -> id -> cn -> id -> tm -> method_def`. 
+- **Class Definition**: A class definition is composed of class name, a list of fields, and a list of method definitions: `cn -> (list field) -> (list method_def) -> CLASS`.
+- **Object Identifier**: Object addresses are modeled using a special type: object identifers `nat -> oid`. 
+- **Stack Frame**: Stack frames are abstractly modeled as a function `id -> option tm`. It maps variable identifiers to their values. 
+- **Heap**: 
+
+
+Evaluating a valid program requires some essential pieces of information. These pieces are  of a valid program 
+
+
+
+The heap is simply modeled as a list of heap objects (* garbage collections not modeled *). Contents of a heap objects are modeled as `CLASS -> FieldMap -> Label -> heapObj`.
+
+A program is valid only if it has  
+We defined several structures to store information. 
+
+- class table maps from class names to their definitions: `cn -> option CLASS`. 
+- 
+
+implemented several lookup functions to retrieve contents from various places.
+
+- 
+Several lookup functions are created to retrieve contents from stack frames and heaps. 
+
+#### Reduction
+
+The reduction semantics of the language are documented using the small-step reduction semantics. The reduction is defined as an inductive relation: `config -> config -> Prop`. We 
+
+### Well-formedness
+
+#### Well-formedness of stack frames
+
+#### Well-formedness of heap
+
+- property 1
+- property 1
+
+### Low-equivalence
+
+
+### Type system
+
+#### Progress
+
+#### Preservation
+
+### Non-interference
