@@ -107,7 +107,25 @@ In addition to the two kinds of configurations above, an execution can run into 
 
 #### Reduction
 
-A small-step semantics is used for the reduction. The reduction is defined as an inductive relation: `config -> config -> Prop`. Evaluation context
+A small-step semantics is used for the reduction. The reduction is defined as an inductive relation: `config -> config -> Prop`. Details about the reduction semantics can be found the file [language.v](updated/language.v).
+
+We define a function `hole_free` to separate closed terms and open terms. Closed terms are free of hole, and open terms are not. 
+
+A method call leads to creation of a new execution container, and a `return hole` in the caller container. The rule below shows the formalization of a method call:
+```
+  (* normal method call *)
+  | ST_MethodCall_normal : forall o h cls fields v lx sf  arg_id cls_a body meth returnT ct fs ctns lb sf',
+      Some (Heap_OBJ cls fields lx) = lookup_heap_obj h o -> 
+      Some (m_def returnT meth cls_a arg_id body) = find_method cls meth -> 
+      value v ->
+      flow_to lx lb = true  ->
+      sf' = sf_update empty_stack_frame arg_id v ->
+    Config ct (Container (MethodCall (ObjId o) meth v) fs lb sf ) ctns h 
+      ==> Config ct (Container body nil lb sf' ) ((Container (return_hole) fs lb sf ) :: ctns) h
+      
+```
+
+
 
 ### Coarse-grained control
 
