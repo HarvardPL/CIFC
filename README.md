@@ -45,25 +45,39 @@ sp_e :=  Object_identifer    (* pointers to objects *)
 
 The details of the language are in the file [language.v](updated/language.v).
 
-### Coarse-grained information flow control
-
-Compared with many fine-grained information mechianisms, our mechanism enforces information flow policies in a coarser granularity. We argue that our coarse-grained mechianism requires less effort from the users, and still is able to establish confidentiality in the target programs. Our mechanism also 
+### Operational Semantics
 
 #### Execution container
 
+In Java-like languages, the stack frame plays an important role for program execution. Stack frames change as a program executes. An execution starts with the main method call. Inside the body of the main method, more method calls can be made. Whenever a method call is made, a new stack frame is created. The created stack frame contains mapping from variables relevant to the call to their values. Executing the method call will modify contents of the mapping, and probably contents of the heap. 
+
+In this language, we use an abstract concept, *execution container*, to model the status of program execution. Every container records information that corresponds to the execution status of a method call and its stack frame. In our formalization, a container consists:
+
+- **Current term** :
 
 
 
-In many information flow control mechanisms, information flow labels can be associated with variables, function signatures, and other program elements. Such mechanisms provide user with a fine-grained manipulation over annotating program elements. However, fine-grained control often leads to  
-The concept of *execution container* is a key component of our language. 
+
+#### Configuration
+
+We define the operational semantics in terms of transitions between configurations. Within such semantics, transition rules are defined by case analysis rather than by induction. Such semantics could simplified 
 
 
-### Configuration
+As the reader will see this style of
+semantics has the advantage that the transition rules are dened by case analysis rather than
+by induction, which simplies some proofs.
+A conguration is a four-tuple, containing the following information:
+1. Heap: A nite partial function that maps oids to heap objects, where a heap object is
+a pair of a class name and a eld function. A eld function is a partial nite map from
+eld names to values.
+2. Variable Stack: This essentially maps variable names to oids. To handle static blockstructured
+scoping it is implemented as a list of lists of partial functions from variables to
+values. (This is explained in more detail later.) We use  to denote stack concatenation.
+3. Term: The closed frame to be evaluated.
+4. Frame stack: This is essentially the program context in which the term is currently
+being evaluated.
 
-We model the configuration of a program 
 
-
-### Semantics
 
 #### Important types
 
@@ -82,6 +96,27 @@ We implemented two functions to retrieve information:
 
 - **Lookup a heap object**: The function is used to lookup heap objects using their object identifiers: 'lookup_heap_obj (h : heap) (o : oid) : option heapObj'. 
 - **Lookup a method body**: The function is used to lookup method definitions inside a class definition, using method identifiers: 'Definition find_method (cls : CLASS) (m : id)'. 
+
+
+### Coarse-grained control
+
+Compared with many fine-grained information mechianisms, our mechanism enforces information flow policies in a coarser granularity. Coarse-grained mechianism requires less effort from the users, and is still able to establish confidentiality in the target programs. Our mechanism enforces policies at the granulariy of *execution container*. Every execution container is responsible for running some computations. Information flow policies are enforced at the boundaries between containers. 
+
+
+
+
+
+In our mechanism, the concept of containers corresponds to stack frames. 
+
+In our design, every container is labeled with a single label. This label protects everything inside the container. The label of a container floats up if the container reads information that is more confidential than the current label. 
+
+
+### Configuration
+
+We model the configuration of a program 
+
+
+
 
 
 #### Reduction
