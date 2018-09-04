@@ -113,19 +113,39 @@ We define a function `hole_free` to separate closed terms and open terms. Closed
 
 A method call leads to creation of a new execution container, and a `return hole` in the caller container. The rule below shows the formalization of a method call:
 ```
-  (* normal method call *)
-  | ST_MethodCall_normal : forall o h cls fields v lx sf  arg_id cls_a body meth returnT ct fs ctns lb sf',
-      Some (Heap_OBJ cls fields lx) = lookup_heap_obj h o -> 
-      Some (m_def returnT meth cls_a arg_id body) = find_method cls meth -> 
-      value v ->
-      flow_to lx lb = true  ->
-      sf' = sf_update empty_stack_frame arg_id v ->
-    Config ct (Container (MethodCall (ObjId o) meth v) fs lb sf ) ctns h 
+(* normal method call *)
+| ST_MethodCall_normal : forall o h cls fields v lx sf arg_id cls_a body meth returnT ct fs ctns lb sf',
+   Some (Heap_OBJ cls fields lx) = lookup_heap_obj h o -> 
+   Some (m_def returnT meth cls_a arg_id body) = find_method cls meth -> 
+   value v ->
+   flow_to lx lb = true  ->
+   sf' = sf_update empty_stack_frame arg_id v ->
+   Config ct (Container (MethodCall (ObjId o) meth v) fs lb sf ) ctns h 
       ==> Config ct (Container body nil lb sf' ) ((Container (return_hole) fs lb sf ) :: ctns) h
       
 ```
 
 
+### Well-formed configuration
+
+To prove soundness of the semantics, we need to define well-formedness of configurations. Since a configuration is of the form (CT; ctn; ctx; H), well-formedness breaks into several properties:
+
+- **Well-formedness of a heap**: This is written as CT |- H ok. It ensures that 
+      - objects in the heap are correctly addressed, and all class names mentioned in the heap are in the class table. 
+      - all fields in every object are valid: the value of a field is either a valid object identifier or null. 
+      
+
+- **Well-formedness of a container**: Written as CT, H |- ctn ok
+- **Well-formedness of context containers**:
+
+
+
+
+
+#### Well-formedness of a container
+
+#### Well-formedness of a heap
+
 
 ### Coarse-grained control
 
@@ -140,23 +160,9 @@ In our mechanism, the concept of containers corresponds to stack frames.
 In our design, every container is labeled with a single label. This label protects everything inside the container. The label of a container floats up if the container reads information that is more confidential than the current label. 
 
 
-### Configuration
-
-We model the configuration of a program 
 
 
 
-
-
-
-### Well-formedness
-
-#### Well-formedness of stack frames
-
-#### Well-formedness of heap
-
-- property 1
-- property 1
 
 ### Low-equivalence
 
