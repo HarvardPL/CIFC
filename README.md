@@ -49,12 +49,16 @@ The details of the language are in the file [language.v](updated/language.v).
 
 #### Execution container
 
-In Java-like languages, the stack frame plays an important role for program execution. Stack frames change as a program executes. An execution starts with the main method call. Inside the body of the main method, more method calls can be made. Whenever a method call is made, a new stack frame is created. The created stack frame contains mapping from variables relevant to the call to their values. Executing the method call will modify contents of the mapping, and probably contents of the heap. 
+In Java-like languages, the stack frame plays an important role for program execution. Stack frames change as the program executes. An execution starts with the main method call. Inside the body of the main method, more method calls can be made. Whenever a method call is made, a new stack frame is created. The created stack frame contains mapping from variables relevant to the call to their values. Executing the method call will modify contents of the mapping, and probably contents of the heap. 
 
 In this language, we use an abstract concept, *execution container*, to model the status of program execution. Every container records information that corresponds to the execution status of a method call and its stack frame. In our formalization, a container consists:
 
-- **Current term** :
+- **The term being evaluated** : This is the term that is being evaluated. 
+- **Frame stack** : This is the program context in which the term is currently being evaluated. Specifically, it comprises the terms that left to be evaluated in this container. 
+- **Label** : This is the security label of this container. More details will be explained later. 
+- **Variable state** : This variable state maps variables to their values.
 
+Our coq file defines the container as a type: `tm -> frame_stack -> Label -> stack_frame -> container`. 
 
 
 
