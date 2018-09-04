@@ -69,7 +69,7 @@ Runtime environment of valid programs comprises several essential pieces of info
 - **Class Table**: A class table maps class names to their definitions: `cn -> option CLASS`. 
 - **Object Identifier**: Object addresses are modeled as a special type: object identifers `nat -> oid`. 
 - **Stack Frame**: Stack frames are abstractly modeled as a function `id -> option tm`. It maps variable identifiers to their values. 
-- **Heap**: The heap is simply modeled as a list of entries of heap objects. Every heap entry comprises an object identifier that represents the address and a heap object. A heap object comprises the class definition of the object,  as `CLASS -> FieldMap -> Label -> heapObj`.
+- **Heap**: The heap is simply modeled as a list of entries of heap objects. Every heap entry comprises an object identifier that represents the address and a heap object. A heap object comprises the class definition of the object, a field function, and a security label. A field function is a partial finite map from field names to values. A security label describes the security level of the object. Heap objects are formalized as `CLASS -> FieldMap -> Label -> heapObj`.
 
 #### Lookup functions
 
@@ -82,17 +82,32 @@ We also define two functions to retrieve information:
 
 We define the operational semantics in terms of transitions between configurations. Within such semantics, transition rules are defined by case analysis rather than by induction. Such semantics could simplified some proofs. 
 
-A configuration is a four-tuple, containting the following information: 
+In our formalization, a configuration can be a normal one, in error state, or in terminal state. 
+```
+Inductive config := 
+  | Config : Class_table ->container -> list container -> heap -> config
+  | Error_state : config
+  | Terminal : config. 
+```
+
+A normal configuration is a four-tuple, containting the following information: 
 
 1. **Class table**: The class table stores information of all class definitions needed. 
 2. **Current container**: The container that is being executed. 
 3. **Program context**: A list of containers that present the execution context. 
 4. **Heap**: A list of heap objects. 
 
-The coq definition of configuration is : `Class_table ->container -> list container -> heap -> config`.
+Such a tuple can be written as (CT; ctn; ctx; H).
+
+A number of expressions could lead to an error state. These are errors that are allowed at run-time as they are dynamically checked for by the Java Virtual Machine. Java's type system cannot catch these errors statically. In this formalization, we mainly concern two errors: Null-pointer exception and information flow leak. Occurances of such errors lead an execution to the error state. Some reduction rules describe such transition.  
+
+In addition to the two kinds of configurations above, an execution can run into terminal state if it is of the form 
+(CT; (v; []; lb; vs); []; H). In such form, the current container has no more frames to run; the program context is empty as well. Therefore, the execution has no more terms left to be executed. 
 
 
+#### Reduction
 
+A small-step semantics is used for the reduction. The reduction is defined as an inductive relation: `config -> config -> Prop`. Evaluation context
 
 ### Coarse-grained control
 
@@ -115,9 +130,6 @@ We model the configuration of a program
 
 
 
-#### Reduction
-
-A small-step semantics is used for the reduction. The reduction is defined as an inductive relation: `config -> config -> Prop`. Evaluation context
 
 ### Well-formedness
 
