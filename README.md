@@ -130,9 +130,9 @@ A method call leads to creation of a new execution container, and a `return hole
 
 To prove soundness of the semantics, we need to define well-formedness of configurations. Since a configuration is of the form (CT; ctn; ctx; H), well-formedness breaks into several properties:
 
-- **Well-formedness of a heap**: This is written as CT |- H ok. It ensures that 
-      - objects in the heap are correctly addressed, and all class names mentioned in the heap are in the class table. 
-      - all fields in every object are valid: the value of a field is either a valid object identifier or null. 
+- Well-formedness of a heap: This is written as CT |- H ok. It ensures that 
+  - objects in the heap are correctly addressed, and all class names mentioned in the heap are in the class table. 
+  - all fields in every object are valid: the value of a field is either a valid object identifier or null. 
       
 
 - **Well-formedness of a container**: Written as CT, H |- ctn ok
