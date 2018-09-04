@@ -58,7 +58,7 @@ In this language, we use an abstract concept, *execution container*, to model th
 - **Label** : This is the security label of this container. More details will be explained later. 
 - **Variable state** : This variable state maps variables to their values.
 
-Our coq file defines the container as a type: `tm -> frame_stack -> Label -> stack_frame -> container`. 
+Our coq file defines the container as a type: `tm -> frame_stack -> Label -> stack_frame -> container`. In this document, we use the form of `(t; fs; lb; )`
 
 #### Important types
 
@@ -68,7 +68,7 @@ Runtime environment of valid programs comprises several essential pieces of info
 - **Class Definition**: A class definition is composed of a class name, a list of fields, and a list of method definitions: `cn -> (list field) -> (list method_def) -> CLASS`.
 - **Class Table**: A class table maps class names to their definitions: `cn -> option CLASS`. 
 - **Object Identifier**: Object addresses are modeled as a special type: object identifers `nat -> oid`. 
-- **Stack Frame**: Stack frames are abstractly modeled as a function `id -> option tm`. It maps variable identifiers to their values. 
+- **Stack Frame / Variable state**: Stack frames are abstractly modeled as a function `id -> option tm`. It maps variable identifiers to their values. 
 - **Heap**: The heap is simply modeled as a list of entries of heap objects. Every heap entry comprises an object identifier that represents the address and a heap object. A heap object comprises the class definition of the object, a field function, and a security label. A field function is a partial finite map from field names to values. A security label describes the security level of the object. Heap objects are formalized as `CLASS -> FieldMap -> Label -> heapObj`.
 
 #### Lookup functions
@@ -97,12 +97,12 @@ A normal configuration is a four-tuple, containting the following information:
 3. **Program context**: A list of containers that present the execution context. 
 4. **Heap**: A list of heap objects. 
 
-Such a tuple can be written as (CT; ctn; ctx; H).
+Such a tuple can be written as `(CT; ctn; ctx; H)`.
 
 A number of expressions could lead to an error state. These are errors that are allowed at run-time as they are dynamically checked for by the Java Virtual Machine. Java's type system cannot catch these errors statically. In this formalization, we mainly concern two errors: Null-pointer exception and information flow leak. Occurances of such errors lead an execution to the error state. Some reduction rules describe such transition.  
 
 In addition to the two kinds of configurations above, an execution can run into terminal state if it is of the form 
-(CT; (v; []; lb; vs); []; H). In such form, the current container has no more frames to run; the program context is empty as well. Therefore, the execution has no more terms left to be executed. 
+`(CT; (v; []; lb; vs); []; H)`. In such form, the current container has no more frames to run; the program context is empty as well. Therefore, the execution has no more terms left to be executed. 
 
 
 #### Reduction
@@ -128,14 +128,13 @@ A method call leads to creation of a new execution container, and a `return hole
 
 ### Well-formed configuration
 
-To prove soundness of the semantics, we need to define well-formedness of configurations. Since a configuration is of the form (CT; ctn; ctx; H), well-formedness breaks into several properties:
+To prove soundness of the semantics, we need to define well-formedness of configurations. Since a configuration is of the form `(CT; ctn; ctx; H)`, well-formedness breaks into several properties:
 
-- Well-formedness of a heap: This is written as CT |- H ok. It ensures that 
+- Well-formedness of a heap: This is written as `CT |- H ok`. It ensures that 
   - objects in the heap are correctly addressed, and all class names mentioned in the heap are in the class table. 
   - all fields in every object are valid: the value of a field is either a valid object identifier or null. 
-      
 
-- **Well-formedness of a container**: Written as CT, H |- ctn ok
+- Well-formedness of a container: This is written as `CT, H |- ctn ok`. It ensures that for a container 
 - **Well-formedness of context containers**:
 
 
