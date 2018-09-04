@@ -71,40 +71,27 @@ Runtime environment of valid programs comprises several essential pieces of info
 - **Stack Frame**: Stack frames are abstractly modeled as a function `id -> option tm`. It maps variable identifiers to their values. 
 - **Heap**: The heap is simply modeled as a list of entries of heap objects. Every heap entry comprises an object identifier that represents the address and a heap object. A heap object comprises the class definition of the object,  as `CLASS -> FieldMap -> Label -> heapObj`.
 
+#### Lookup functions
+
+We also define two functions to retrieve information:
+
+- **Lookup a heap object**: The function is used to lookup heap objects using their object identifiers: 'lookup_heap_obj (h : heap) (o : oid) : option heapObj'. 
+- **Lookup a method body**: The function is used to lookup method definitions inside a class definition, using method identifiers: 'Definition find_method (cls : CLASS) (m : id)'. 
+
 #### Configuration
 
 We define the operational semantics in terms of transitions between configurations. Within such semantics, transition rules are defined by case analysis rather than by induction. Such semantics could simplified some proofs. 
 
 A configuration is a four-tuple, containting the following information: 
 
-1. Heap: A finite 
+1. **Class table**: The class table stores information of all class definitions needed. 
+2. **Current container**: The container that is being executed. 
+3. **Program context**: A list of containers that present the execution context. 
+4. **Heap**: A list of heap objects. 
 
 The coq definition of configuration is : `Class_table ->container -> list container -> heap -> config`.
 
-As the reader will see this style of
-semantics has the advantage that the transition rules are dened by case analysis rather than
-by induction, which simplies some proofs.
-A conguration is a four-tuple, containing the following information:
-1. Heap: A nite partial function that maps oids to heap objects, where a heap object is
-a pair of a class name and a eld function. A eld function is a partial nite map from
-eld names to values.
-2. Variable Stack: This essentially maps variable names to oids. To handle static blockstructured
-scoping it is implemented as a list of lists of partial functions from variables to
-values. (This is explained in more detail later.) We use  to denote stack concatenation.
-3. Term: The closed frame to be evaluated.
-4. Frame stack: This is essentially the program context in which the term is currently
-being evaluated.
 
-
-
-
-
-#### Lookup functions
-
-We implemented two functions to retrieve information:
-
-- **Lookup a heap object**: The function is used to lookup heap objects using their object identifiers: 'lookup_heap_obj (h : heap) (o : oid) : option heapObj'. 
-- **Lookup a method body**: The function is used to lookup method definitions inside a class definition, using method identifiers: 'Definition find_method (cls : CLASS) (m : id)'. 
 
 
 ### Coarse-grained control
