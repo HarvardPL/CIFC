@@ -53,19 +53,33 @@ In Java-like languages, the stack frame plays an important role for program exec
 
 In this language, we use an abstract concept, *execution container*, to model the status of program execution. Every container records information that corresponds to the execution status of a method call and its stack frame. In our formalization, a container consists:
 
-- **The term being evaluated** : This is the term that is being evaluated. 
+- **Term** : The closed term to be evaluated. 
 - **Frame stack** : This is the program context in which the term is currently being evaluated. Specifically, it comprises the terms that left to be evaluated in this container. 
 - **Label** : This is the security label of this container. More details will be explained later. 
 - **Variable state** : This variable state maps variables to their values.
 
 Our coq file defines the container as a type: `tm -> frame_stack -> Label -> stack_frame -> container`. 
 
+#### Important types
 
+Runtime environment of valid programs comprises several essential pieces of information. We model the information using the following types:
+
+- **Method Definition**: A method definition is composed of a class name to which the method belongs, identifier of the method name, class names/types of the parameters, identifiers of the parameters, and body of the method: `cn -> id -> cn -> id -> tm -> method_def`. 
+- **Class Definition**: A class definition is composed of a class name, a list of fields, and a list of method definitions: `cn -> (list field) -> (list method_def) -> CLASS`.
+- **Class Table**: A class table maps class names to their definitions: `cn -> option CLASS`. 
+- **Object Identifier**: Object addresses are modeled as a special type: object identifers `nat -> oid`. 
+- **Stack Frame**: Stack frames are abstractly modeled as a function `id -> option tm`. It maps variable identifiers to their values. 
+- **Heap**: The heap is simply modeled as a list of entries of heap objects. Every heap entry comprises an object identifier that represents the address and a heap object. A heap object comprises the class definition of the object,  as `CLASS -> FieldMap -> Label -> heapObj`.
 
 #### Configuration
 
-We define the operational semantics in terms of transitions between configurations. Within such semantics, transition rules are defined by case analysis rather than by induction. Such semantics could simplified 
+We define the operational semantics in terms of transitions between configurations. Within such semantics, transition rules are defined by case analysis rather than by induction. Such semantics could simplified some proofs. 
 
+A configuration is a four-tuple, containting the following information: 
+
+1. Heap: A finite 
+
+The coq definition of configuration is : `Class_table ->container -> list container -> heap -> config`.
 
 As the reader will see this style of
 semantics has the advantage that the transition rules are dened by case analysis rather than
@@ -83,16 +97,7 @@ being evaluated.
 
 
 
-#### Important types
 
-Runtime environment of valid programs comprises several essential pieces of information. We model the information using the following types:
-
-- **Method Definition**: A method definition is composed of a class name to which the method belongs, identifier of the method name, class names/types of the parameters, identifiers of the parameters, and body of the method: `cn -> id -> cn -> id -> tm -> method_def`. 
-- **Class Definition**: A class definition is composed of a class name, a list of fields, and a list of method definitions: `cn -> (list field) -> (list method_def) -> CLASS`.
-- **Class Table**: A class table maps class names to their definitions: `cn -> option CLASS`. 
-- **Object Identifier**: Object addresses are modeled as a special type: object identifers `nat -> oid`. 
-- **Stack Frame**: Stack frames are abstractly modeled as a function `id -> option tm`. It maps variable identifiers to their values. 
-- **Heap**: The heap is simply modeled as a list of entries of heap objects. Every heap entry comprises an object identifier that represents the address and a heap object. A heap object comprises the class definition of the object,  as `CLASS -> FieldMap -> Label -> heapObj`.
 
 #### Lookup functions
 
