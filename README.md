@@ -155,6 +155,8 @@ The Coq formalization of the well-formed configuration is below:
 
 ### Type system
 
+
+
 #### Types
 
 Types of this language are the following:
@@ -163,21 +165,21 @@ Types of this language are the following:
 3. Label types: All security labels are primitive types. 
 4. Labeled Types: These are parameterized types for labeled values. The type of a labeled value is parameterized by the type of the value. 
 5. Opaquely labeled types: These types are similar to labeled types, but apply on opaquely labeled values. 
-6. Void type: Some terms are of the void types. 
+6. Void type: Some terms, such as assignment, are of void type. 
+7. Arrow types: The type for list of terms, and list of containers are arrow types.  
 
+#### Typing rules
 
-are formalized as below:
-```
-Inductive ty : Type :=
-  | classTy : cn -> ty
-  | boolTy : ty                  
-  | LabelTy : ty
-  | LabelelTy : ty -> ty
-  | OpaqueLabeledTy : ty -> ty
-  | voidTy : ty
-  | ArrowTy : ty -> ty -> ty.
-```
+The typing environment Γ is a finite partial map from variables to their types. In order to prove type soundness, the type system includes typing rules for closed terms, open terms, frame stack, container, program context, and configurations:
+1. Typing rules for closed terms: `Γ, CT, H |- t : τ`. The inductive relation `tm_has_type` defines these typing rules. 
+2. Typing rules for open terms: `Γ, CT, H |- t : τ -> τ`. The inductive relation `tm_hole_has_type` defines these typing rules. 
+3. Typing rules for frame stack: `Γ, CT, H |- fs : τ -> τ`. The inductive relation `fs_has_type` defines these typing rules. 
+4. Well-typed variable state: `Γ, CT, H |- vs ok`. Variable states map variables to their values. A variable state is well-typed if all variables in the typing environment `Γ` are in the map, and values of all variables are well-typed. 
+5. Typing rules for a container: In general, the type for a container is of the form `τ' -> τ`. Types `τ'` and `τ` depend on the types of the term and the frame stack. 
+6. Typing rules for program context: Program context is a list of containers. The type of a container list is of the form `τ' -> τ`.
+7. Typing rules for configuration: The type of a configuration depends on the type of the container being evaluated, and the type of the program context. If the type of the container being evaluated is `void -> τ'`, and the type of the program context is `τ' -> τ`, then the type of the configuration is `τ`.
 
+Details about the type system can be found in the file [Types.v](updated/Types.v).
 
 #### Progress
 
