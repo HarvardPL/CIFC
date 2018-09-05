@@ -58,7 +58,7 @@ In this language, we use an abstract concept, *execution container*, to model th
 - **Label** : This is the security label of this container. More details will be explained later. 
 - **Variable state** : This variable state maps variables to their values.
 
-Our coq file defines the container as a type: `tm -> frame_stack -> Label -> stack_frame -> container`. In this document, we use the form of `(t; fs; lb; )`
+Our coq file defines the container as a type: `tm -> frame_stack -> Label -> stack_frame -> container`. In this document, we use the form of `(t; fs; lb; vs)`.
 
 #### Important types
 
@@ -93,7 +93,7 @@ Inductive config :=
 A normal configuration is a four-tuple, containting the following information: 
 
 1. **Class table**: The class table stores information of all class definitions needed. 
-2. **Current container**: The container that is being executed. 
+2. **Container being evaluated**: The container that is being executed. 
 3. **Program context**: A list of containers that present the execution context. 
 4. **Heap**: A list of heap objects. 
 
@@ -134,8 +134,24 @@ To prove soundness of the semantics, we need to define well-formedness of config
   - objects in the heap are correctly addressed, and all class names mentioned in the heap are in the class table. 
   - all fields in every object are valid: the value of a field is either a valid object identifier or null. 
 
-- Well-formedness of a container: This is written as `CT, H |- ctn ok`. It ensures that for a container 
-- **Well-formedness of context containers**:
+- Well-formedness of a container: This is written as `CT, H |- ctn ok`. For a container `(t; fs; lb; vs)`, it ensures:
+  - The term `t` has valid syntax. 
+  - All terms in the frame stack `fs` have valid syntax
+  - The variable state is well formed. It contrains every variable to be a valid value. A valid value is one of the following: null; a valid object identifier; a labeled value; a opaquely labeled value; a label; true; and false.  
+  
+- Well-formedness of context containers: Every container in the program context should be a valid container. 
+
+- The term of the container being evaluated is a close term, without hole. 
+
+The Coq formalization of the well-formed configuration is below:
+```
+| valid_conf : forall ct t fs lb sf ctns h, 
+  valid_ctns ct ctns h ->
+  valid_ctn ct (Container t fs lb sf) h ->
+  hole_free t = true ->
+  wfe_heap ct h -> field_wfe_heap ct h ->
+  valid_config (Config ct (Container t fs lb sf) ctns h). 
+```
 
 
 
