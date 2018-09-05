@@ -153,16 +153,42 @@ The Coq formalization of the well-formed configuration is below:
     valid_config (Config ct (Container t fs lb sf) ctns h). 
 ```
 
+### Type system
+
+#### Types
+
+Types of this language are the following:
+1. Class types: These types correspond to the classes. 
+2. Bool type: This is primitive type boolean.
+3. Label types: All security labels are primitive types. 
+4. Labeled Types: These are parameterized types for labeled values. The type of a labeled value is parameterized by the type of the value. 
+5. Opaquely labeled types: These types are similar to labeled types, but apply on opaquely labeled values. 
+6. Void type: Some terms are of the void types. 
+
+
+are formalized as below:
+```
+Inductive ty : Type :=
+  | classTy : cn -> ty
+  | boolTy : ty                  
+  | LabelTy : ty
+  | LabelelTy : ty -> ty
+  | OpaqueLabeledTy : ty -> ty
+  | voidTy : ty
+  | ArrowTy : ty -> ty -> ty.
+```
+
+
+#### Progress
+
+#### Preservation
 
 
 
+### Information flow security
 
-#### Well-formedness of a container
 
-#### Well-formedness of a heap
-
-
-### Coarse-grained control
+#### Coarse-grained control
 
 Compared with many fine-grained information mechianisms, our mechanism enforces information flow policies in a coarser granularity. Coarse-grained mechianism requires less effort from the users, and is still able to establish confidentiality in the target programs. Our mechanism enforces policies at the granulariy of *execution container*. Every execution container is responsible for running some computations. Information flow policies are enforced at the boundaries between containers. 
 
@@ -182,10 +208,6 @@ In our design, every container is labeled with a single label. This label protec
 ### Low-equivalence
 
 
-### Type system
 
-#### Progress
-
-#### Preservation
 
 ### Non-interference
