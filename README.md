@@ -146,11 +146,11 @@ To prove soundness of the semantics, we need to define well-formedness of config
 The Coq formalization of the well-formed configuration is below:
 ```
 | valid_conf : forall ct t fs lb sf ctns h, 
-  valid_ctns ct ctns h ->
-  valid_ctn ct (Container t fs lb sf) h ->
-  hole_free t = true ->
-  wfe_heap ct h -> field_wfe_heap ct h ->
-  valid_config (Config ct (Container t fs lb sf) ctns h). 
+    valid_ctns ct ctns h ->
+    valid_ctn ct (Container t fs lb sf) h ->
+    hole_free t = true ->
+    wfe_heap ct h -> field_wfe_heap ct h ->
+    valid_config (Config ct (Container t fs lb sf) ctns h). 
 ```
 
 
