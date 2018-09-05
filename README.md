@@ -183,9 +183,50 @@ Details about the type system can be found in the file [Types.v](updated/Types.v
 
 #### Progress
 
+In general, the progress theorem states that a well-typed program won't stuck. In our formalization. Progress theorem is formalized as below:
+
+```
+Theorem Progress : forall config T ct h ctn ctns, 
+  config = (Config ct ctn ctns h) ->
+  valid_config (Config ct ctn ctns h) ->
+  config_has_type ct empty_context (Config ct ctn ctns h) T
+  -> terminal_state config \/ (exists config', config ==> config').
+```
+
+The theorem says that, for a normal configuration `config`, if `config` is well-formed (valid) and well-typed, then `config` is either at terminal state, or there exists another configuration `config'` that `config` can take a step to `config'`.
+
+Detailed proof of this theorem can be found in the file [progress.v](progress/.v).
+
 #### Preservation
 
 
+In general, preservation theorem states that reduction of a configuration preserves typing of the configuration. 
+
+In our formalization. preservation theorem is formalized as below:
+
+```
+Theorem typing_preservation : forall T ct ctn ctns h ctn' ctns' h',
+    config_has_type ct empty_context (Config ct ctn ctns h) T ->
+    valid_config (Config ct  ctn ctns h) ->
+    Config ct ctn ctns h
+           ==> Config ct ctn' ctns' h' ->
+    config_has_type ct empty_context (Config ct ctn' ctns' h') T.
+```
+
+The theorem says that, for a normal configuration `config`, if 
+1. `config` is typed with T.
+2. `config` is well-formed (valid).
+3. `config` takes one step into `config'`
+Then `config` is also typed with T. 
+
+In order to prove this theorem, several lemmas were needed:
+1. Expanding heap with a new object preserves well-formedness of configurations. 
+2. Updating a heap object preserves well-formedness of configurations. 
+3. Expanding heap with a new object preserves typing of configurations. 
+4. Updating a heap object preserves typing of configurations. 
+5. Reduction from one config to another preserve well-formedness. 
+
+Detailed proof of the preservation theorem can be found in the file [preservation.v](updated/preservation.v).
 
 ### Information flow security
 
