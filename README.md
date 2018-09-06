@@ -125,7 +125,6 @@ A method call leads to creation of a new execution container, and a `return hole
       
 ```
 
-
 ### Well-formed configuration
 
 To prove soundness of the semantics, we need to define well-formedness of configurations. Since a configuration is of the form `(CT; ctn; ctx; H)`, well-formedness breaks into several properties:
@@ -199,7 +198,6 @@ Detailed proof of this theorem can be found in the file [progress.v](progress/.v
 
 #### Preservation
 
-
 In general, preservation theorem states that reduction of a configuration preserves typing of the configuration. 
 
 In our formalization. preservation theorem is formalized as below:
@@ -228,29 +226,110 @@ In order to prove this theorem, several lemmas were needed:
 
 Detailed proof of the preservation theorem can be found in the file [preservation.v](updated/preservation.v).
 
+
+#### Deterministic
+
+Deterministic theorem states that reduction of a configuration is deterministic. 
+
+In our formalization. preservation theorem is formalized as below:
+
+```
+Theorem deterministic: forall ct ctn ctns h ctn1 ctns1 h1 ctn2 ctns2 h2, 
+     Config ct ctn ctns h ==>
+            (Config ct ctn1 ctns1 h1)  ->
+     Config ct ctn ctns h ==>
+           (Config ct ctn2 ctns2 h2) ->
+     ctn1 = ctn2 /\ ctns1 = ctns2 /\ h1 = h2 .
+```
+
+The theorem states that if a configuration `config` reduces to two configurations `config1` and `config2`, then `config1` is equal to `config2`. 
+
+Detailed proof of the theorem can be found in the file [deterministic.v](updated/deterministic.v).
+
 ### Information flow security
 
 
 #### Coarse-grained control
 
-Compared with many fine-grained information mechianisms, our mechanism enforces information flow policies in a coarser granularity. Coarse-grained mechianism requires less effort from the users, and is still able to establish confidentiality in the target programs. Our mechanism enforces policies at the granulariy of *execution container*. Every execution container is responsible for running some computations. Information flow policies are enforced at the boundaries between containers. 
+We intend to design a language and relevant features to ease enforcement of information flow policies. Compared with many fine-grained information mechianisms, our mechanism enforces information flow policies in a coarser granularity. Coarse-grained mechianism requires less effort from the users, and is still able to establish confidentiality in the target programs. Our mechanism enforces policies at the granulariy of *execution container*, the concept that we introduced above. Every execution container is responsible for running some computations. Information flow policies are enforced at the boundaries between containers.  
+
+In this language, the concept of containers corresponds to stack frames. As described, a container is written as `(t; fs; lb; vs)`. Every container is labeled with a single label. The label floats up if the computation of the container reads more confidential information. 
+
+#### Floating label
+
+The label of current container floats up if its computation reads more confidential information. For example, the reduction rule below shows the field access to an object: 
+
+```
+(* normal field access *)
+  | ST_fieldRead3 : forall h o fname lo lb cls F v l'  ct fs ctns sf,
+      Some (Heap_OBJ cls F lo) = lookup_heap_obj h o -> 
+      Some v = F(fname) -> 
+      l' = join_label lo lb ->
+      Config ct (Container (FieldAccess (ObjId o) fname) fs lb sf) ctns h ==> Config ct (Container v fs l' sf) ctns h 
+```
+
+The rule states that reading a field of object leads to modification of the container's label: `l' = join_label lo lb`
+
+#### Non-sensitive upgrades
+
+In addition to containers, every object in the heap has a security label. Objects' labels are not affected by computations in containers. Any upgrades to an object must obey information flow policies, and not change the object's label. For example, the reduction rule below shows the write access to a field of an object: 
+
+```  
+(* normal field write *)
+  | ST_fieldWrite_normal : forall o h h' f lo lb cls F F' v ct fs ctns sf,
+      Some (Heap_OBJ cls F lo) = lookup_heap_obj h o -> 
+      F' = fields_update F f v ->
+      flow_to lb lo = true ->
+      h' = update_heap_obj h o (Heap_OBJ cls F' lo) ->
+      (v = null \/
+       (exists o' cls' F' lo', v = ObjId o' /\
+                               Some (Heap_OBJ cls' F' lo') = lookup_heap_obj h o' /\
+                               flow_to lo' lo = true
+       )
+      )->
+    Config ct (Container (FieldWrite (ObjId o) f v) fs lb sf ) ctns h 
+      ==> Config ct (Container Skip fs lb sf ) ctns h' 
+```
 
 
+The reduction rule essures that: 
+1. the label of current container (`lb`) should flow to the label of the object (`lo`) being upgraded: `lb ⊑ lo`.
+2. the label of the new value (`lo'`) should flow to the label of the object (`lo`) being upgraded: `lo' ⊑ lo`
+3. the label of the object being upgraded is not modified. The label is still `lo`.
 
 
+### Low equivalence
 
-In our mechanism, the concept of containers corresponds to stack frames. 
+In order to define the low equivalence relation between two configurations, we need an approach to connect and compare the addresses allocated by two configurations. We borrow a partial bijection φ defined by [ni-formal-gc](https://github.com/MathiasVP/ni-formal-gc/blob/master/README.md). The domain (codomain) of φ is the set of object identifiers of the first (second) configuration.
 
-In our design, every container is labeled with a single label. This label protects everything inside the container. The label of a container floats up if the container reads information that is more confidential than the current label. 
+#### Low equivalence of terms
 
+We first define the low equivalence relation on terms. The relation is formalized as: 
+```
+Inductive L_equivalence_tm : tm -> heap -> tm -> heap ->  (bijection oid oid) ->  Prop
+```
+Most terms require syntactic equivalence to be low equivalence. Object identifiers are special terms because different addresses in two configurations could point to equivalent objects. Here we use the bijection φ to track the equivalence.  
 
+For two objects both with low labels, if their object identifiers exist in the bijection φ, then they are low equivalent. 
+```
+| L_equivalence_tm_eq_object_L : forall o1 o2 h1 h2 cls1 F1 lb1 cls2 F2 lb2 φ, 
+      left φ o1 = Some o2 ->
+      Some (Heap_OBJ cls1 F1 lb1) = lookup_heap_obj h1 o1 ->
+      flow_to lb1 L_Label = true ->
+      Some (Heap_OBJ cls2 F2 lb2) = lookup_heap_obj h2 o2 ->
+      flow_to lb2 L_Label = true ->
+      L_equivalence_tm (ObjId o1) h1 (ObjId o2) h2 φ
+```
 
-
-
-
-### Low-equivalence
-
-
+Two objects are low equivalent if both of them have high label. 
+```
+| L_equivalence_tm_eq_object_H : forall o1 o2 h1 h2 cls1 cls2 F1 lb1 F2 lb2 φ, 
+      Some (Heap_OBJ cls1 F1 lb1) = lookup_heap_obj h1 o1 ->
+      flow_to lb1 L_Label = false  ->
+      Some (Heap_OBJ cls2 F2 lb2) = lookup_heap_obj h2 o2 ->
+      flow_to lb2 L_Label = false  ->
+      L_equivalence_tm (ObjId o1) h1 (ObjId o2) h2 φ 
+```
 
 
 ### Non-interference
