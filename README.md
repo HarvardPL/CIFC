@@ -1,14 +1,15 @@
 ## Coarse-grained Information Flow Control for Java
 
-Coq formalization of a Java-like language, including
+This is a Coq formalization of a Java-like language, including
 
 1. semantics of the language
-2. type system properties: progress and preservation
-3. noninterference property
+2. Proof of type system properties
+3. Proof of noninterference (timing-sensitive noninterference (TINI)) property
 
-timing-sensitive noninterference (TINI) for a Java-like language. Currently compiles with version 8.7.2. 
+The Coq files compiles with version 8.7.2. 
 
 ### Language
+
 The language is the imperative core of a Java-like language, extended with security label related expressions. This language doesn't distinginsh expression and statement, instead, it uses expressions to uniformally describe all terms. 
 
 ```
@@ -368,4 +369,75 @@ Two stack frames are low equivalent if either both stack frames are empty or val
     L_equivalence_store sf1 h1 sf2 h2 φ.
 ```
 
-### Non-interference
+
+#### Low equivalence of heaps
+
+Two heaps are low equivalent if
+
+- The relation φ only contains low object identifiers
+- Low object identifiers related by φ are heap-value low-equivalent.
+
+```
+Inductive L_equivalence_heap : heap -> heap ->  (bijection oid oid ) -> Prop :=
+  | L_eq_heap : forall h1 h2 φ ,
+      (forall o1 o2, left φ o1 = Some o2 ->
+                     L_equivalence_object o1 h1 o2 h2 φ) ->
+      (forall o, lookup_heap_obj h1 o = None ->
+                 left φ o = None) ->
+       (forall o, lookup_heap_obj h2 o = None ->
+                 right φ o = None) ->
+      (forall o cls F lb, lookup_heap_obj h1 o = Some (Heap_OBJ cls F lb)->
+                 flow_to lb L_Label = false ->
+                 left φ o = None) ->
+      (forall o cls F lb, lookup_heap_obj h2 o = Some (Heap_OBJ cls F lb)->
+                 flow_to lb L_Label = false ->
+                 right φ o = None) ->
+                              L_equivalence_heap h1 h2 φ.
+```
+
+#### Low equivalence of containers
+
+Two containers are low equivalent if 
+
+- They are both low containers.
+- Their terms are low equivalent
+- Their frame stacks are low equivalent
+- Their variable states are low equivalent
+
+
+#### Low equivalence of program context
+
+Program context of a configuration is a list of containers. Two program contexts are low equivalent if 
+
+- They are both empty, or
+- Containers at the same position of the program context are low equivalent
+
+#### Low equivalence of configurations
+
+Two configurations are low equivalent under two circumstances:
+
+1. The top containers of both configurations are low containers, and they are low equivalent; or
+2. The top containers of both configurations are high containers, and their *low component* are low equivalent. 
+
+Here, we introduce the concept of *low component*. Intuitively, the low component of a configuration is part of program context that are only low containers. It is similar to the *erasure* function used in LIO. Low equivalence of two configurations is formalized as: 
+
+```
+Inductive L_equivalence_config : config -> config -> (bijection oid oid ) -> Prop :=
+  | L_equivalence_config_L : forall ct t1 fs1 lb1 lb2 sf1 t2 fs2 sf2 ctns1 ctns2 h1 h2 φ, 
+      flow_to lb1 L_Label = true ->
+      flow_to lb2 L_Label = true ->
+      L_eq_container  (Container t1 fs1 lb1 sf1) h1 (Container t2 fs2 lb2 sf2) h2 φ->
+      L_eq_ctns ctns1 h1 ctns2 h2 φ ->
+      L_equivalence_config (Config ct (Container t1 fs1 lb1 sf1) ctns1 h1) (Config ct (Container t2 fs2 lb2 sf2) ctns2 h2)  φ
+  | L_equivalence_config_H : forall ct t1 fs1 lb1 sf1 t2 fs2 lb2 sf2 ctns1 ctns2 h1 h2  φ, 
+      flow_to lb1 L_Label = false ->
+      flow_to lb2 L_Label = false ->
+       L_equivalence_config (low_component ct (Container t1 fs1 lb1 sf1) ctns1 h1)
+      (low_component ct (Container t2 fs2 lb2 sf2) ctns2 h2) φ  ->
+      L_equivalence_config (Config ct (Container t1 fs1 lb1 sf1) ctns1 h1) (Config ct (Container t2 fs2 lb2 sf2) ctns2 h2)  φ.  
+Hint Constructors L_equivalence_config.
+```
+
+Details about low equivalence can be found in the file [Low_eq.v](updated/Low_eq.v).
+
+### Timing insensitive non-interference
