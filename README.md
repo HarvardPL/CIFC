@@ -308,7 +308,10 @@ We first define the low equivalence relation on terms. The relation is formalize
 ```
 Inductive L_equivalence_tm : tm -> heap -> tm -> heap ->  (bijection oid oid) ->  Prop
 ```
-Most terms require syntactic equivalence to be low equivalence. Object identifiers are special terms because different addresses in two configurations could point to equivalent objects. Here we use the bijection φ to track the equivalence.  
+Most terms require syntactic equivalence to be low equivalence. Labeled values, opaquely labeled values, and object identifiers are special cases. 
+
+
+- Object identifiers are special terms because different addresses in two configurations could point to equivalent objects. Here we use the bijection φ to track the equivalence.  
 
 For two objects both with low labels, if their object identifiers exist in the bijection φ, then they are low equivalent. 
 ```
@@ -331,5 +334,25 @@ Two objects are low equivalent if both of them have high label.
       L_equivalence_tm (ObjId o1) h1 (ObjId o2) h2 φ 
 ```
 
+- Labeled values are low equivalent under two circumstances:
+  - 
+  
+  - 
+
+#### Low equivalence of stack frames
+
+Two stack frames are low equivalent if either both stack frames are empty or values of the same variable in both stack frames are low equivalent. 
+
+```
+ L_equivalence_store_L : forall  sf1 sf2 h1 h2  φ ,
+    (forall v1 v2 x,
+    sf1 x = Some v1 ->
+    value v1 ->
+    sf2 x = Some v2 ->
+    value v2 -> 
+    L_equivalence_tm v1 h1 v2 h2  φ ) /\
+    (sf1 = empty_stack_frame <-> sf2 = empty_stack_frame) ->
+    L_equivalence_store sf1 h1 sf2 h2 φ.
+```
 
 ### Non-interference
