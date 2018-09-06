@@ -311,7 +311,7 @@ Inductive L_equivalence_tm : tm -> heap -> tm -> heap ->  (bijection oid oid) ->
 Most terms require syntactic equivalence to be low equivalence. Labeled values, opaquely labeled values, and object identifiers are special cases. 
 
 
-- Object identifiers are special terms because different addresses in two configurations could point to equivalent objects. Here we use the bijection φ to track the equivalence.  
+Object identifiers are special terms because different addresses in two configurations could point to equivalent objects. Here we use the bijection φ to track the equivalence.  
 
 For two objects both with low labels, if their object identifiers exist in the bijection φ, then they are low equivalent. 
 ```
@@ -334,10 +334,23 @@ Two objects are low equivalent if both of them have high label.
       L_equivalence_tm (ObjId o1) h1 (ObjId o2) h2 φ 
 ```
 
-- Labeled values are low equivalent under two circumstances:
-  - 
-  
-  - 
+Labeled values and opaquely labeled values are similarly with respect to low equivalence. Take labeled values as an example, two labeled values are low equivalent under two circumstances:
+1. Both labeled values have low label; and their values are low equivalent:
+```
+| L_equivalence_tm_eq_v_l_L : forall lb e1 e2 h1 h2 φ, 
+      flow_to lb L_Label = true ->
+      L_equivalence_tm e1 h1 e2 h2 φ->
+      value e1 -> value e2 ->
+      L_equivalence_tm (v_l e1 lb) h1 (v_l e2 lb) h2 φ
+```
+2. Both labeled values do not flow to low label:
+```
+  | L_equivalence_tm_eq_v_l_H : forall e1 e2 l1 l2 h1 h2 φ, 
+      flow_to l1 L_Label = false ->
+      flow_to l2 L_Label = false ->
+       value e1 -> value e2 ->
+      L_equivalence_tm (v_l e1 l1) h1 (v_l e2 l2) h2 φ
+```
 
 #### Low equivalence of stack frames
 
