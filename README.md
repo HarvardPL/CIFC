@@ -1,8 +1,8 @@
 ## Coarse-grained Information Flow Control for Java
 
-This is a Coq formalization of a Java-like language, including
+This is a Coq formalization of a Java-like secure language, enforcing information flow control. It includes
 
-1. semantics of the language
+1. Semantics of the language
 2. Proof of type system properties
 3. Proof of noninterference (timing-sensitive noninterference (TINI)) property
 
@@ -232,7 +232,7 @@ Detailed proof of the preservation theorem can be found in the file [preservatio
 
 Deterministic theorem states that reduction of a configuration is deterministic. 
 
-In our formalization. preservation theorem is formalized as below:
+As mentioned above, a configuration could be in a normal state, an error state, and a terminal state. To handle different kinds of configurations, our formalization defines two forms of the deterministic theorem: 
 
 ```
 Theorem deterministic: forall ct ctn ctns h ctn1 ctns1 h1 ctn2 ctns2 h2, 
@@ -243,7 +243,17 @@ Theorem deterministic: forall ct ctn ctns h ctn1 ctns1 h1 ctn2 ctns2 h2,
      ctn1 = ctn2 /\ ctns1 = ctns2 /\ h1 = h2 .
 ```
 
-The theorem states that if a configuration `config` reduces to two configurations `config1` and `config2`, then `config1` is equal to `config2`. 
+and 
+
+```
+Theorem deterministic_prime: forall ct ctn ctns h ctn1 ctns1 h1 config', 
+     Config ct ctn ctns h ==>
+            (Config ct ctn1 ctns1 h1)  ->
+     Config ct ctn ctns h ==>config'   ->
+     (Config ct ctn1 ctns1 h1) = config'.
+```
+
+The first form states that if a configuration steps into two normal configurations `config1` and `config2`, then `config1` and `config2` are identical. The second form states that a configuration cannot step into different kinds of configurations. In particular, the second form essures that exceptions are thrown deterministically.  
 
 Detailed proof of the theorem can be found in the file [deterministic.v](updated/deterministic.v).
 
@@ -442,18 +452,97 @@ Details about low equivalence can be found in the file [Low_eq.v](updated/Low_eq
 
 ### Timing insensitive non-interference
 
-In order to prove the non-interference, we define a new reduction, named *p-reduction*, by merging two executions into one. P-reduction is defined as an inductive relation between two pairs of configurations:
+In order to prove the non-interference, we need some auxiliary definitions and lemmas. 
+
+#### Executions
+
+##### Single execution
+
+In this work. we only concerns executions that terminate. We define an execution as a finite number of reductions:
+
+```
+Inductive  terminate_num : config -> config  -> nat ->  Prop :=
+| terminate_zero : forall ctn ct h,
+    terminal_state (Config ct ctn [] h) -> 
+    terminate_num (Config ct ctn [] h)
+                  (Config ct ctn [] h)
+                  0
+| terminate_step : forall ctn1 ctns1  final_ctn  ct h1  n ctn1' ctns1' h1' h_final_1,
+    (Config ct ctn1 ctns1 h1) ==>
+                              (Config ct ctn1' ctns1' h1') ->
+    terminal_state (Config ct final_ctn [] h_final_1) ->
+    terminate_num (Config ct ctn1' ctns1'  h1')
+                  (Config ct final_ctn [] h_final_1)
+                  n ->
+     terminate_num (Config ct ctn1 ctns1 h1)                
+                   (Config ct final_ctn [] h_final_1)
+                   (1 + n) .
+```
+
+For example, an execution `terminate_num config1 config_final n` means the execution `config` reaches its terminal state `config_final` in n steps. 
+
+##### Double execution
+
+Since non-interference concerns two executions, we define another execution that covers traces of two single executions.
+
+```
+Inductive  two_terminate_num : config -> config -> config -> config -> nat ->  Prop :=
+```
+
+For example, `two_terminate_num config1 config2 final1 final2 k` describes a double execution. In this double execution, config1 reaches final state `final1`; config2 reaches final state `final2`. The total steps taken by the two executions are k.  
+
+The contructors inside the definition cover the possible behaviors of two executions:
+
+1. Two executions are both terminated.
+2. The first execution takes a step.
+3. The second execution takes a step.
+4. Both executions take steps. 
+
+We also define two lemmas that interconnect double execution with single execution: 
+
+1. `two_executions_split`: It says a double execution can be splitted into two single executions, and the steps used by the double execution is the same as the sum of the steps used by two single executions. 
+2. `two_executions_to_one`: It says two single executions can be combined into a double execution. 
+
+##### Parallel reduction
+
+In order to prove the non-interference, we devise a special reduction step named `p-reduction`. It describes a subst of the behaviors shown in the definition of double execution. The p-reduction is a mechinary we used to prove non-interference. One crucial property of p-reduction is that it preserves low-equivalence between two configurations. Such property strongly support the proof of non-interference. 
+
+Specifically, the p-reduction has five contructors:
+
+1. If both configurations, conf1 and conf2, are low configurations, then both take one step
+2. If both configurations are high configurations, and conf1 can step into a high configuration, then conf1 takes a step, while conf2 stays the same.   
+3. If 
+   - conf1 is a high configuration, and it steps into a low configuration; and 
+   - conf2 is a high configuration, and it steps into a high configuration. Then conf1 stays, and conf2 takes a step.   
+4. 
+
+This definition describes how two executions could 
+
+
+
+
+we define a new reduction, named *parallel-reduction* (p-reduction), that relates two executions into one. P-reduction is defined as an inductive relation between four configurations:
 ```
 Inductive parallel_reduction : config -> config -> config -> config -> Prop :=
 ```
-Intuitively, a p-reduction transits a pair of configurations to another pair of configuration: `<conf1, conf2> =p=> <conf1', conf2'>`. The transition proceeds using the following rules:
+Intuitively, a p-reduction transits a pair of configurations to another pair of configuration: `<conf1, conf2> =p=> <conf1', conf2'>`. We use this p-reduction to prove the timing insensitive non-interference property.  
 
-- If the top containers of both configurations are low containers, then both configurations take one step reduction.
-- If conf1 already terminates, then conf2 takes one small-step reduction.
-- If conf1 is able to take one step, say to conf1', then the p-reduction depends on the label of conf1':
-  - if conf1' is a high configuration, then conf1 steps to conf1', and no step for conf2;
-  - if conf1' is a low configuration, which means conf1 jumps from high configuration to low configuration, then conf2 proceeds using the two following rules:
-    -- if 
+In general, a non-interference proof requires that the attackers cannot distinguish the results produced by two executions. 
+In a non-interference proof, we need to prove the low-equivalence relation preserves 
+In the non-interference proof, we use p-reduction to contruct a new execution that covers traces of two single executions. P-reduction has five contructors: 
+
+
+
+
+The transition proceeds using the following rules:
+
+1. If the top containers of both configurations are low containers, then both configurations take one step reduction.
+2. If conf1 already terminates, then conf2 takes one small-step reduction.
+3. If conf1 is able to take one step, say to conf1', then the p-reduction depends on the label of conf1':
+   1. If conf1' is a high configuration, then conf1 steps to conf1', and no step for conf2;
+   2. If conf1' is a low configuration, which means conf1 would jumps from a high configuration to a low configuration, then conf2 proceeds using the two following rules: 
+   - If conf2 is a high configuration, then 
+      
   
   and the resulted configuration is also H configuration
 
