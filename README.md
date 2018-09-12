@@ -514,10 +514,56 @@ Specifically, the p-reduction has five contructors:
 3. If 
    - conf1 is a high configuration, and it steps into a low configuration; and 
    - conf2 is a high configuration, and it steps into a high configuration. Then conf1 stays, and conf2 takes a step.   
-4. 
+4. If 
+   - conf1 is a high configuration, and it steps into a low configuration; and 
+   - conf2 is a high configuration, and it steps into a low configuration. Then conf1 and conf2 both take a step.   
+5. If 
+   - conf1 already reaches its terminal, and 
+   - conf2 is a high configuration, and it steps into a high configuration. Then conf2 takes a step.   
 
-This definition describes how two executions could 
+The contructors describe a subst of possible behaviors of two executions. This subst is sufficient to simulate a double execution that preserves low equivalence. 
 
+A multi-step parallel reduction is also defined: 
+
+```
+Inductive multi_step_p_reduction : config -> config -> config -> config -> Prop :=
+| multi_p_reduction_refl : forall config1 config2,
+    multi_step_p_reduction config1 config2 config1 config2
+| multi_p_reduction_step : forall c1 c1'  c2 c2'  c3 c3', 
+                    parallel_reduction c1 c1' c2 c2' ->
+                    multi_step_p_reduction c2 c2' c3 c3' ->
+                    multi_step_p_reduction c1 c1' c3 c3'.                        
+Hint Constructors multi_step_p_reduction. 
+```
+
+##### Double execution to multi-step parallel reduction
+
+The key idea behind our non-interference proof is to prove that we can construct a multi-step p-reduction from a double execution, if the double execution starts with two low-equivalent configurations. This important lemma is stated below: 
+
+```
+Lemma two_exes_to_parallel_execution : forall ct ctn1 ctns_stack1 h1
+                                                    ctn2 ctns_stack2 h2 lb1' sf1' lb2' sf2'
+                                                    final_v1  final_v2  h1' h2' T  φ n, 
+    valid_config (Config ct  ctn1 ctns_stack1 h1 ) ->
+    valid_config (Config ct  ctn2 ctns_stack2 h2 ) ->
+    config_has_type ct empty_context (Config ct ctn1  ctns_stack1 h1) T ->
+    config_has_type ct empty_context (Config ct ctn2  ctns_stack2 h2) T ->
+    two_terminate_num (Config ct ctn1 ctns_stack1 h1)
+                  (Config ct ctn2 ctns_stack2 h2)
+                  (Config ct (Container final_v1 nil lb1' sf1') nil h1')
+                  (Config ct (Container final_v2 nil lb2' sf2') nil h2')
+                  n ->
+    L_equivalence_config (Config ct ctn1 ctns_stack1 h1 )
+            (Config ct ctn2 ctns_stack2 h2)  φ ->
+    value final_v1 -> value final_v2 ->
+    L_equivalence_heap h1 h2 φ ->
+    multi_step_p_reduction (Config ct ctn1 ctns_stack1 h1)
+                           (Config ct ctn2 ctns_stack2 h2)
+                           (Config ct (Container final_v1 nil lb1' sf1') nil h1')
+                           (Config ct (Container final_v2 nil lb2' sf2') nil h2') .
+```
+
+In this statement, two configurations are valid (well-formed), well-typed, low-equivalent, and reach their terminals in a total of n steps. The lemma proves that the multi-step p-reduction 
 
 
 
