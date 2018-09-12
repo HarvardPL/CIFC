@@ -611,5 +611,5 @@ Theorem TINI : forall ct ctn1 ctns1 h1 ctn2 ctns2 h2 lb1' sf1' lb2' sf2' final_v
 
 The theorem is proved by first showing a multi-step p-reduction can be contructed from two executions, and then applying the `p_reduction_NI` lemma above. 
 
-
+Details about non-interference proof can be found in the file [TINI.v](updated/TINI.v).
 
