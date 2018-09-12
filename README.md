@@ -563,48 +563,53 @@ Lemma two_exes_to_parallel_execution : forall ct ctn1 ctns_stack1 h1
                            (Config ct (Container final_v2 nil lb2' sf2') nil h2') .
 ```
 
-In this statement, two configurations are valid (well-formed), well-typed, low-equivalent, and reach their terminals in a total of n steps. The lemma proves that the multi-step p-reduction 
+In this statement, two configurations are valid (well-formed), well-typed, low-equivalent, and reach their terminals in a total of n steps. The lemma proves that we can construct a multi-step p-reduction from this double execution. 
 
 
+#### Timing insensitive non-interference
 
-we define a new reduction, named *parallel-reduction* (p-reduction), that relates two executions into one. P-reduction is defined as an inductive relation between four configurations:
+We prove a useful lemma before the final non-interference proof. The lemma states that the multi-step p-reduction is non-interfering. Specifically, two low-equvialent configurations will be low equvialent after multi-step p-reduction. 
+
 ```
-Inductive parallel_reduction : config -> config -> config -> config -> Prop :=
+Lemma p_reduction_NI : forall ct ctn1 ctns_stack1 h1 ctn2 ctns_stack2 h2 lb1' sf1' lb2' sf2' final_v1  final_v2  h1' h2' φ T, 
+    valid_config (Config ct  ctn1 ctns_stack1 h1 ) ->
+    valid_config (Config ct  ctn2 ctns_stack2 h2 ) ->
+    config_has_type ct empty_context (Config ct ctn1  ctns_stack1 h1) T ->
+    config_has_type ct empty_context (Config ct ctn2  ctns_stack2 h2) T ->
+    multi_step_p_reduction (Config ct ctn1 ctns_stack1 h1)
+                           (Config ct ctn2 ctns_stack2 h2)
+                           (Config ct (Container final_v1 nil lb1' sf1') nil h1')
+                           (Config ct (Container final_v2 nil lb2' sf2') nil h2') ->
+     L_equivalence_config (Config ct ctn1 ctns_stack1 h1 )
+            (Config ct ctn2 ctns_stack2 h2)  φ ->
+     value final_v1 -> value final_v2 ->
+     L_equivalence_heap h1 h2 φ ->
+     exists  φ', L_equivalence_config (Config ct (Container final_v1 nil lb1' sf1') nil h1')  (Config ct (Container final_v2 nil lb2' sf2') nil h2')  φ'.
+Proof with eauto.
 ```
-Intuitively, a p-reduction transits a pair of configurations to another pair of configuration: `<conf1, conf2> =p=> <conf1', conf2'>`. We use this p-reduction to prove the timing insensitive non-interference property.  
 
-In general, a non-interference proof requires that the attackers cannot distinguish the results produced by two executions. 
-In a non-interference proof, we need to prove the low-equivalence relation preserves 
-In the non-interference proof, we use p-reduction to contruct a new execution that covers traces of two single executions. P-reduction has five contructors: 
+Finally, the non-interference theorem:
 
+```
+Theorem TINI : forall ct ctn1 ctns1 h1 ctn2 ctns2 h2 lb1' sf1' lb2' sf2' final_v1  final_v2  h1' h2' φ T m n, 
+    valid_config (Config ct  ctn1 ctns1 h1 ) ->
+    valid_config (Config ct  ctn2 ctns2 h2 ) ->
+    config_has_type ct empty_context (Config ct ctn1  ctns1 h1) T ->
+    config_has_type ct empty_context (Config ct ctn2  ctns2 h2) T ->
+    terminate_num (Config ct ctn1 ctns1 h1)
+                  (Config ct (Container final_v1 nil lb1' sf1') nil h1')
+                  m ->
+    terminate_num (Config ct ctn2 ctns2 h2)
+                  (Config ct (Container final_v2 nil lb2' sf2') nil h2') 
+                  n -> 
+    L_equivalence_config (Config ct ctn1 ctns1 h1 )
+            (Config ct ctn2 ctns2 h2)  φ ->
+    value final_v1 -> value final_v2 ->
+     L_equivalence_heap h1 h2 φ ->
+     exists  φ', L_equivalence_config (Config ct (Container final_v1 nil lb1' sf1') nil h1')  (Config ct (Container final_v2 nil lb2' sf2') nil h2')  φ'.
+```
 
-
-
-The transition proceeds using the following rules:
-
-1. If the top containers of both configurations are low containers, then both configurations take one step reduction.
-2. If conf1 already terminates, then conf2 takes one small-step reduction.
-3. If conf1 is able to take one step, say to conf1', then the p-reduction depends on the label of conf1':
-   1. If conf1' is a high configuration, then conf1 steps to conf1', and no step for conf2;
-   2. If conf1' is a low configuration, which means conf1 would jumps from a high configuration to a low configuration, then conf2 proceeds using the two following rules: 
-   - If conf2 is a high configuration, then 
-      
-  
-  and the resulted configuration is also H configuration
-
-Configuration conf1 belongs to execution one; configurations conf2 and conf2' belong to execution two. 
-
-Intuitively, for configurations conf1 and conf2, p-reduction either 
-
-
-
-
-- configuration 
-
-For example, terminating execution #1 takes steps to reduce conf1 to terminal 
-
-
-
+The theorem is proved by first showing a multi-step p-reduction can be contructed from two executions, and then applying the `p_reduction_NI` lemma above. 
 
 
 
