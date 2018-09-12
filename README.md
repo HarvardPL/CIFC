@@ -446,12 +446,16 @@ In order to prove the non-interference, we define a new reduction, named *p-redu
 ```
 Inductive parallel_reduction : config -> config -> config -> config -> Prop :=
 ```
-Intuitively, for two separate executions, p-reduction
-P-reduction transits a pair of configurations to another pair of configuration: `<conf1, conf2> =p=> <conf1', conf2'>`. The transition proceeds using the following rules:
+Intuitively, a p-reduction transits a pair of configurations to another pair of configuration: `<conf1, conf2> =p=> <conf1', conf2'>`. The transition proceeds using the following rules:
 
-- If the top containers of both configurations are low containers, then both configurations take one small-step reduction.
+- If the top containers of both configurations are low containers, then both configurations take one step reduction.
 - If conf1 already terminates, then conf2 takes one small-step reduction.
-- If conf1 takes one small step, and the resulted configuration is also H configuration
+- If conf1 is able to take one step, say to conf1', then the p-reduction depends on the label of conf1':
+  - if conf1' is a high configuration, then conf1 steps to conf1', and no step for conf2;
+  - if conf1' is a low configuration, which means conf1 jumps from high configuration to low configuration, then conf2 proceeds using the two following rules:
+    -- if 
+  
+  and the resulted configuration is also H configuration
 
 Configuration conf1 belongs to execution one; configurations conf2 and conf2' belong to execution two. 
 
