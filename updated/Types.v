@@ -199,6 +199,18 @@ Inductive tm_hole_has_type : Class_table -> typing_context -> heap -> tm -> ty -
       surface_syntax body = true ->
       tm_hole_has_type CT Gamma h (MethodCall e meth hole) (ArrowTy (classTy arguT)
                                                                     (OpaqueLabeledTy (classTy returnT)))
+(*newly added rule*)
+  | T_hole_MethodCall3 : forall Gamma Gamma' e meth argu CT h T returnT cls_def body arg_id arguT,
+      tm_has_type CT Gamma h (MethodCall e meth argu) (OpaqueLabeledTy (classTy returnT)) ->
+      tm_has_type CT Gamma h argu (classTy arguT) ->
+      tm_has_type CT Gamma h e (classTy T) ->
+      Some cls_def = CT(T) ->
+      find_method cls_def meth = Some (m_def returnT meth arguT arg_id  body)  ->
+      Gamma' = update_typing empty_context arg_id (classTy arguT) ->
+      tm_has_type CT Gamma' h (body) (classTy returnT) ->
+      surface_syntax body = true ->
+      tm_hole_has_type CT Gamma h (MethodCall e meth (unlabelOpaque hole)) (ArrowTy (OpaqueLabeledTy (classTy arguT))
+                                                                    (OpaqueLabeledTy (classTy returnT)))
 
   | T_hole_labelData : forall h Gamma CT  e T lb , 
       tm_has_type CT Gamma h (labelData e lb) (LabelelTy T) ->
@@ -248,7 +260,17 @@ Inductive tm_hole_has_type : Class_table -> typing_context -> heap -> tm -> ty -
       tm_has_type CT Gamma h e (classTy cls') ->
       Some cls_def = CT(clsT) ->
       type_of_field (find_fields cls_def) f = Some cls' ->
-      tm_hole_has_type CT Gamma h (FieldWrite x f hole) (ArrowTy (classTy cls') voidTy).
+      tm_hole_has_type CT Gamma h (FieldWrite x f hole) (ArrowTy (classTy cls') voidTy)
+                       (*newly added rule*)
+  | T_hole_FieldWrite3 : forall  h Gamma x f cls_def CT clsT cls' e,
+      tm_has_type CT Gamma h (FieldWrite x f e) voidTy ->
+      tm_has_type CT Gamma h x (classTy clsT) ->
+      tm_has_type CT Gamma h e (classTy cls') ->
+      Some cls_def = CT(clsT) ->
+      type_of_field (find_fields cls_def) f = Some cls' ->
+      tm_hole_has_type CT Gamma h (FieldWrite x f (unlabelOpaque hole)) (ArrowTy (OpaqueLabeledTy (classTy cls')) voidTy).
+
+                       
 Hint Constructors tm_hole_has_type. 
 
 Inductive fs_has_type : Class_table -> typing_context -> heap -> list tm -> ty -> Prop :=

@@ -548,7 +548,9 @@ Proof with eauto.
     apply surface_syntax_is_hole_free in H1;
     unfold hole_free; fold hole_free;
     rewrite H17; rewrite H1; auto).
-    inversion H12. inversion H1. inversion H12. 
+    inversion H12. inversion H1. inversion H12.
+    inversion H1. inversion H12. 
+    
 
   - inversion H17; subst; auto.
     inversion H5; subst; auto.
@@ -564,22 +566,53 @@ Proof with eauto.
     apply value_is_hole_free in H0.
     rewrite H. rewrite H0. auto.
 
-
-  - inversion H18; subst; auto.
+  - inversion H19; subst; auto.
     apply valid_conf; auto.
     apply valid_container; auto.
     apply valid_fs_list; auto.
     intro contra. inversion contra. 
     intro contra. inversion contra.
-    inversion H9; subst; auto.
+    inversion H10; subst; auto.
     intros. intro contra.
     inversion contra.
     intros. intro contra.
     inversion contra.
-    inversion H19.
-    apply hole_free_if in H3.
-    destruct H3. rewrite H2.  auto.
+    inversion H20.
+    apply hole_free_if in H4.
+    destruct H4. rewrite H3.  auto.
 
+(*newly added rule for method opaque call context*)
+  - inversion H18; subst; auto.
+    apply valid_conf; auto.
+    apply valid_container; auto.
+    apply valid_fs_list; auto. 
+    intro contra. inversion contra.
+    intro contra. inversion contra.
+    inversion H9; subst; auto.
+    inversion H8.
+    intros. intro contra. inversion contra.
+    intros. intro contra. inversion contra.
+    inversion H19; subst; auto.
+    apply hole_free_if in H3.
+    destruct H3.
+    rewrite H3. rewrite H2.
+    auto. 
+    
+  - inversion H17; subst; auto.
+    inversion H5; subst; auto.
+    apply valid_conf; auto.
+    apply valid_container; auto.
+    
+    inversion H5; subst; auto.
+    intros. intro contra.
+    rewrite contra in H4; inversion H4; intuition.
+    intros. intro contra.
+    rewrite contra in H4; inversion H4; intuition.
+    unfold hole_free; fold hole_free.
+    apply value_is_hole_free in H.
+    apply value_is_hole_free in H0.
+    rewrite H. rewrite H0. auto.
+    
   - inversion H20; subst; auto.
     apply config_typing_lead_to_tm_typing in H_typing.
     destruct H_typing as [T'].
@@ -781,7 +814,8 @@ Proof with eauto.
             inversion H2; subst; auto; try (inversion H12).
             apply surface_syntax_is_hole_free in H1; auto.
             unfold hole_free. fold hole_free.
-            rewrite H1; rewrite H17. auto. 
+            rewrite H1; rewrite H17. auto.
+            inversion H1. 
 
    -  match goal with
     | H : valid_ctn _ _ _ |- _
@@ -809,7 +843,7 @@ Proof with eauto.
              => apply hole_free_if in H; destruct H
            end
     end.
-    rewrite H3; auto.  rewrite H2; auto.
+    rewrite H4; auto.  rewrite H3; auto.
 
    -  match goal with
     | H : valid_ctn _ _ _ |- _
@@ -827,7 +861,39 @@ Proof with eauto.
      unfold hole_free. fold hole_free.
      apply value_is_hole_free in H. 
      apply value_is_hole_free in H0.
-     rewrite H. rewrite H0. auto. 
+     rewrite H. rewrite H0. auto.
+
+(*newly added rule for field write opaque call context*)
+  - inversion H18; subst; auto.
+    apply valid_conf; auto.
+    apply valid_container; auto.
+    apply valid_fs_list; auto. 
+    intro contra. inversion contra.
+    intro contra. inversion contra.
+    inversion H9; subst; auto.
+    inversion H8.
+    intros. intro contra. inversion contra.
+    intros. intro contra. inversion contra.
+    inversion H19; subst; auto.
+    apply hole_free_if in H3.
+    destruct H3.
+    rewrite H2. rewrite H3.
+    auto. 
+    
+  - inversion H17; subst; auto.
+    inversion H5; subst; auto.
+    apply valid_conf; auto.
+    apply valid_container; auto.
+    
+    inversion H5; subst; auto.
+    intros. intro contra.
+    rewrite contra in H4; inversion H4; intuition.
+    intros. intro contra.
+    rewrite contra in H4; inversion H4; intuition.
+    unfold hole_free; fold hole_free.
+    apply value_is_hole_free in H.
+    apply value_is_hole_free in H0.
+    rewrite H. rewrite H0. auto.
 
      (*field write normal*)
    - inversion H20; subst; auto.
@@ -1139,6 +1205,8 @@ Qed. Hint Resolve  expand_heap_preserve_typed_tm.
                                   arg_id arguT; subst; auto.
     apply T_hole_MethodCall2 with (update_typing empty_context arg_id (classTy arguT)) argu T
                                   cls_def body arg_id; subst; auto.
+    apply T_hole_MethodCall3 with (update_typing empty_context arg_id (classTy arguT)) argu T
+                                  cls_def body arg_id; subst; auto.
     apply T_hole_labelData with e; auto.
     apply T_hole_unlabel with e; auto.
     apply T_hole_labelOf with e; auto.
@@ -1146,6 +1214,7 @@ Qed. Hint Resolve  expand_heap_preserve_typed_tm.
     apply T_hole_assignment with e; auto.
     apply T_hole_FieldWrite1 with x cls_def cls'; auto.
     apply T_hole_FieldWrite2 with cls_def clsT e; auto.
+    apply T_hole_FieldWrite3 with cls_def clsT e; auto.
     Qed. Hint Resolve expand_heap_preserve_typed_hole_tm.
 
   
@@ -1265,6 +1334,9 @@ Qed. Hint Resolve  expand_heap_preserve_typed_tm.
       eauto using field_write_preserve_typed_tm; auto. 
     apply T_hole_MethodCall2 with (update_typing empty_context arg_id (classTy arguT)) argu T
                                   cls_def0 body arg_id; subst; auto;
+      eauto using field_write_preserve_typed_tm; auto.
+    apply T_hole_MethodCall3 with (update_typing empty_context arg_id (classTy arguT)) argu T
+                                  cls_def0 body arg_id; subst; auto;
       eauto using field_write_preserve_typed_tm; auto. 
     apply T_hole_labelData with e; auto; eauto using field_write_preserve_typed_tm; auto.
     apply T_hole_unlabel with e; auto; eauto using field_write_preserve_typed_tm; auto. 
@@ -1276,7 +1348,9 @@ Qed. Hint Resolve  expand_heap_preserve_typed_tm.
     apply T_hole_FieldWrite1 with x cls_def0 cls'; auto;
       eauto using field_write_preserve_typed_tm; auto. 
     apply T_hole_FieldWrite2 with cls_def0 clsT0 e; auto;
-      eauto using field_write_preserve_typed_tm; auto.     
+      eauto using field_write_preserve_typed_tm; auto.
+        apply T_hole_FieldWrite3 with cls_def0 clsT0 e; auto;
+      eauto using field_write_preserve_typed_tm; auto.  
     Qed. Hint Resolve  field_write_preserve_typed_hole_tm.
 
 
@@ -1668,6 +1742,7 @@ Proof with eauto.
     apply T_ObjId with  (class_def cls' field_defs0 method_defs0); auto.
     exists field_defs0. exists method_defs0. auto. 
     exists FF. exists loF. auto.
+
     
   (* method call context *)
 -  inversion H_typing; subst; auto.
@@ -1726,6 +1801,7 @@ Proof with eauto.
           split; auto.
           intro contra; inversion contra.
 
+          
 
 (*(MethodCall t id0 e2) *)
   - inversion H_typing; subst; auto. 
@@ -1744,6 +1820,12 @@ Proof with eauto.
     inversion H29; subst; auto.
     inversion H11; subst; auto.
     inversion H2; subst; auto; try (inconsist_hole_free).
+
+    inversion H_valid_config; subst; auto.
+    inversion H29; subst; auto.
+    inversion H11; subst; auto.
+    inversion H2; subst; auto; try (inconsist_hole_free).
+    inversion H1.
 
     inversion H.
     
@@ -1775,8 +1857,40 @@ Proof with eauto.
   (*(Container t' (MethodCall v id0 hole :: fs0) lb' sf')  *)
 -  inversion H_typing; subst; auto.
    apply T_config_ctns with T0 Gamma'; auto.
-   inversion H5; subst; auto. 
+   inversion H6; subst; auto. 
    inversion H11; subst; auto.
+   + inversion H11; subst; auto.
+     rename id into meth.
+     assert ( tm_hole_has_type ct Gamma' h' (MethodCall v meth hole)
+                               (ArrowTy (classTy arguT) (OpaqueLabeledTy (classTy returnT)))).
+     eauto using tm_hole_has_type.          
+     apply T_ctn_type with (classTy arguT)
+                           (classTy arguT) ; auto.
+     destruct fs.          
+     ++ apply T_fs_hole with (OpaqueLabeledTy (classTy returnT))
+                             (OpaqueLabeledTy (classTy returnT)); auto.
+        unfold hole_free. fold hole_free.
+        apply value_is_hole_free in H0. rewrite H0.  auto. 
+        intros. split; auto.
+        intro contra; inversion contra.
+        inversion H18; subst; auto.
+        destruct H19; auto. 
+     ++ case_eq (hole_free t); intro.           
+        apply T_fs_hole with (OpaqueLabeledTy (classTy returnT)) T2; auto.
+        unfold hole_free. fold hole_free.
+        apply value_is_hole_free in H0. rewrite H0.  auto.
+        intros. inversion H5; subst; auto. try (inconsist).
+        destruct H20 with t fs; auto.
+        subst; auto.
+        apply T_fs_hole with (OpaqueLabeledTy (classTy returnT))
+                             (OpaqueLabeledTy (classTy returnT)); auto.
+        unfold hole_free. fold hole_free.
+        apply value_is_hole_free in H0. rewrite H0.  auto.
+     ++ intros.
+        split; auto. 
+        intro contra; inversion contra.
+
+        (*
    + inversion H10; subst; auto.
      rename id into meth.
      assert ( tm_hole_has_type ct Gamma' h' (MethodCall v meth hole)
@@ -1808,39 +1922,57 @@ Proof with eauto.
         split; auto. 
         intro contra; inversion contra.
 
-   + inversion H10; subst; auto.
-     rename id into meth.
-     assert ( tm_hole_has_type ct Gamma' h' (MethodCall v meth hole)
-                               (ArrowTy (classTy arguT) (OpaqueLabeledTy (classTy returnT)))).
-     eauto using tm_hole_has_type.          
-     apply T_ctn_type with (classTy arguT)
-                           (classTy arguT) ; auto.
-     destruct fs.          
-     ++ apply T_fs_hole with (OpaqueLabeledTy (classTy returnT))
-                             (OpaqueLabeledTy (classTy returnT)); auto.
-        unfold hole_free. fold hole_free.
-        apply value_is_hole_free in H0. rewrite H0.  auto. 
-        intros. split; auto.
-        intro contra; inversion contra.
-        inversion H17; subst; auto.
-        destruct H18; auto. 
-     ++ case_eq (hole_free t); intro.           
-        apply T_fs_hole with (OpaqueLabeledTy (classTy returnT)) T2; auto.
-        unfold hole_free. fold hole_free.
-        apply value_is_hole_free in H0. rewrite H0.  auto.
-        intros. inversion H4; subst; auto. try (inconsist).
-        destruct H19 with t fs; auto.
-        subst; auto.
-        apply T_fs_hole with (OpaqueLabeledTy (classTy returnT))
-                             (OpaqueLabeledTy (classTy returnT)); auto.
-        unfold hole_free. fold hole_free.
-        apply value_is_hole_free in H0. rewrite H0.  auto.
-     ++ intros.
-        split; auto. 
-        intro contra; inversion contra.
+*)
+
+(*newly added rule*)
+  - inversion H_typing; subst; auto.
+    apply T_config_ctns with T0 Gamma'; auto.
+    inversion H5; subst; auto. 
+    inversion H10; subst; auto.
+    
+    rename id into meth.
+    apply T_ctn_type with (OpaqueLabeledTy (classTy arguT))
+                          (OpaqueLabeledTy (classTy arguT)) ; auto.
+    + inversion H8; subst; auto.
+    + apply T_fs_hole with (OpaqueLabeledTy (classTy returnT))
+                           T2; auto.
+      unfold hole_free. fold hole_free. apply value_is_hole_free in H.
+      rewrite H. auto.
+      apply  T_hole_MethodCall3 with (update_typing empty_context arg_id (classTy arguT))
+                                     (unlabelOpaque e2) T3 cls_def
+                                     body arg_id; auto.
+      ++ intros. destruct H19 with top fs'; auto.
+         split; auto. subst; auto.
+    + intros. split; auto. intro contra; inversion contra.
 
 
+(*newly added for opaqueLabeled *)
+  - inversion H_typing; subst; auto. 
+    apply T_config_ctns with T0 Gamma'; auto.
 
+    inversion H4; subst; auto.
+    + inversion H16; subst; auto.
+      ++ inversion H7.
+         apply value_is_hole_free in H.
+         rewrite H in H2; inversion H2.
+      ++ inversion H20; subst; auto.
+         +++ inversion H.
+         +++ rename id into meth.
+             apply T_ctn_type with (OpaqueLabeledTy (classTy returnT))
+                          T4 ; auto.
+             ++++ destruct H18 with (MethodCall v1 meth (unlabelOpaque hole)) fs; subst; auto.
+                  apply T_MethodCall with  (update_typing empty_context arg_id (classTy arguT))
+                                           T3 cls_def body
+                                           arg_id  arguT; auto.
+                  apply T_unlabelOpaque; auto.
+                  intro contra; inversion contra. 
+             ++++ intros; subst; auto.
+                  destruct H22 with top fs'; auto.
+                  split; auto. subst; auto.
+    + inversion H_valid_config; subst; auto.
+      inversion H0. 
+        
+        
 (*Method call normal *)
      
   - inversion H_typing; subst; auto.  
@@ -2032,8 +2164,8 @@ Proof with eauto.
 - (* v_l v lo *)
   inversion H_typing; subst; auto.
   apply T_config_ctns with T0 Gamma'; auto.
-  inversion H3; subst; auto.
-  inversion H8; subst; auto.
+  inversion H4; subst; auto.
+  inversion H9; subst; auto.
   apply T_ctn_type with (LabelelTy T3) T2; auto.
 
 
@@ -2367,15 +2499,21 @@ Proof with eauto.
     inversion H11; subst; auto.
     inversion H2; subst; auto; try (inconsist_hole_free).
 
+    inversion H_valid_config; subst; auto.
+    inversion H29; subst; auto.
+    inversion H11; subst; auto.
+    inversion H2; subst; auto; try (inversion H37).
+    inversion H1; subst; auto. inversion H1.
+      
     inversion H.
 
 
 (* (Container e2 (FieldWrite v f hole :: fs) lb sf) *)
 -  inversion H_typing; subst; auto.
    apply T_config_ctns with T0 Gamma'; auto.
-   inversion H5; subst; auto. 
-   inversion H11; subst; auto.
-   + inversion H10; subst; auto.
+   inversion H6; subst; auto. 
+   inversion H12; subst; auto.
+   + inversion H11; subst; auto.
      assert ( tm_hole_has_type ct Gamma' h' (FieldWrite v f hole)
                                (ArrowTy (classTy cls') voidTy)).
      eauto using tm_hole_has_type.          
@@ -2386,15 +2524,15 @@ Proof with eauto.
                              voidTy; auto.
         unfold hole_free. fold hole_free.
         apply value_is_hole_free in H0. rewrite H0.  auto. 
-        intros. inversion H3.  
-        inversion H16; subst; auto.
-        destruct H18; auto. 
+        intros. inversion H4.  
+        inversion H17; subst; auto.
+        destruct H19; auto. 
      ++ case_eq (hole_free t); intro.           
         apply T_fs_hole with voidTy T2; auto.
         unfold hole_free. fold hole_free.
         apply value_is_hole_free in H0. rewrite H0.  auto.
-        intros. inversion H4; subst; auto. try (inconsist).
-        destruct H19 with t fs; auto.
+        intros. inversion H5; subst; auto. try (inconsist).
+        destruct H20 with t fs; auto.
         subst; auto.
         apply T_fs_hole with voidTy
                              voidTy; auto.
@@ -2404,7 +2542,7 @@ Proof with eauto.
         split; auto. 
         intro contra; inversion contra.
 
-   + inversion H10; subst; auto.
+   + inversion H11; subst; auto.
      assert ( tm_hole_has_type ct Gamma' h' (FieldWrite v f hole)
                                (ArrowTy (classTy cls') voidTy)).
      eauto using tm_hole_has_type.          
@@ -2415,15 +2553,15 @@ Proof with eauto.
                              voidTy; auto.
         unfold hole_free. fold hole_free.
         apply value_is_hole_free in H0. rewrite H0.  auto. 
-        intros. inversion H3.  
-        inversion H16; subst; auto.
-        destruct H18; auto. 
+        intros. inversion H4.  
+        inversion H17; subst; auto.
+        destruct H19; auto. 
      ++ case_eq (hole_free t); intro.           
         apply T_fs_hole with voidTy T2; auto.
         unfold hole_free. fold hole_free.
         apply value_is_hole_free in H0. rewrite H0.  auto.
-        intros. inversion H4; subst; auto. try (inconsist).
-        destruct H19 with t fs; auto.
+        intros. inversion H5; subst; auto. try (inconsist).
+        destruct H20 with t fs; auto.
         subst; auto.
         apply T_fs_hole with voidTy
                              voidTy; auto.
@@ -2457,6 +2595,49 @@ Proof with eauto.
     inversion H.
         
 
+(*newly added rule*)
+  - inversion H_typing; subst; auto.
+    apply T_config_ctns with T0 Gamma'; auto.
+    inversion H5; subst; auto. 
+    inversion H10; subst; auto.
+    
+    apply T_ctn_type with (OpaqueLabeledTy (classTy cls'))
+                          (OpaqueLabeledTy (classTy cls')) ; auto.
+    + inversion H15; subst; auto.
+    + apply T_fs_hole with voidTy
+                           T2; auto.
+      unfold hole_free. fold hole_free. apply value_is_hole_free in H.
+      rewrite H. auto.
+      apply  T_hole_FieldWrite3 with cls_def clsT (unlabelOpaque e2); auto.  
+      ++ intros; subst; auto.
+         destruct H19 with top fs'; auto.
+    + intros. split; auto. intro contra; inversion contra.
+
+
+(*newly added for opaqueLabeled *)
+  - inversion H_typing; subst; auto. 
+    apply T_config_ctns with T0 Gamma'; auto.
+
+    inversion H4; subst; auto.
+    + inversion H16; subst; auto.
+      ++ inversion H7.
+         apply value_is_hole_free in H0.
+         rewrite H0 in H2; inversion H2.
+      ++ inversion H20; subst; auto.
+         +++ inversion H0.
+         +++ apply T_ctn_type with voidTy 
+                                   T4 ; auto.      
+             ++++ destruct H18 with (FieldWrite v1 f (unlabelOpaque hole)) fs; subst; auto.
+                  apply T_FieldWrite with cls_def clsT cls'; auto.
+                  apply T_unlabelOpaque; auto.
+                  intro contra; inversion contra. 
+             ++++ intros; subst; auto.
+                  destruct H22 with top fs'; auto.
+    + inversion H_valid_config; subst; auto.
+      inversion H.
+
+
+      
         
 (* field write normal*)
   -

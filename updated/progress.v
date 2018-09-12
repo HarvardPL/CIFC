@@ -170,15 +170,15 @@ Proof with eauto.
                   apply ST_MethodCall_unlableOpaque_leak with cls_def F lo (join_label lb lb0); auto.
 
          +++ destruct H22; subst; auto.
-             ++++ exists (Config ct
-                                 (Container (argu) ((MethodCall (ObjId o) meth hole)::fs) lb sf)
-                                 ctns h); auto. 
-             ++++ exists (Config ct (Container (argu) ((MethodCall (ObjId o) meth hole)::fs) lb sf) ctns h); auto.
-                  apply ST_MethodCall4.
-                  intros. intro contra. destruct H22 as [t']. destruct H22.  
-                  rewrite H22 in contra. inversion contra;  subst;auto.
-                  auto. auto.  
-    + exists Error_state; subst; auto.
+             ++++ exists (Config ct (Container argu ((MethodCall (ObjId o) meth  hole) :: fs) lb sf) ctns h).
+                  auto. apply ST_MethodCall4; auto.
+                  intro contra; inversion contra.
+
+             ++++ auto. destruct H22 as [e2]. destruct H22. subst; auto.
+                  exists (Config ct (Container e2 ((MethodCall  (ObjId o) meth (unlabelOpaque hole)) :: fs) lb sf) ctns h).
+                  apply ST_MethodCall5; auto.
+                  intro contra; inversion contra.
+                      + exists Error_state; subst; auto.
     + eauto using reduction.
     
 
@@ -192,17 +192,29 @@ Proof with eauto.
     right. exists (Config ct (Container (ObjId o) fs lb sf ) ctns h'). 
     apply ST_NewExp with field_defs method_defs cls F; auto. 
 
+
+    Lemma exclude_middle_null : forall v, value v ->
+                                          v = null \/ v <> null.
+    Proof with eauto.
+      intros.  inversion H; try (right; intro contra; inversion contra; fail).
+      left. auto.
+    Qed. Hint Resolve exclude_middle_null.      
+    
   (*label data*)
   -  pose proof (excluded_middle_value e).
      destruct H11; right.
-     + exists (Config ct (Container (v_l e lb0)  fs lb sf) ctns h); auto.       
+     + pose proof exclude_middle_null e H11 .
+       destruct H12.
+       exists Error_state. subst; apply ST_LabelDataException.
+       exists (Config ct (Container (v_l e lb0)  fs lb sf) ctns h); auto.
      + exists (Config ct (Container e ((labelData hole lb0) :: fs) lb sf) ctns h ); auto.
 
   (*unlabel*)
   - pose proof (excluded_middle_value e).
     destruct H10; right.
     + inversion H10; subst; inversion H; subst; auto.  
-      ++ exists Error_state. auto. 
+      ++ exists Error_state. auto.
+         
       ++ subst. remember (join_label lb lb0) as l'.
          exists (Config ct (Container v fs l' sf) ctns h); auto.
   + exists (Config ct (Container (e) ((unlabel hole)::fs) lb sf) ctns h); auto.
@@ -211,7 +223,7 @@ Proof with eauto.
   - pose proof (excluded_middle_value e).
     destruct H10; right. 
     + inversion H10; subst; inversion H; subst; auto.  
-      ++ exists Error_state. auto. 
+      ++ exists Error_state. auto.
       ++ exists (Config ct (Container (l lb0) fs lb sf) ctns h). auto.
     + exists (Config ct (Container (e) ((labelOf hole)::fs) lb sf) ctns h); auto.
 
@@ -312,17 +324,17 @@ Proof with eauto.
                   apply ST_fieldWrite_unlableOpaque_leak with lo cls_def F; auto.
 
         +++ destruct H16. 
-            ++++ exists (Config ct
-                                 (Container (e) ((FieldWrite (ObjId o) f hole)::fs) lb sf)
-                                 ctns h); auto. 
-            ++++ exists (Config ct (Container (e) ((FieldWrite (ObjId o) f hole)::fs) lb sf) ctns h); auto.
-                  apply ST_fieldWrite4.
-                  intros. intro contra. destruct H16 as [t']. destruct H16.  
-                  rewrite H16 in contra. inversion contra;  subst;auto.
-                  auto. auto.
+            ++++ exists (Config ct (Container e ((FieldWrite (ObjId o) f hole) :: fs) lb sf) ctns h).
+                  auto. apply ST_fieldWrite3; auto.
+                  intro contra; inversion contra.
 
-
-    + exists Error_state. auto.
+            ++++ destruct H16 as [e2]. destruct H16.
+                 subst; auto. 
+              
+                  exists (Config ct (Container e2 ((FieldWrite  (ObjId o) f (unlabelOpaque hole)) :: fs) lb sf) ctns h).
+                  apply ST_fieldWrite5; auto.
+                  intro contra; inversion contra.
+    + exists Error_state; subst; auto.
     +  eauto using reduction.
 
 (* if *)

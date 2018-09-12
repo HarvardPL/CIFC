@@ -223,7 +223,16 @@ exists (Config CT (Container (FieldAccess t i) fs lb sf) ctns h); auto.
 + subst. apply value_is_hole_free in H12. apply value_is_hole_free in H14. 
   assert (hole_free (MethodCall t1 i t2) = true). unfold hole_free. fold hole_free.
   rewrite H12. rewrite H14. auto.
-  exists (Config CT (Container (MethodCall t1 i t2) fs lb sf) ctns h); auto. 
+  exists (Config CT (Container (MethodCall t1 i t2) fs lb sf) ctns h); auto.
++ subst; auto. exists (Config CT (Container (MethodCall t1 i (unlabelOpaque v)) fs lb sf) ctns h); auto.
+  (*newly added rule*)
++ subst; auto. exists (Config CT (Container (MethodCall t1 i (unlabelOpaque v2)) fs lb sf) ctns h); auto.
+  apply ST_val; auto. unfold hole_free. fold hole_free.
+  apply value_is_hole_free in H12.
+  apply value_is_hole_free in H14.
+  rewrite H12. rewrite H14.  auto. 
+  
+  
 - exists (Config CT (Container (NewExp c) fs lb sf) ctns h); auto.
 - inversion H_config. inversion H7.  subst. inversion H15. inversion H1. subst.
   exists  (Config CT (Container B_true fs lb sf) ctns h); auto.
@@ -287,7 +296,13 @@ exists (Config CT (Container (FieldWrite t1 i t2) fs lb sf) ctns h); auto.
   rewrite H12. rewrite H14. auto.
 exists (Config CT (Container (FieldWrite t1 i t2)  fs lb sf) ctns h); auto.
 + subst. exists (Config CT (Container (FieldWrite t1 i v) fs lb sf) ctns h); auto.
-  
++ subst; auto.  exists (Config CT (Container (FieldWrite t1 i (unlabelOpaque v)) fs lb sf) ctns h); auto.
+  (*newly added rule*)
++ subst; auto. exists (Config CT (Container (FieldWrite  t1 i (unlabelOpaque v2)) fs lb sf) ctns h); auto.
+  apply ST_val; auto. unfold hole_free. fold hole_free.
+  apply value_is_hole_free in H12.
+  apply value_is_hole_free in H14.
+  rewrite H12. rewrite H14.  auto. 
 - inversion H_config. inversion H7.  subst.
   inversion H15. inversion H1. subst.
   +  assert (surface_syntax (If t1 t2 t3) = true).

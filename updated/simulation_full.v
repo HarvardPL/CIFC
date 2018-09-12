@@ -119,7 +119,8 @@ Proof with eauto.
   - split; auto.
     assert (flow_to (join_label lb1 lo) L_Label = false).
     apply flow_join_label with lb1 lo; auto.
-    apply join_label_commutative. 
+    apply join_label_commutative.
+    
     unfold low_component in H17; subst; auto;
       destruct ctns1'; destruct ctns2;
         rewrite H_flow1 in H17; rewrite H_flow2 in H17;
@@ -508,3 +509,190 @@ Proof with eauto.
     Qed. 
 Hint Resolve simulation_H_H2H. 
 
+
+
+
+
+Lemma simulation_Terminal_H2H : forall ct t1 fs1 lb1 sf1 ctns1 h1
+                              t2 fs2 lb2 sf2 ctns2 h2 
+                              t2' fs2' lb2' sf2' ctns2' h2' φ, 
+      valid_config (Config ct (Container t1 fs1 lb1 sf1) ctns1 h1 ) ->
+      valid_config (Config ct (Container t2 fs2 lb2 sf2) ctns2 h2 ) ->
+      terminal_state (Config ct (Container t1 fs1 lb1 sf1) ctns1 h1)
+              ->
+      Config ct (Container t2 fs2 lb2 sf2) ctns2 h2
+             ==> Config ct (Container t2' fs2' lb2' sf2') ctns2' h2' ->
+      flow_to lb1 L_Label = false ->
+      flow_to lb2 L_Label = false ->
+      flow_to lb2' L_Label = false ->
+      L_equivalence_config (Config ct (Container t1 fs1 lb1 sf1) ctns1 h1 )
+                           (Config ct (Container t2 fs2 lb2 sf2) ctns2 h2)  φ ->
+     L_equivalence_heap h1 h2 φ ->
+     L_equivalence_heap h1 h2' φ /\ L_equivalence_config (Config ct (Container t1 fs1 lb1 sf1) ctns1 h1)
+                          (Config ct (Container t2' fs2' lb2' sf2') ctns2' h2' )  φ.
+Proof with eauto. 
+  intros ct t1 fs1 lb1 sf1 ctns1 h1
+                              t2 fs2 lb2 sf2 ctns2 h2 
+                              t2' fs2' lb2' sf2' ctns2' h2' φ.
+  intro H_valid1.       intro H_valid2.
+  intro H_terminal.
+  intro H_reduction2. 
+  intro H_flow1. intro H_flow2. intro H_flow2'. 
+  intro H_low_eq.    
+  intro H_bijection.
+  remember (Config ct (Container t2 fs2 lb2 sf2) ctns2 h2) as config. 
+  remember (Config ct (Container t2' fs2' lb2' sf2') ctns2' h2') as config'.
+  generalize dependent t1. generalize dependent fs1. generalize dependent lb1. 
+  generalize dependent ctns1. generalize dependent h1. 
+
+  generalize dependent t2. generalize dependent fs2. generalize dependent lb2. 
+  generalize dependent ctns2. generalize dependent h2. 
+
+  generalize dependent sf1. generalize dependent sf2.
+  induction H_reduction2; intros; auto; inversion Heqconfig; inversion Heqconfig'; subst;
+    inversion H_low_eq; subst;
+      try (inconsist_label); 
+      try (split; auto;
+         match goal with
+         | H : L_equivalence_config _ _ _  |- _ 
+           => unfold low_component in H; subst; auto;
+              destruct ctns1; destruct ctns2';
+              rewrite H_flow1 in H; rewrite H_flow2 in H;
+              apply L_equivalence_config_H; auto; 
+              unfold low_component; subst; auto;
+              rewrite H_flow1; rewrite H_flow2; auto  
+         end
+       ).
+(* field access *)
+  - split; auto.    
+    unfold low_component in H18; subst; auto;
+      destruct ctns1; destruct ctns2';
+        rewrite H_flow1 in H18; rewrite H_flow2 in H18;
+          apply L_equivalence_config_H; auto; 
+            unfold low_component; subst; auto; rewrite H_flow1; auto;
+             rewrite   H_flow2';  auto .
+(* (MethodCall (ObjId o) meth v)  *)
+  - split; auto.
+    unfold low_component in H20; subst; auto;
+      destruct ctns1; destruct ctns2;
+        rewrite H_flow1 in H20; rewrite H_flow2 in H20;
+          apply L_equivalence_config_H; auto; 
+            unfold low_component; subst; auto; rewrite H_flow1; auto;
+              rewrite H_flow2; auto .
+
+  (* (MethodCall (ObjId o) meth (v_opa_l v lx)) )  *)
+  - split; auto.
+    unfold low_component in H20; subst; auto;
+      destruct ctns1; destruct ctns2;
+        rewrite H_flow1 in H20; rewrite H_flow2 in H20;
+          apply L_equivalence_config_H; auto; 
+            unfold low_component; subst; auto; rewrite H18; auto;
+              rewrite H_flow2; rewrite H_flow2';  auto .
+(*new exp*)
+  - split; auto.
+    apply extend_h2_with_H_preserve_bijection with ct ;auto.
+    inversion H_valid2; auto.
+    
+    apply extend_h2_with_H_preserve_config_eq; auto.
+    inversion H_valid2; subst; auto. 
+    apply  valid_conf; auto.
+    inversion H8; subst; auto.
+
+    apply L_equivalence_config_H; auto.
+    destruct ctns2'.
+    unfold low_component in H17.
+    unfold low_component.
+    rewrite H16. rewrite H16 in H17. auto.
+    unfold low_component in H17.
+    unfold low_component.
+    rewrite H16. rewrite H16 in H17. auto.
+
+
+  - split; auto.
+    assert (flow_to (join_label lb2 lo) L_Label = false).
+    apply flow_join_label with lb2 lo; auto.
+    apply join_label_commutative. 
+    unfold low_component in H17; subst; auto;
+      destruct ctns1; destruct ctns2';
+        rewrite H_flow1 in H17; rewrite H_flow2 in H17;
+          apply L_equivalence_config_H; auto; 
+            unfold low_component; subst; auto; rewrite H; auto;
+               rewrite H_flow1;  auto .
+
+  - split; auto.
+    assert (flow_to (join_label lb2 lo) L_Label = false).
+    apply flow_join_label with lb2 lo; auto.
+    apply join_label_commutative. 
+    unfold low_component in H17; subst; auto;
+      destruct ctns1; destruct ctns2';
+        rewrite H_flow1 in H17; rewrite H_flow2 in H17;
+          apply L_equivalence_config_H; auto; 
+            unfold low_component; subst; auto; rewrite H; auto;
+              rewrite H_flow1;  auto .
+
+  - assert ((join_label lb2' L_Label) = lb2').
+    apply join_L_Label_irrelevant ; auto. 
+    split; auto.
+    
+    apply update_h2_with_H_preserve_bijection with ct lb2' L_Label; auto.
+    inversion H_valid1. auto.
+    rewrite H0 ;auto. 
+
+    assert (forall a1 a2 : oid, decision.Decision (a1 = a2)). auto.     
+    apply update_field_h2_preserve_config_eq with lb2' L_Label; auto.
+    inversion H_valid2. auto.
+    inversion H_valid1; auto.
+
+    apply L_equivalence_config_H; auto.
+    destruct ctns2'.
+    unfold low_component in H19.
+    unfold low_component.
+    rewrite H18. rewrite H18 in H19. auto.
+    unfold low_component in H19.
+    unfold low_component.
+    rewrite H18. rewrite H18 in H19. auto.
+
+    rewrite H0; auto.
+
+    destruct H3; subst; auto.
+    destruct H3 as [o'].
+    destruct H3 as [cls'].
+    destruct H3 as [F0'].
+    destruct H3 as [lo'].
+    destruct H3; subst; auto. 
+    
+(*field update *)
+  - split; auto.
+    apply update_h2_with_H_preserve_bijection with ct lb2' lx; auto.
+    inversion H_valid1. auto.
+
+    assert (forall a1 a2 : oid, decision.Decision (a1 = a2)). auto.     
+    apply update_field_h2_preserve_config_eq with lb2' lx; auto.
+    inversion H_valid2. auto.
+    inversion H_valid1; auto.
+
+    apply L_equivalence_config_H; auto.
+    destruct ctns2'.
+    unfold low_component in H19.
+    unfold low_component.
+    rewrite H18. rewrite H18 in H19. auto.
+    unfold low_component in H19.
+    unfold low_component.
+    rewrite H18. rewrite H18 in H19. auto.
+
+        destruct H3; subst; auto.
+    destruct H2 as [o'].
+    destruct H2 as [cls'].
+    destruct H2 as [F0'].
+    destruct H2 as [lo'].
+    destruct H2; subst; auto. 
+    
+  - split; auto.
+    unfold low_component in H17; subst; auto;
+      destruct ctns1; destruct ctns2';
+        rewrite H_flow1 in H17; rewrite H_flow2 in H17;
+          apply L_equivalence_config_H; auto; 
+            unfold low_component; subst; auto; rewrite  H_flow2';  auto;
+              rewrite H_flow1; auto; rewrite   H_flow2' in H17; auto.
+    Qed. 
+Hint Resolve simulation_Terminal_H2H. 

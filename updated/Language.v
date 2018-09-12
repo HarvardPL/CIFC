@@ -333,7 +333,15 @@ Inductive valid_syntax :  tm -> Prop :=
       value v1 -> value v2 ->
       valid_syntax (MethodCall v1 meth v2)
 
+  | Valid_MethodCall6 : forall v meth,
+      value v ->
+      valid_syntax (MethodCall v meth (unlabelOpaque hole))
 
+  | Valid_MethodCall7 : forall v1 v2 meth,
+      value v1 -> value v2 ->
+      valid_syntax (MethodCall v1 meth (unlabelOpaque v2))
+                   
+                   
 (* new exp *)
   | Valid_NewExp : forall cls_name,
       valid_syntax (NewExp cls_name)
@@ -427,6 +435,16 @@ Inductive valid_syntax :  tm -> Prop :=
       value v -> 
       valid_syntax hole ->
       valid_syntax (FieldWrite v f hole)
+
+
+  | Valid_FieldWrite6 : forall v f,
+      value v ->
+      valid_syntax (FieldWrite v f (unlabelOpaque hole))
+
+  | Valid_FieldWrite7 : forall v1 v2 f,
+      value v1 -> value v2 ->
+      valid_syntax (FieldWrite v1 f (unlabelOpaque v2))
+                   
 
 (* if *)
   | Valid_if1 : forall guard e1 e2,
@@ -606,10 +624,23 @@ Inductive reduction : config -> config -> Prop :=
 
   (* context rule: evaluate arguments *)
   | ST_MethodCall4 : forall h v e2 id ct fs ctns sf lb,
-      (forall t, value t -> t<> null -> e2 <> unlabelOpaque t) ->
-      value v -> ~ value e2 ->
+      (forall t, e2 <> unlabelOpaque t) ->
+      value v -> ~ value e2 -> v <> null ->
       Config ct (Container (MethodCall v id e2) fs lb sf ) ctns h==> Config ct (Container e2 ((MethodCall v id hole) :: fs) lb sf) ctns h
 
+
+  | ST_MethodCall5 : forall h id ct fs v1 e2 ctns sf lb,
+      value v1 ->
+      ~ value e2 -> v1 <> null ->
+      Config ct (Container (MethodCall v1 id (unlabelOpaque e2)) fs lb sf ) ctns h ==>
+                           Config ct (Container e2 ((MethodCall v1 id (unlabelOpaque hole)) :: fs) lb sf) ctns h
+
+                                        
+  | ST_MethodCall6 : forall h id ct fs v1 v2 ctns sf lb,
+      value v1 ->
+      value v2 ->
+      Config ct (Container v2 ((MethodCall v1 id (unlabelOpaque hole)) :: fs) lb sf) ctns h ==>
+                           Config ct (Container (MethodCall v1 id (unlabelOpaque v2)) fs lb sf ) ctns h
 
   (* normal method call *)
   | ST_MethodCall_normal : forall o h cls fields v lx sf  arg_id cls_a body meth returnT ct fs ctns lb sf',
@@ -682,6 +713,7 @@ Inductive reduction : config -> config -> Prop :=
 
   | ST_LabelData3 : forall h v ct fs lb lo sf ctns,
       value v ->
+      v <> null ->
       Config ct (Container (labelData v lo) fs lb sf) ctns h ==>  Config ct (Container (v_l v lo) fs lb sf) ctns h
   (* label data exception *)
   | ST_LabelDataException : forall h lb ct fs lo ctns sf,
@@ -763,15 +795,29 @@ Inductive reduction : config -> config -> Prop :=
       Config ct (Container v ((FieldWrite hole f e2) :: fs) lb sf) ctns h ==> Config ct (Container (FieldWrite v f e2) fs lb sf ) ctns h
 
   (* context rule: evaluate arguments *)
-  | ST_fieldWrite4 : forall h v e2 f ct fs ctns sf lb,
-      (forall t, value t -> t<> null -> e2 <> unlabelOpaque t) ->
+  | ST_fieldWrite3 : forall h v e2 f ct fs ctns sf lb,
+      (forall t, e2 <> unlabelOpaque t) ->
       value v -> ~ value e2 ->
+      v <> null ->
       Config ct (Container (FieldWrite v f e2) fs lb sf ) ctns h==> Config ct (Container e2 ((FieldWrite v f hole) :: fs) lb sf) ctns h
-  | ST_fieldWrite5 : forall h v1 v2 f ct fs lb sf ctns, 
+  | ST_fieldWrite4 : forall h v1 v2 f ct fs lb sf ctns, 
       value v2 ->
       value v1 ->
       Config ct (Container v2 ((FieldWrite v1 f hole) :: fs) lb sf ) ctns h ==> Config ct (Container (FieldWrite v1 f v2) fs lb sf ) ctns h 
 
+  | ST_fieldWrite5 : forall h v e2 f ct fs ctns sf lb,
+      value v -> ~ value e2 ->
+      v <> null ->
+      Config ct (Container (FieldWrite v f (unlabelOpaque e2)) fs lb sf ) ctns h ==>
+             Config ct (Container e2 ((FieldWrite v f (unlabelOpaque hole)) :: fs) lb sf) ctns h
+             
+  | ST_fieldWrite6 : forall h v1 v2 f ct fs lb sf ctns, 
+      value v2 ->
+      value v1 ->
+      Config ct (Container v2 ((FieldWrite v1 f (unlabelOpaque hole)) :: fs) lb sf ) ctns h ==>
+             Config ct (Container (FieldWrite v1 f (unlabelOpaque v2)) fs lb sf ) ctns h 
+
+             
   (* normal field write *)
   | ST_fieldWrite_normal : forall o h h' f lo lb cls F F' v ct fs ctns sf,
       Some (Heap_OBJ cls F lo) = lookup_heap_obj h o -> 
@@ -793,7 +839,8 @@ Inductive reduction : config -> config -> Prop :=
       (flow_to lb lo = false  \/ (exists o' cls' F' lo', v = ObjId o' /\
                                Some (Heap_OBJ cls' F' lo') = lookup_heap_obj h o' /\
                                flow_to lo' lo = false
-       )) ->
+      )) ->
+      value v ->
     Config ct (Container (FieldWrite (ObjId o) f v) fs lb sf ) ctns h 
       ==>  Error_state
 
@@ -822,7 +869,8 @@ Inductive reduction : config -> config -> Prop :=
       ( flow_to (join_label lb lx) lo  = false \/ (exists o' cls' F' lo', v = ObjId o' /\
                                Some (Heap_OBJ cls' F' lo') = lookup_heap_obj h o' /\
                                flow_to lo' lo = false
-       )) ->
+      )) ->
+      value v ->
     Config ct (Container (FieldWrite (ObjId o) f (unlabelOpaque (v_opa_l v lx))) fs lb sf ) ctns h
       ==> Error_state
 

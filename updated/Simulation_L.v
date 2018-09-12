@@ -446,10 +446,15 @@ Lemma simulation_L : forall ct t1 fs1 lb1 sf1 ctns_stack1 h1  t2 fs2 lb2 sf2 ctn
     inversion H19; subst; auto. 
   + inversion H17; subst; auto.
     intuition.
+    inversion H22; subst; auto.
+    assert (value e). auto. 
+    apply  value_L_eq with v h1' h2' φ; auto.
+    
+    intuition. 
+  + inversion H17; subst; auto.
     inversion H21; subst; auto.
     assert (value e). auto. 
-    apply  value_L_eq with v h1' h2' φ; auto. 
-    intuition. 
+    apply  value_L_eq with v1 h1' h2' φ; auto. intuition.
   + inversion H17; subst; auto.
     inversion H22; subst; auto.
     assert (value e). auto. 
@@ -459,73 +464,158 @@ Lemma simulation_L : forall ct t1 fs1 lb1 sf1 ctns_stack1 h1  t2 fs2 lb2 sf2 ctn
     assert (value e). auto. 
     apply  value_L_eq with (ObjId o) h1' h2' φ; auto. intuition.
     
-  
 - inversion H_reduction2; subst; auto; try (solve_by_invert_ctn).
-  + inversion H17; subst; auto. exists φ. split; auto.
+  + inversion H17; subst; auto. exists φ. split;  auto.
     inversion H20; subst; auto.
-    inversion H9; subst; auto.
+    inversion H9; subst; auto. 
+    
+  + inversion H17; subst; auto.
+    inversion H21; subst; auto.
+    inversion H9; subst; auto. 
+    assert (value hole). auto. 
+    apply  value_L_eq with v1 h1' h2' φ; auto.
+    inversion H0. 
+
+  + inversion H17; subst; auto.
+    inversion H21; subst; auto.
+    inversion H9; subst; auto. 
+    assert (value hole). auto. 
+    apply  value_L_eq with v1 h1' h2' φ; auto.
+    inversion H0.
+
   + inversion H17; subst; auto.
     inversion H21; subst; auto.
     inversion H9; subst; auto.
-    inversion H23; subst; auto. inversion H2.
-  + inversion H17; subst; auto.
-    inversion H21; subst; auto. inversion H9; subst; auto.
     inversion H11; subst; auto.
-    inversion H12.
-
+    inversion H12; subst; auto. 
+    
 - inversion H_reduction2; subst; auto; try (solve_by_invert_ctn).
-  + inversion H18; subst; auto. 
+  + inversion H18; subst; auto. exists φ. split; auto.
     inversion H21; subst; auto.
     inversion H10; subst; auto.
-    inversion H23; subst; auto. inversion H.
+    inversion H23; subst; auto.
+    inversion H.
+    
   + inversion H18; subst; auto. exists φ. split; auto.
     inversion H22; subst; auto.
-    inversion H10; subst; auto.
-  + inversion H18; subst; auto. 
+    inversion H10; subst; auto.    
+    
+  + inversion H18; subst; auto.
     inversion H22; subst; auto.
     inversion H10; subst; auto.
-    inversion H14; subst; auto. inversion H13. 
-    case_eq ( hole_free e2); intro; rewrite H1 in H2; intuition.
+    inversion H25. 
+  + inversion H18; subst; auto.
+    inversion H22; subst; auto.
+    inversion H10; subst; auto.
+    inversion H14; subst; auto.
+    inversion H13; subst; auto.
+    case_eq (hole_free e2); intro Hy; rewrite Hy in H2; inversion H2.     
 
 - inversion H_reduction2; subst; auto; try (solve_by_invert_ctn).
-  + inversion H19; subst; auto.  
-    subst. inversion H21; subst; auto.
+  + inversion H20; subst; auto.  
+    subst. inversion H22; subst; auto.
 
     assert (value e). apply value_L_eq2 with v h1' h2' φ; auto.
     contradiction.
-  + inversion H19; subst; auto.   
-    inversion H23; subst; auto.  exists φ. split;  auto.
-  + inversion H19; subst; auto. 
+  + inversion H20; subst; auto.   
+    inversion H25; subst; auto.  exists φ. split;  auto.
+  + inversion H20; subst; auto. 
     inversion H24; subst; auto.
-
+    inversion H17; subst; auto.
+    destruct H with e1; auto. 
+    
+  + inversion H20; subst; auto.
+    inversion H25; subst; auto.
     assert (value e2). apply value_L_eq with v0 h1' h2' φ; auto.
     contradiction.
-    
-  + inversion H19; subst; auto.
-    inversion H24; subst; auto.
-    inversion H14; subst; auto.
-    destruct H with e1.
 
-    apply value_L_eq with (v_opa_l v0 lx) h1' h2' φ; auto.
-    intro contra. rewrite contra in H5. inversion H5.
-    auto.                           
+  + inversion H20; subst; auto.
+    inversion H25; subst; auto.
+    inversion H15; subst; auto.
+    destruct H with e1; auto.                    
 
 - inversion H_reduction2; subst; auto; try (solve_by_invert_ctn).
   + inversion H19; subst; auto. 
-    inversion H20; subst; auto.
-    inversion H23; subst; auto. 
-    assert (value e). apply value_L_eq2  with (ObjId o)  h1' h2'  φ; auto. contradiction.
-    
+    inversion H21; subst; auto.
+    assert (value e). apply value_L_eq2 with v1 h1' h2' φ; auto.
+    contradiction.
+
+  + inversion H19; subst; auto. 
+    inversion H24; subst; auto.
+    inversion H21; subst; auto.
+    destruct H6 with e3; auto.
     
   + inversion H19; subst; auto. 
-    inversion H20; subst; auto.
+    inversion H23; subst; auto.
+    inversion H16; subst; auto.
+    exists φ. split;  auto.
+    apply L_equivalence_config_L; auto.
+
+  + inversion H19; subst; auto. 
+    inversion H24; subst; auto.
+    assert (value (unlabelOpaque e2)).
+    apply value_L_eq  with v  h1' h2'  φ; auto.
+    inversion H2.
+    
+  + inversion H19; subst; auto. 
+    inversion H24; subst; auto.
+    inversion H14; subst; auto.
+    assert (value e2); auto.
+    apply value_L_eq  with (v_opa_l v lx)  h1' h2'  φ; auto.
+    contradiction.
+ 
+
+- inversion H_reduction2; subst; auto; try (solve_by_invert_ctn);
+    try(inversion H18; subst; auto;
+    inversion H21; subst; auto;
+    inversion H10; subst; auto ).
+  + inversion H18; subst; auto.
+    inversion H22; subst; auto.
+    inversion H10; subst; auto.
+  + inversion H24; subst; auto.
+    inversion H3; subst; auto.
+    inversion H23; subst; auto.
+    inversion H. 
+  + inversion H18; subst; auto.
+    inversion H22; subst; auto.
+    inversion H10; subst; auto.
+    inversion H25.     
+  + inversion H18; subst; auto.
+    inversion H22; subst; auto.
+    inversion H10; subst; auto.
+    exists φ. split;  auto.
+  + inversion H18; subst; auto.
+    inversion H22; subst; auto.
+    inversion H10; subst; auto.
+  + inversion H18; subst; auto.
+    inversion H22; subst; auto.
+    inversion H10; subst; auto.
+  + inversion H18; subst; auto.
+    inversion H22; subst; auto.
+    inversion H10; subst; auto.
+    inversion H14; subst; auto.
+    inversion H2; subst; auto.
+    inversion H13; subst; auto.
+    case_eq (hole_free e2); intro Hy; rewrite Hy in H4; inversion H4.    
+
+    
+- inversion H_reduction2; subst; auto; try (solve_by_invert_ctn).
+  + inversion H20; subst; auto. 
+    inversion H22; subst; auto.
+    assert (value e). apply value_L_eq2  with (ObjId o)  h1' h2'  φ; auto. contradiction.
+   
+  + inversion H20; subst; auto.
     inversion H25; subst; auto. 
     assert (value e2). apply value_L_eq2  with v h1' h2'  φ; auto. contradiction.
+    
+  + inversion H20; subst; auto.
+    inversion H24; subst; auto.
+    inversion H17; subst; auto.
+    inversion H1. 
 
-  + inversion H19; subst; auto.
-    inversion H20; subst; auto.
-    inversion H26; subst; auto. 
-    inversion H22; subst; auto. 
+  + inversion H20; subst; auto.
+    inversion H25; subst; auto.
+    inversion H14; subst; auto. 
 
     assert (cls = cls0). apply cls_def_eq with o o0 fields lx fields0 lx0 h1' h2'  φ; auto.
     subst; auto.
@@ -540,196 +630,155 @@ Lemma simulation_L : forall ct t1 fs1 lb1 sf1 ctns_stack1 h1  t2 fs2 lb2 sf2 ctn
 (*
     inversion H31; subst; auto.
     inversion H34; subst; auto. *)
-    inversion H14; subst; auto.
-    inversion H32; subst; auto.
-    inversion H29; subst; auto.
-    destruct H46 as [F']. destruct H3 as [lo].
+    inversion H13; subst; auto.
+    inversion H31; subst; auto.
+    inversion H28; subst; auto.
+    destruct H45 as [F']. destruct H3 as [lo].
     rewrite H3 in H; inversion H; subst; auto.
-    rewrite <- H11 in H35. inversion H35; subst; auto.
-    rewrite H36 in H0. inversion H0; subst; auto.
+    rewrite <- H10 in H34. inversion H34; subst; auto.
+    rewrite H35 in H0. inversion H0; subst; auto.
 
     apply  L_equivalence_store_L ; auto.
-    inversion H28; subst; auto. destruct H3. 
+    inversion H27; subst; auto. destruct H3. 
         split; auto.
     intros. case_eq (beq_id arg_id x); intro.
-    unfold sf_update in H11. rewrite H31 in H11. inversion H11. 
-    unfold sf_update in H29. rewrite H31 in H29; inversion H29.
+    unfold sf_update in H10. rewrite H30 in H10. inversion H10. 
+    unfold sf_update in H28. rewrite H30 in H28; inversion H28.
     subst; auto.     
 
-    unfold sf_update in H11. rewrite H31 in H11. inversion H11.
+    unfold sf_update in H10. rewrite H30 in H10. inversion H10.
     
     split; auto; intros.
 
-    apply sf_update_non_empty in H11. intuition. 
-    apply sf_update_non_empty in H11. intuition. 
+    apply sf_update_non_empty in H10. intuition. 
+    apply sf_update_non_empty in H10. intuition. 
 
-    rewrite <- H9 in H8; inversion H8; subst; auto.
+    rewrite <- H8 in H7; inversion H7; subst; auto.
     assert ( flow_to lb2  L_Label = false).
-    apply flow_transitive with lb3; auto.
-    try (inconsist_label). 
-    (*
-    inversion H36; subst; auto. 
-    inversion H14; subst; auto.
-    destruct H40 as [F']. destruct H3 as [lo].
-    rewrite H3 in H; inversion H; subst; auto.
-    rewrite <- H11 in H30. inversion H30; subst; auto.
-    rewrite H32 in H0. inversion H0; subst; auto.
+    apply flow_transitive with lx0; auto.
+    try (inconsist_label).
 
-    inversion H31; subst; auto.
-    inversion H35; subst; auto. 
-    inversion H14; subst; auto.
-    destruct H40 as [F']. destruct H3 as [lo].
-    rewrite H3 in H; inversion H; subst; auto.
-    rewrite <- H11 in H30. inversion H30; subst; auto.
-    rewrite H33 in H0. inversion H0; subst; auto.
 
-    inversion H37; subst; auto. 
-    inversion H14; subst; auto.
-    destruct H41 as [F']. destruct H3 as [lo].
-    rewrite H3 in H; inversion H; subst; auto.
-    rewrite <- H11 in H30. inversion H30; subst; auto.
-    rewrite H33 in H0. inversion H0; subst; auto.
-
-    inversion H41; subst; auto.
-    inversion H30; subst; auto. 
-    inversion H14; subst; auto.
-    destruct H46 as [F']. destruct H3 as [lo].
-    rewrite H3 in H; inversion H; subst; auto.
-    rewrite <- H11 in H35. inversion H35; subst; auto.
-    rewrite H36 in H0. inversion H0; subst; auto.
-
-    inversion H38. 
-    apply  L_equivalence_store_L ; auto.
-    inversion H28; subst; auto. destruct H3. 
-
-    split; auto.
-    intros. case_eq (beq_id arg_id x); intro.
-    unfold sf_update in H11. rewrite H31 in H11. inversion H11. 
-    unfold sf_update in H29. rewrite H31 in H29; inversion H29.
-    subst; auto.     
-
-    unfold sf_update in H11. rewrite H31 in H11. inversion H11.
-    
-    split; auto; intros.
-
-    apply sf_update_non_empty in H11. intuition. 
-    apply sf_update_non_empty in H11. intuition. 
-
-    rewrite <- H9 in H8; inversion H8; subst; auto.
-    assert ( flow_to lb2  L_Label = false).
-    apply flow_transitive with lb3; auto.
-    try (inconsist_label). *)
-    
   + inversion H20; subst; auto.
     inversion H25; subst; auto.    
     inversion H15; subst; auto.
     inversion H1; subst; auto. 
 
+
 - inversion H_reduction2; subst; auto; try (solve_by_invert_ctn).
-  inversion H20; subst; auto. 
-  inversion H22; subst; auto.
-  inversion H14; subst; auto; intuition. 
-  
-  inversion H20; subst; auto.
-  inversion H24; subst; auto.
-  inversion H17; subst; auto.
-  assert (value e0). apply value_L_eq2 with (v_opa_l v lx) h1' h2' φ; auto.
-  destruct H6 with e0. auto.
-  intro contra. inversion H1; subst; auto; inversion H12.
-  auto. 
+  (*method call with unlabelOpaque*)
+  + inversion H20; subst; auto. 
+    inversion H22; subst; auto.
+    assert (value e). apply value_L_eq2 with (ObjId o) h1' h2' φ; auto.
+    contradiction.
 
-  
-  inversion H20; subst; auto.
-  inversion H25; subst; auto.  
-  inversion H22; subst; auto.
-  inversion H16.
+  + inversion H20; subst; auto.
+    inversion H25; subst; auto.
+    inversion H22; subst; auto.
+    destruct H7 with e0; auto.
 
+  + inversion H20; subst; auto.
+    inversion H24; subst; auto.
+    inversion H17; subst; auto.
+    inversion H7; subst; auto.
+    assert (value (v_opa_l e0 lx)). auto.
+    contradiction.
+    assert (value (v_opa_l e0 l2)). auto.
+    contradiction.
 
-  inversion H20; subst; auto.
-  inversion H25; subst; auto.
-  inversion H15; subst; auto. 
-  
-  inversion H14; subst; auto.
-  assert (cls1 = cls2).
-  inversion H_bijection; subst; auto.
-  apply H0 in H5; auto.
-  inversion H5; subst;  auto.
-  rewrite <- H30 in H7; inversion H7; subst; auto.
-  rewrite <- H31 in H10; inversion H10; subst; auto.
-  apply H34. 
+  + inversion H20; subst; auto.
+    inversion H25; subst; auto.
+    inversion H14; subst; auto.
+    inversion H22; subst; auto.
+    inversion H16.
+    inversion H22; subst; auto.
+    inversion H16.  
 
-  assert (body = body0 /\ arg_id = arg_id0 /\
+  + inversion H20; subst; auto.
+    inversion H25; subst; auto.
+    inversion H14; subst; auto.
+
+    assert (cls1 = cls2).
+    inversion H_bijection; subst; auto.
+    apply H0 in H5; auto.
+    inversion H5; subst;  auto.
+    rewrite <- H29 in H6; inversion H6; subst; auto.
+    rewrite <- H30 in H8; inversion H8; subst; auto.
+    apply H33.
+    
+    assert (body = body0 /\ arg_id = arg_id0 /\
           surface_syntax body = true).
-  apply config_typing_lead_to_tm_typing in H_typing1.
-  destruct H_typing1 as [T1].
-  destruct H1 as [gamma1].
-  inversion H1; subst; auto.
-  inversion H30; subst; auto.
+    apply config_typing_lead_to_tm_typing in H_typing1.
+    destruct H_typing1 as [T1].
+    destruct H1 as [gamma1].
+    inversion H1; subst; auto.
 
-  destruct H37 as [F0]. destruct H0 as [l0].
-  rewrite  H0 in H; inversion H; subst; auto.
-  rewrite  H0 in H7; inversion H7; subst; auto.
-  rewrite <- H32 in H28; inversion H28; subst; auto.
-  rewrite H33 in H4; inversion H4; subst; auto.
-  rewrite <- H10 in H9; inversion H9; subst; auto.
-  rewrite H33 in H23; inversion H23; subst; auto.
-  intro contra; inversion contra.
-  destruct H1. destruct H11. 
+    inversion H29; subst; auto.
 
-  subst; auto. 
+    destruct H36 as [F0]. destruct H0 as [l0].
+    rewrite  H0 in H; inversion H; subst; auto.
+    rewrite  H0 in H6; inversion H6; subst; auto.
+    rewrite <- H31 in H12; inversion H12; subst; auto.
+    rewrite H32 in H4; inversion H4; subst; auto.
+    rewrite <- H9 in H8; inversion H8; subst; auto.
+    rewrite H32 in H23; inversion H23; subst; auto.
+    intro contra; inversion contra.
+    destruct H1. destruct H10. 
+    subst; auto. 
 
-  inversion H6; subst; auto.
-  exists  φ. split; auto. apply L_equivalence_config_L; auto.
-  apply join_L_label_flow_to_L; auto.
-  apply join_L_label_flow_to_L; auto.
+    inversion H15; subst; auto.
+    inversion H28; subst; auto. 
+    exists  φ. split; auto. apply L_equivalence_config_L; auto.
+    apply join_L_label_flow_to_L; auto.
+    apply join_L_label_flow_to_L; auto.
 
-  apply L_eq_ctn; auto. 
-  apply join_L_label_flow_to_L; auto.
-  apply join_L_label_flow_to_L; auto.
-
-  apply L_equivalence_store_L; auto.
-  split; auto.
-  intros.
-  case_eq (beq_id arg_id0 x); intro.
-  unfold sf_update in H0. rewrite H31 in H0. inversion H0.
-  unfold sf_update in H11. rewrite H31 in H11. inversion H11.
-  subst; auto.
+    apply L_eq_ctn; auto. 
+    apply join_L_label_flow_to_L; auto.
+    apply join_L_label_flow_to_L; auto.
+    apply L_equivalence_store_L; auto.
+    split; auto.
+    intros.
+    case_eq (beq_id arg_id0 x); intro.
+    unfold sf_update in H0. rewrite H31 in H0. inversion H0.
+    unfold sf_update in H10. rewrite H31 in H10. inversion H10.
+    subst; auto.
   
-  unfold sf_update in H0. rewrite H31 in H0. inversion H0.
+    unfold sf_update in H0. rewrite H31 in H0. inversion H0.
+    split; auto; intro. 
 
-  split; auto; intro. 
+    pose proof (sf_update_non_empty arg_id0  v).
+    intuition.
 
-  pose proof (sf_update_non_empty arg_id0  v).
-  intuition.
-
-  pose proof (sf_update_non_empty arg_id0  v0).
-  intuition. 
+    pose proof (sf_update_non_empty arg_id0  v0).
+    intuition. 
   
-  exists  φ. split; auto.  apply L_equivalence_config_H; auto. 
-  apply flow_join_label with lx lb1; auto.
-  apply flow_join_label with lx0 lb2; auto. 
-  unfold low_component.
-  assert (flow_to (join_label lb1 lx) L_Label = false).
-  apply flow_join_label with lx lb1; auto.
-  rewrite H0 .
-  assert (flow_to (join_label lb2 lx0) L_Label = false).
-  apply flow_join_label with lx0 lb2; auto. 
-  rewrite H1.
-  fold low_component.
-  assert ((low_component ct (Container return_hole fs1 lb1 sf1)
+    exists  φ. split; auto.  apply L_equivalence_config_H; auto. 
+    apply flow_join_label with lx lb1; auto.
+    apply flow_join_label with lx0 lb2; auto. 
+    unfold low_component.
+    assert (flow_to (join_label lb1 lx) L_Label = false).
+    apply flow_join_label with lx lb1; auto.
+    rewrite H0 .
+
+    assert (flow_to (join_label lb2 lx0) L_Label = false).
+    apply flow_join_label with lx0 lb2; auto. 
+    rewrite H1.
+    fold low_component.
+    assert ((low_component ct (Container return_hole fs1 lb1 sf1)
                              ctns_stack1 h1') =
           Config ct (Container return_hole fs1 lb1 sf1) ctns_stack1 h1').
-  apply low_component_with_L_Label; auto. rewrite H11.
-  assert ((low_component ct (Container return_hole fs2 lb2 sf2)
+    apply low_component_with_L_Label; auto.
+    rewrite H10.
+    assert ((low_component ct (Container return_hole fs2 lb2 sf2)
                              ctns_stack2 h2') =
           Config ct (Container return_hole fs2 lb2 sf2) ctns_stack2 h2').
-  apply low_component_with_L_Label; auto. rewrite H29.
-  auto.
+    apply low_component_with_L_Label; auto. rewrite H29.
+    auto.
 
-  rewrite <- H5 in H; inversion H; subst; auto.
-  assert (flow_to lb1 L_Label = false).
-  apply flow_transitive with lb0; auto.
-  try (inconsist_label).
+    rewrite <- H5 in H; inversion H; subst; auto.
+    assert (flow_to lb1 L_Label = false).
+    apply flow_transitive with lb0; auto.
+    try (inconsist_label).
 
 - inversion H_reduction2; subst; auto; try (solve_by_invert_ctn).
   inversion   H_bijection; subst; auto.
@@ -936,14 +985,18 @@ Lemma simulation_L : forall ct t1 fs1 lb1 sf1 ctns_stack1 h1  t2 fs2 lb2 sf2 ctn
   inversion  H_valid2; subst; auto.
 
 - inversion H_reduction2; subst; auto; try (solve_by_invert_ctn).
+  (*labelData*)
   inversion H17; subst; auto. 
-  inversion H19; subst; auto. exists φ. split; auto.
+  inversion H19; subst; auto.
+  exists φ. split; auto.
+
   inversion H17; subst; auto. intuition.  
-  inversion H19; subst; auto. 
+  inversion H20; subst; auto. 
   assert (value e). apply value_L_eq with v h1' h2'  φ; auto.
   intuition. 
 
 - inversion H_reduction2; subst; auto; try (solve_by_invert_ctn).
+  (* L_eq_container (Container t1 (labelData hole lo :: fs) lb1 sf1) h1' (Container t2 fs2 lb2 sf2) h2 φ *)
   inversion H17; subst; auto. 
   inversion H20; subst; auto. inversion H9; subst; auto. 
   exists φ. split; auto.
@@ -953,25 +1006,32 @@ Lemma simulation_L : forall ct t1 fs1 lb1 sf1 ctns_stack1 h1  t2 fs2 lb2 sf2 ctn
   inversion H12. 
 
 - inversion H_reduction2; subst; auto; try (solve_by_invert_ctn).
-  inversion H17; subst; auto.
-  inversion H19; subst; auto.
+(*L_eq_container (Container (labelData v lo) fs1 lb1 sf1) h1' (Container t2 fs2 lb2 sf2) h2 φ*)
+  inversion H18; subst; auto.
+  inversion H20; subst; auto.
   assert (value e). apply value_L_eq2 with v h1' h2'  φ; auto.
   intuition.
-  inversion H17; subst; auto.
+
+  inversion H18; subst; auto.  
+  inversion H21; subst; auto.
   
-  inversion H19; subst; auto. exists φ. split; auto. 
+  exists φ. split; auto. 
   apply L_equivalence_config_L; auto.
   apply L_eq_ctn; auto.
   case_eq (flow_to lo0 L_Label); intro; auto. 
 
 - inversion H_reduction2; subst; auto; try (solve_by_invert_ctn).
+  (* L_eq_container (Container (unlabel e) fs1 lb1 sf1) h1' (Container t2 fs2 lb2 sf2) h2 φ*)
   inversion H17; subst; auto.  
-  inversion H19; subst; auto.  exists φ. split; auto.
+  inversion H19; subst; auto.
+  exists φ. split; auto.
+  
   inversion H17; subst; auto.
   inversion H19; subst; auto.
   inversion H3; subst; auto; intuition. 
 
 - inversion H_reduction2; subst; auto; try (solve_by_invert_ctn).
+  (*L_eq_container (Container t1 (unlabel hole :: fs) lb1 sf1) h1' (Container t2 fs2 lb2 sf2) h2 φ*)
   inversion H17; subst; auto.  
   inversion H20; subst; auto.  exists φ. split; auto.
   inversion H17; subst; auto.
@@ -980,6 +1040,7 @@ Lemma simulation_L : forall ct t1 fs1 lb1 sf1 ctns_stack1 h1  t2 fs2 lb2 sf2 ctn
   inversion H12.
 
 - inversion H_reduction2; subst; auto; try (solve_by_invert_ctn).
+  (* L_eq_container (Container (unlabel (v_l v lo)) fs1 lb1 sf1) h1' (Container t2 fs2 lb2 sf2) h2 φ*)
   inversion H17; subst; auto. 
   inversion H19; subst; auto.
   inversion H4; subst; auto; intuition.
@@ -990,7 +1051,6 @@ Lemma simulation_L : forall ct t1 fs1 lb1 sf1 ctns_stack1 h1  t2 fs2 lb2 sf2 ctn
     exists φ. auto.
 
   apply L_equivalence_config_H; auto.*)
-  inversion H18; subst; auto.
   inversion H19; subst; auto.
   inversion H3; subst; auto.
   
@@ -1006,7 +1066,8 @@ Lemma simulation_L : forall ct t1 fs1 lb1 sf1 ctns_stack1 h1  t2 fs2 lb2 sf2 ctn
   assert (flow_to (join_label lb2 lo0) L_Label = false). 
   apply flow_join_label with lo0 lb2; auto.
 
-  exists φ. split; auto. 
+  exists φ. split; auto.
+  inversion H18; subst; auto. 
   apply L_equivalence_config_H; auto. 
   unfold low_component. rewrite H. rewrite H1. auto.
   apply L_equivalence_config_L; auto.
@@ -1017,28 +1078,14 @@ Lemma simulation_L : forall ct t1 fs1 lb1 sf1 ctns_stack1 h1  t2 fs2 lb2 sf2 ctn
             => inversion H
           end.
   split; auto. 
-           
-
-  exists φ. split; auto. 
-  inversion H19; subst; auto.
-  inversion H5; subst; auto.
-  assert (flow_to (join_label lb1 lo0) L_Label = true).
-  apply join_L_label_flow_to_L; auto.
-  assert (flow_to (join_label lb2 lo0) L_Label = true).
-  apply join_L_label_flow_to_L; auto.
-  auto.
-
-  assert (flow_to (join_label lb1 lo) L_Label = false). 
-  apply flow_join_label with lo lb1; auto. 
-  assert (flow_to (join_label lb2 lo0) L_Label = false). 
-  apply flow_join_label with lo0 lb2; auto.
 
   apply L_equivalence_config_H; auto.
   unfold low_component.
-  rewrite H2.  rewrite H3. fold low_component.
+  rewrite H.  rewrite H1. fold low_component.
   auto.
 
 - inversion H_reduction2; subst; auto; try (solve_by_invert_ctn).
+  (*L_eq_container (Container (labelOf e) fs1 lb1 sf1) h1' (Container t2 fs2 lb2 sf2) h2 φ*)
   inversion H17; subst; auto.   
   inversion H19; subst; auto.  exists φ. split;  auto.
   
@@ -1047,15 +1094,19 @@ Lemma simulation_L : forall ct t1 fs1 lb1 sf1 ctns_stack1 h1  t2 fs2 lb2 sf2 ctn
   inversion H4; subst; auto; intuition. 
 
 - inversion H_reduction2; subst; auto; try (solve_by_invert_ctn).
+  (* L_eq_container (Container t1 (labelOf hole :: fs) lb1 sf1) h1' (Container t2 fs2 lb2 sf2) h2 φ*)
   inversion H17; subst; auto.  
-  inversion H20; subst; auto.  exists φ. split;  auto.
+  inversion H20; subst; auto.
+  exists φ. split;  auto.
   
   inversion H17; subst; auto. 
   inversion H21; subst; auto.
   inversion H9; subst; auto.
-  inversion H1; subst; auto. inversion H12.
+  inversion H1; subst; auto.
+  inversion H12.
 
 - inversion H_reduction2; subst; auto; try (solve_by_invert_ctn).
+  (*L_eq_container (Container (labelOf (v_l v lo)) fs1 lb1 sf1) h1' (Container t2 fs2 lb2 sf2) h2 φ*)
   inversion H17; subst; auto. 
   inversion H19; subst; auto.
   inversion H4; subst; auto; intuition. 
@@ -1071,27 +1122,32 @@ Lemma simulation_L : forall ct t1 fs1 lb1 sf1 ctns_stack1 h1  t2 fs2 lb2 sf2 ctn
   apply H_Label_not_flow_to_L in H9. subst; auto. 
  
 - inversion H_reduction2; subst; auto; try (solve_by_invert_ctn).
+  (*L_eq_container (Container (unlabelOpaque e) fs1 lb1 sf1) h1' (Container t2 fs2 lb2 sf2) h2 φ*)
   inversion H17; subst; auto.  
-  inversion H19; subst; auto.  exists φ. split; auto.
+  inversion H19; subst; auto.
+  exists φ. split; auto.
   
   inversion H17; subst; auto. 
   inversion H19; subst; auto.
   inversion H3; subst; auto; intuition. 
 
 - inversion H_reduction2; subst; auto; try (solve_by_invert_ctn).
+  (*L_eq_container (Container t1 (unlabelOpaque hole :: fs) lb1 sf1) h1' (Container t2 fs2 lb2 sf2) h2 φ*)
   inversion H17; subst; auto.  
-  inversion H20; subst; auto.  exists φ. split; auto.
+  inversion H20; subst; auto.
+  exists φ. split; auto.
   
   inversion H17; subst; auto. 
   inversion H21; subst; auto.
   inversion H9; subst; auto.
-  inversion H1; subst; auto. inversion H12. 
+  inversion H1; subst; auto.
+  inversion H12. 
 
 - inversion H_reduction2; subst; auto; try (solve_by_invert_ctn).
+  (*L_eq_container (Container (unlabelOpaque (v_opa_l v lo)) fs1 lb1 sf1) h1' (Container t2 fs2 lb2 sf2) h2 φ*)
   inversion H17; subst; auto. 
   inversion H19; subst; auto.
   inversion H4; subst; auto; intuition. 
-
 
   inversion H17; subst; auto.
 
@@ -1111,8 +1167,10 @@ Lemma simulation_L : forall ct t1 fs1 lb1 sf1 ctns_stack1 h1  t2 fs2 lb2 sf2 ctn
 
   exists φ. split; auto. 
   apply L_equivalence_config_H; auto.
+  
   destruct ctns_stack1'; inversion H18; subst; auto;
-    unfold low_component; rewrite H; rewrite H1; auto.
+    unfold low_component; rewrite H; rewrite H1;  auto.
+
   apply L_equivalence_config_L; auto.
   apply L_eq_ctn; auto.
   apply L_equivalence_store_L; auto.
@@ -1120,17 +1178,21 @@ Lemma simulation_L : forall ct t1 fs1 lb1 sf1 ctns_stack1 h1  t2 fs2 lb2 sf2 ctn
           | H :  empty_stack_frame _ = Some _ |- _
             => inversion H
                   end.
-  split; auto. 
+  split; auto.
 
   
 - inversion H_reduction2; subst; auto; try (solve_by_invert_ctn).
+  (*L_eq_container (Container (Assignment id e) fs1 lb1 sf1) h1' (Container t2 fs2 lb2 sf2) h2 φ*)
   inversion H17; subst; auto.
-  inversion H19; subst; auto. exists φ. split; auto. 
+  inversion H19; subst; auto.
+  exists φ. split; auto. 
+
   inversion H17; subst; auto.
   inversion H19; subst; auto.
   assert (value e). apply value_L_eq with v h1' h2' φ; auto. intuition.
   
 - inversion H_reduction2; subst; auto; try (solve_by_invert_ctn).
+  (*L_eq_container (Container t1 (Assignment id hole :: fs) lb1 sf1) h1' (Container t2 fs2 lb2 sf2) h2 φ*)
   inversion H17; subst; auto.  
   inversion H20; subst; auto.
   inversion H9; subst; auto.  exists φ. split; auto.
@@ -1139,13 +1201,16 @@ Lemma simulation_L : forall ct t1 fs1 lb1 sf1 ctns_stack1 h1  t2 fs2 lb2 sf2 ctn
 
   inversion H21; subst; auto.
   inversion H9; subst; auto.
-  inversion H3; subst; auto. inversion H12. 
+  inversion H3; subst; auto.
+  inversion H12. 
 
 - inversion H_reduction2; subst; auto; try (solve_by_invert_ctn).
+  (*L_eq_container (Container (Assignment id v) fs1 lb1 sf1) h1' (Container t2 fs2 lb2 sf2) h2 φ*)
   inversion H17; subst; auto.
   inversion H19; subst; auto.
   assert (value e). apply value_L_eq2 with v h1' h2' φ; auto. intuition.
   exists φ. split;  auto. 
+
   inversion H17; subst; auto.
   inversion H19; subst; auto.
   apply L_equivalence_config_L; auto.
@@ -1187,10 +1252,17 @@ Lemma simulation_L : forall ct t1 fs1 lb1 sf1 ctns_stack1 h1  t2 fs2 lb2 sf2 ctn
   
 - inversion H_reduction2; subst; auto; try (solve_by_invert_ctn).
   inversion H17; subst; auto.   
-  inversion H19; subst; auto.   exists φ. split;  auto.
+  inversion H19; subst; auto.
+  exists φ. split;  auto.
   
   inversion H17; subst; auto. 
+  inversion H22; subst; auto.
+  assert (value e). apply value_L_eq with  v h1' h2'  φ; auto.
+  intuition.
+
+  inversion H17; subst; auto. 
   inversion H21; subst; auto.
+  inversion H24; subst; auto. 
   assert (value e). apply value_L_eq with  v h1' h2'  φ; auto.
   intuition. 
 
@@ -1208,6 +1280,7 @@ Lemma simulation_L : forall ct t1 fs1 lb1 sf1 ctns_stack1 h1  t2 fs2 lb2 sf2 ctn
   assert (value (ObjId o1)); auto. intuition.
 
 - inversion H_reduction2; subst; auto; try (solve_by_invert_ctn).
+  (*L_eq_container (Container t1 (FieldWrite hole f e2 :: fs) lb1 sf1) h1' (Container t2 fs2 lb2 sf2) h2 φ*)
   inversion H17; subst; auto.  
   inversion H20; subst; auto.
   inversion H9; subst; auto. exists φ. split;  auto.
@@ -1218,54 +1291,71 @@ Lemma simulation_L : forall ct t1 fs1 lb1 sf1 ctns_stack1 h1  t2 fs2 lb2 sf2 ctn
   inversion H23; subst; auto. inversion H12.
 
   inversion H17; subst; auto. 
+  inversion H21; subst; auto.
+  inversion H9; subst; auto.
+  inversion H25; subst; auto.
+  inversion H23; subst; auto.
+  inversion H12. 
+  
+  
+  inversion H17; subst; auto. 
   inversion H21; subst; auto. inversion H9; subst; auto.
   inversion H4; subst; auto. inversion H12. 
 
 - inversion H_reduction2; subst; auto; try (solve_by_invert_ctn).
-  inversion H19; subst; auto. 
-  inversion H21; subst; auto.  
+  (*L_eq_container (Container (FieldWrite v f e2) fs1 lb1 sf1) h1' (Container t2 fs2 lb2 sf2) h2 φ*)
+  inversion H20; subst; auto. 
+  inversion H22; subst; auto.  
   assert (value e). apply value_L_eq2 with v h1' h2' φ; auto.
   intuition.
 
-  inversion H19; subst; auto.
-  inversion H23; subst; auto. exists φ. split; auto.
+  inversion H20; subst; auto.
+  inversion H25; subst; auto.
+  exists φ. split; auto.
 
-  inversion H19; subst; auto.
-  inversion H23. subst; auto.
+  inversion H20; subst; auto.
+  inversion H24. subst; auto.
+  inversion H27; subst; auto.
+  destruct H with e1; auto. 
+
+  
+  inversion H20; subst; auto.
+  inversion H24. subst; auto.
   assert (value e2). apply value_L_eq with v0 h1' h2 φ; auto. intuition.
 
-  inversion H19; subst; auto.
-  inversion H23; subst; auto.
-  destruct H2 as [o'].
-  destruct H2 as [cls'].
-  destruct H2 as [F'].
-  destruct H2 as [lo']. destruct H2.
+  inversion H14; subst; auto.
+  destruct H3 as [o'].
+  destruct H3 as [cls'].
+  destruct H3 as [F'].
+  destruct H3 as [lo'].
+  destruct H3.
   subst; auto.
-
   intuition.
 
-  inversion H19; subst; auto.
-  inversion H23; subst; auto.
-  inversion H26; subst; auto.
+  inversion H20; subst; auto.
+  inversion H24; subst; auto.
+  inversion H27; subst; auto.
   assert (value e1). apply value_L_eq with (v_opa_l v0 lx) h1' h2 φ; auto.
   assert (value v0).
-  destruct H21. subst; auto. 
-  destruct H2 as [o'].
-  destruct H2 as [cls'].
-  destruct H2 as [F'].
-  destruct H2 as [lo']. destruct H2.
+  destruct H22; subst; auto. 
+  destruct H3 as [o'].
+  destruct H3 as [cls'].
+  destruct H3 as [F'].
+  destruct H3 as [lo'].
+  destruct H3.
   subst; auto. 
   intuition.
+
   destruct H with  e1; auto.
-  intro contra.
-  inversion H5; subst; inversion H9. 
   
 - inversion H_reduction2; subst; auto; try (solve_by_invert_ctn).
+  (*L_eq_container (Container t1 (FieldWrite v1 f hole :: fs) lb1 sf1) h1' (Container t2 fs2 lb2 sf2) h2 φ *)
   inversion H18; subst; auto.
   
   inversion H21; subst; auto.
   inversion H10; subst; auto.
-  inversion H23; subst; auto.  inversion H0.
+  inversion H23; subst; auto.
+  inversion H0.
 
   inversion H18; subst; auto. 
   inversion H22; subst; auto.
@@ -1275,16 +1365,101 @@ Lemma simulation_L : forall ct t1 fs1 lb1 sf1 ctns_stack1 h1  t2 fs2 lb2 sf2 ctn
   
   inversion H22; subst; auto.
   inversion H10; subst; auto.
+  inversion H26. 
+
+  inversion H18; subst; auto.
+  inversion H22; subst; auto.
+  inversion H10; subst; auto. 
   inversion H24; subst; auto.
   inversion H13.
   case_eq (hole_free e2); intro; rewrite H1 in H2; inversion H2.
 
 - inversion H_reduction2; subst; auto; try (solve_by_invert_ctn).
+  (*L_eq_container (Container (FieldWrite v f (unlabelOpaque e2)) fs1 lb1 sf1) h1' (Container t2 fs2 lb2 sf2) h2 φ*)
   inversion H19; subst; auto. 
   inversion H21; subst; auto.
-  inversion H13; subst; auto;  intuition.
-  inversion H19; subst; auto. 
+  assert (value e). apply value_L_eq2 with v h1' h2'  φ; auto.
+  contradiction.
+
+  inversion H19; subst; auto.
+  inversion H24; subst; auto.
+  inversion H27; subst; auto.
+  destruct H6 with e3; auto. 
+
+  inversion H19; subst; auto.
   inversion H23; subst; auto.
+  inversion H26; subst; auto.
+  exists φ. split; auto.
+  apply L_equivalence_config_L; auto.
+  
+  inversion H19; subst; auto.
+  inversion H23; subst; auto.
+  inversion H26; subst; auto.
+  destruct H21.
+  inversion H2.
+  destruct H2. destruct H2. destruct H2. destruct H2. destruct H2.
+  inversion H2.
+
+  inversion H19; subst; auto.
+  inversion H23; subst; auto.
+  inversion H26; subst; auto.
+  assert (value e2); auto.
+  apply value_L_eq with (v_opa_l v0 lx) h1' h2  φ; auto.
+  destruct H21; subst; auto.
+  destruct H2. destruct H2. destruct H2. destruct H2. destruct H2.
+  subst; auto.
+  contradiction. 
+
+
+- inversion H_reduction2; subst; auto; try (solve_by_invert_ctn);
+  (*L_eq_container (Container t1 (FieldWrite v1 f (unlabelOpaque hole) :: fs) lb1 sf1) h1' (Container t2 fs2 lb2 sf2) h2 φ*)
+  try (inversion H18; subst; auto; 
+  inversion H21; subst; auto;
+  inversion H10; subst; auto).
+
+  inversion H18; subst; auto. 
+  inversion H22; subst; auto.
+  inversion H10; subst; auto.
+
+  inversion H18; subst; auto. 
+  inversion H22; subst; auto.
+  inversion H10; subst; auto.
+
+  inversion H18; subst; auto. 
+  inversion H22; subst; auto.
+  inversion H10; subst; auto.
+  inversion H23; subst; auto.
+  inversion H0. 
+
+  inversion H18; subst; auto. 
+  inversion H22; subst; auto.
+  inversion H10; subst; auto.
+  inversion H26.
+
+  inversion H18; subst; auto. 
+  inversion H22; subst; auto.
+  inversion H10; subst; auto.
+  exists φ. split; auto.
+
+  inversion H18; subst; auto. 
+  inversion H22; subst; auto.
+  inversion H10; subst; auto.
+  inversion H24; subst; auto.
+  inversion H2; subst; auto.
+  inversion H13; subst; auto.
+  case_eq (hole_free e2); intro Hy; rewrite Hy in H4; inversion H4. 
+
+  
+- inversion H_reduction2; subst; auto; try (solve_by_invert_ctn).
+  (*L_eq_container (Container (FieldWrite (ObjId o) f v) fs1 lb1 sf1) h1 (Container t2 fs2 lb2 sf2) h2 φ*)
+  
+  inversion H19; subst; auto. 
+  inversion H21; subst; auto.
+  assert (value e). apply value_L_eq2 with (ObjId o) h1 h2'  φ; auto.
+  contradiction.
+
+  inversion H19; subst; auto.
+  inversion H24; subst; auto.
   assert (value e2). apply value_L_eq2 with v h1 h2'  φ; auto.
   destruct H3.
   subst; auto. 
@@ -1292,10 +1467,20 @@ Lemma simulation_L : forall ct t1 fs1 lb1 sf1 ctns_stack1 h1  t2 fs2 lb2 sf2 ctn
   destruct H0 as [cls'].
   destruct H0 as [F'].
   destruct H0 as [lo']. destruct H0.
-  subst; auto. intuition. 
+  subst; auto.
+  contradiction.
 
   inversion H19; subst; auto. 
-  inversion H23; subst; auto. exists φ. split; auto.
+  inversion H23; subst; auto.
+  inversion H26; subst; auto.
+  destruct H3; subst; auto.
+  inversion H0.
+  destruct H0. destruct H0. destruct H0. destruct H0. destruct H0.
+  inversion H0. 
+  
+  inversion H19; subst; auto. 
+  inversion H23; subst; auto.
+  exists φ. split; auto.
   apply update_field_preserve_bijection with ct L_Label L_Label lb1 lb2; auto.
 
   pose proof (join_L_Label_irrelevant lb1) as Hylb. rewrite Hylb; auto. 
@@ -1367,26 +1552,40 @@ Lemma simulation_L : forall ct t1 fs1 lb1 sf1 ctns_stack1 h1  t2 fs2 lb2 sf2 ctn
   inversion H0. 
   
 - inversion H_reduction2; subst; auto; try (solve_by_invert_ctn).
+  (*L_eq_container (Container (FieldWrite (ObjId o) f (unlabelOpaque (v_opa_l v lx))) fs1 lb1 sf1) h1 (Container t2 fs2 lb2 sf2) h2 φ*)
   inversion H19; subst; auto. 
   inversion H21; subst; auto.
   inversion H24; subst; auto.
   inversion H13; subst; auto. intuition. 
   
-  inversion H19; subst; auto. intuition. 
+  inversion H19; subst; auto. intuition.
 
   inversion H19; subst; auto.
-  inversion H23; subst; auto.
-  inversion H26; subst; auto. 
+  inversion H24; subst; auto.
+  inversion H27; subst; auto. 
   inversion H2; subst; auto.
-  destruct H5 with (v_opa_l e2 lx); auto.
-  intro contra. inversion contra.
-
- 
-  destruct H5 with  (v_opa_l e2 l2); auto.
-  intro contra. inversion contra. 
+  destruct H6 with (v_opa_l e2 lx); auto. 
+  destruct H6 with  (v_opa_l e2 l2); auto.
 
   inversion H19; subst; auto.
   inversion H23; subst; auto.
+  inversion H26; subst; auto.
+  assert (value e2). apply value_L_eq2 with (v_opa_l v lx) h1 h2'  φ; auto.
+  destruct H3; subst; auto.
+  destruct H0. destruct H0. destruct H0. destruct H0. destruct H0.
+  subst; auto.
+  contradiction. 
+
+  inversion H19; subst; auto.
+  inversion H23; subst; auto.
+  inversion H26; subst; auto.
+  inversion H2; subst; auto.
+  destruct H21; subst; auto.
+  inversion H0.
+  destruct H0. destruct H0. destruct H0. destruct H0. destruct H0.
+  inversion H0.
+
+  
   inversion H26; subst; auto.
   destruct H21.
   inversion H0.
@@ -1398,7 +1597,6 @@ Lemma simulation_L : forall ct t1 fs1 lb1 sf1 ctns_stack1 h1  t2 fs2 lb2 sf2 ctn
   
 
   exists  φ.
-
   split; auto. 
 
   inversion H19; subst; auto.
@@ -1454,6 +1652,7 @@ Lemma simulation_L : forall ct t1 fs1 lb1 sf1 ctns_stack1 h1  t2 fs2 lb2 sf2 ctn
 
   
 - inversion H_reduction2; subst; auto; try (solve_by_invert_ctn).
+  (* L_eq_container (Container (If guard s1 s2) fs1 lb1 sf1) h1' (Container t2 fs2 lb2 sf2) h2 φ*)
   inversion H17; subst; auto. 
   inversion H19; subst; auto.
   exists φ. split;  auto.
@@ -1539,7 +1738,16 @@ Lemma simulation_L : forall ct t1 fs1 lb1 sf1 ctns_stack1 h1  t2 fs2 lb2 sf2 ctn
     inversion H10; subst; auto.
     inversion H14; subst; auto.
     inversion H0.
-    case_eq (hole_free e1); intro Hy; rewrite Hy in H2; intuition. 
+    case_eq (hole_free e1); intro Hy; rewrite Hy in H2; intuition.
+
+  + inversion H18; subst; auto.
+    inversion H22; subst; auto.
+    inversion H10; subst; auto.
+    inversion H14; subst; auto.
+    inversion H5; subst; auto. 
+    inversion H0.
+    case_eq (hole_free e1); intro Hy; rewrite Hy in H2; intuition.
+
 
   + inversion H18; subst; auto.
     inversion H21; subst; auto.
@@ -1582,6 +1790,14 @@ Lemma simulation_L : forall ct t1 fs1 lb1 sf1 ctns_stack1 h1  t2 fs2 lb2 sf2 ctn
   inversion H10; subst; auto.
   inversion H24; subst; auto.
   inversion H0. 
+  case_eq ( hole_free e1 ); intro; rewrite H1 in H2; intuition.
+
+  + inversion H18; subst; auto.
+  inversion H22; subst; auto.
+  inversion H10; subst; auto.
+  inversion H24; subst; auto.
+  inversion H5; subst; auto.
+  inversion H0; subst; auto. 
   case_eq ( hole_free e1 ); intro; rewrite H1 in H2; intuition.
 
   + inversion H18; subst; auto.
