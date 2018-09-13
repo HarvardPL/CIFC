@@ -6,7 +6,7 @@ This is a Coq formalization of a Java-like secure language, enforcing informatio
 2. Proof of type system properties
 3. Proof of noninterference (timing-sensitive noninterference (TINI)) property
 
-The Coq files compiles with version 8.7.2. The whole project might take about 10 to 15 minutes to compile. 
+The Coq files compiles with version 8.7.2. The folder [updated](updated) contains the latest files. The whole project might take about 10 to 15 minutes to compile. 
 
 ### Language
 
