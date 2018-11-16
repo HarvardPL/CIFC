@@ -44,7 +44,7 @@ sp_e :=  Object_identifer    (* pointers to objects *)
          | return_hole       (* evaluation context for method calls *)
 ```
 
-The details of the language are in the file [language.v](updated/language.v).
+The details of the language are in the file [language.v](https://github.com/HarvardPL/CIFC/tree/master/updated/language.v).
 
 ### Operational Semantics
 
