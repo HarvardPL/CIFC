@@ -168,18 +168,20 @@ Inductive tm_hole_has_type : Class_table -> typing_context -> heap -> tm -> ty -
       tm_has_type CT Gamma h (EqCmp e1 e2) boolTy ->
       tm_hole_has_type CT Gamma h (EqCmp e1 hole) (ArrowTy (classTy clsT) boolTy)
                        
-  | T_hole_FieldAccess : forall  Gamma e f cls_def CT clsT cls' h fields_def,
+  | T_hole_FieldAccess : forall  Gamma f cls_def CT clsT cls' h fields_def,
+      (*
       tm_has_type CT Gamma h (FieldAccess e f) (classTy cls') ->
-      tm_has_type CT Gamma h e (classTy cls') ->
+      tm_has_type CT Gamma h e (classTy clsT) ->
+       *)
       Some cls_def = CT(clsT) ->
       fields_def = (find_fields cls_def) ->
       type_of_field fields_def f = Some cls' ->
       tm_hole_has_type CT Gamma h (FieldAccess hole f) (ArrowTy (classTy clsT) (classTy cls'))
                   
-  | T_hole_MethodCall1 : forall Gamma Gamma' e meth argu CT h T returnT cls_def body arg_id arguT,
-      tm_has_type CT Gamma h (MethodCall e meth argu) (OpaqueLabeledTy (classTy returnT)) ->
+  | T_hole_MethodCall1 : forall Gamma Gamma'  meth argu CT h T returnT cls_def body arg_id arguT,
+      (* tm_has_type CT Gamma h (MethodCall e meth argu) (OpaqueLabeledTy (classTy returnT)) ->
+      tm_has_type CT Gamma h e (classTy T) ->  *)
       tm_has_type CT Gamma h argu (classTy arguT) ->
-      tm_has_type CT Gamma h e (classTy T) ->
       Some cls_def = CT(T) ->
       find_method cls_def meth = Some (m_def returnT meth arguT arg_id  body)  ->
       Gamma' = update_typing empty_context arg_id (classTy arguT) ->
@@ -188,9 +190,9 @@ Inductive tm_hole_has_type : Class_table -> typing_context -> heap -> tm -> ty -
       tm_hole_has_type CT Gamma h (MethodCall hole meth argu) (ArrowTy (classTy T)
                                                                        (OpaqueLabeledTy (classTy returnT)))
                   
-  | T_hole_MethodCall2 : forall Gamma Gamma' e meth argu CT h T returnT cls_def body arg_id arguT,
-      tm_has_type CT Gamma h (MethodCall e meth argu) (OpaqueLabeledTy (classTy returnT)) ->
-      tm_has_type CT Gamma h argu (classTy arguT) ->
+  | T_hole_MethodCall2 : forall Gamma Gamma' e meth CT h T returnT cls_def body arg_id arguT,
+      (* tm_has_type CT Gamma h (MethodCall e meth argu) (OpaqueLabeledTy (classTy returnT)) ->
+      tm_has_type CT Gamma h argu (classTy arguT) -> *)
       tm_has_type CT Gamma h e (classTy T) ->
       Some cls_def = CT(T) ->
       find_method cls_def meth = Some (m_def returnT meth arguT arg_id  body)  ->
@@ -200,9 +202,9 @@ Inductive tm_hole_has_type : Class_table -> typing_context -> heap -> tm -> ty -
       tm_hole_has_type CT Gamma h (MethodCall e meth hole) (ArrowTy (classTy arguT)
                                                                     (OpaqueLabeledTy (classTy returnT)))
 (*newly added rule*)
-  | T_hole_MethodCall3 : forall Gamma Gamma' e meth argu CT h T returnT cls_def body arg_id arguT,
-      tm_has_type CT Gamma h (MethodCall e meth argu) (OpaqueLabeledTy (classTy returnT)) ->
-      tm_has_type CT Gamma h argu (classTy arguT) ->
+  | T_hole_MethodCall3 : forall Gamma Gamma' e meth  CT h T returnT cls_def body arg_id arguT,
+      (* tm_has_type CT Gamma h (MethodCall e meth argu) (OpaqueLabeledTy (classTy returnT)) ->
+      tm_has_type CT Gamma h argu (classTy arguT) -> *)
       tm_has_type CT Gamma h e (classTy T) ->
       Some cls_def = CT(T) ->
       find_method cls_def meth = Some (m_def returnT meth arguT arg_id  body)  ->
@@ -212,60 +214,58 @@ Inductive tm_hole_has_type : Class_table -> typing_context -> heap -> tm -> ty -
       tm_hole_has_type CT Gamma h (MethodCall e meth (unlabelOpaque hole)) (ArrowTy (OpaqueLabeledTy (classTy arguT))
                                                                     (OpaqueLabeledTy (classTy returnT)))
 
-  | T_hole_labelData : forall h Gamma CT  e T lb , 
-      tm_has_type CT Gamma h (labelData e lb) (LabelelTy T) ->
+  | T_hole_labelData : forall h Gamma CT T lb , 
+      (* tm_has_type CT Gamma h (labelData e lb) (LabelelTy T) -> *)
       T <> voidTy ->
       tm_hole_has_type CT Gamma h (labelData hole lb) (ArrowTy T (LabelelTy T))
 
   (*unlabel data*)
-  | T_hole_unlabel : forall h Gamma CT e T, 
-      tm_has_type CT Gamma h (unlabel e) T ->
+  | T_hole_unlabel : forall h Gamma CT T, 
+      (* tm_has_type CT Gamma h (unlabel e) T -> *)
       T <> voidTy ->
       tm_hole_has_type CT Gamma h (unlabel hole) (ArrowTy (LabelelTy T) T)
   (*labelOf data*)
-  | T_hole_labelOf : forall h Gamma CT  e T, 
-      tm_has_type CT Gamma h (labelOf e) LabelTy ->
+  | T_hole_labelOf : forall h Gamma CT  T, 
+      (* tm_has_type CT Gamma h (labelOf e) LabelTy -> *)
       T <> voidTy ->
       tm_hole_has_type CT Gamma h (labelOf hole) (ArrowTy ( (LabelelTy T)) LabelTy)
   (*unlabel opaque*)
-  | T_hole_unlabelOpaque : forall h Gamma CT e T, 
-      tm_has_type CT Gamma h (unlabelOpaque e) T ->
+  | T_hole_unlabelOpaque : forall h Gamma CT T, 
+      (* tm_has_type CT Gamma h (unlabelOpaque e) T ->*)
       T <> voidTy ->
       tm_hole_has_type CT Gamma h (unlabelOpaque hole) (ArrowTy (OpaqueLabeledTy T) T)
 
 (* assignment *)
-  | T_hole_assignment : forall h Gamma CT e  T x , 
-      tm_has_type CT Gamma h (Assignment x e) voidTy ->
+  | T_hole_assignment : forall h Gamma CT  T x , 
+      (* tm_has_type CT Gamma h (Assignment x e) voidTy -> *)
       Gamma x = Some T ->
       T <> voidTy ->
-      tm_has_type CT Gamma h e T ->
+      (* tm_has_type CT Gamma h e T -> *)
       tm_hole_has_type CT Gamma h (Assignment x hole) (ArrowTy T voidTy)
 
 (* if *)
-  | T_hole_if : forall h Gamma CT e s1 s2 T, 
-      tm_has_type CT Gamma h ((If e s1 s2)) T ->
-      tm_hole_has_type CT Gamma h (If e s1 s2) (ArrowTy boolTy T)
+  | T_hole_if : forall h Gamma CT s1 s2 T,
+      tm_has_type CT Gamma h s1 T ->
+      tm_has_type CT Gamma h s2 T ->
+      tm_hole_has_type CT Gamma h (If hole s1 s2) (ArrowTy boolTy T)
+ 
                   
 (* Field Write *)
-  | T_hole_FieldWrite1 : forall  h Gamma x f cls_def CT clsT cls' e,
-      tm_has_type CT Gamma h (FieldWrite x f e) voidTy ->
-      tm_has_type CT Gamma h x (classTy clsT) ->
+  | T_hole_FieldWrite1 : forall  h Gamma f cls_def CT clsT cls' e,
+      (*tm_has_type CT Gamma h (FieldWrite x f e) voidTy ->
+       tm_has_type CT Gamma h x (classTy clsT) -> *)
       tm_has_type CT Gamma h e (classTy cls') ->
       Some cls_def = CT(clsT) ->
       type_of_field (find_fields cls_def) f = Some cls' ->
       tm_hole_has_type CT Gamma h (FieldWrite hole f e) (ArrowTy (classTy clsT) voidTy)
-  | T_hole_FieldWrite2 : forall  h Gamma x f cls_def CT clsT cls' e,
-      tm_has_type CT Gamma h (FieldWrite x f e) voidTy ->
+  | T_hole_FieldWrite2 : forall  h Gamma x f cls_def CT clsT cls',
       tm_has_type CT Gamma h x (classTy clsT) ->
-      tm_has_type CT Gamma h e (classTy cls') ->
       Some cls_def = CT(clsT) ->
       type_of_field (find_fields cls_def) f = Some cls' ->
       tm_hole_has_type CT Gamma h (FieldWrite x f hole) (ArrowTy (classTy cls') voidTy)
                        (*newly added rule*)
-  | T_hole_FieldWrite3 : forall  h Gamma x f cls_def CT clsT cls' e,
-      tm_has_type CT Gamma h (FieldWrite x f e) voidTy ->
+  | T_hole_FieldWrite3 : forall  h Gamma x f cls_def CT clsT cls',
       tm_has_type CT Gamma h x (classTy clsT) ->
-      tm_has_type CT Gamma h e (classTy cls') ->
       Some cls_def = CT(clsT) ->
       type_of_field (find_fields cls_def) f = Some cls' ->
       tm_hole_has_type CT Gamma h (FieldWrite x f (unlabelOpaque hole)) (ArrowTy (OpaqueLabeledTy (classTy cls')) voidTy).

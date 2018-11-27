@@ -305,10 +305,12 @@ exists (Config CT (Container (FieldWrite t1 i t2)  fs lb sf) ctns h); auto.
   rewrite H12. rewrite H14.  auto. 
 - inversion H_config. inversion H7.  subst.
   inversion H15. inversion H1. subst.
-  +  assert (surface_syntax (If t1 t2 t3) = true).
+  + assert (surface_syntax (If t1 t2 t3) = true).
      unfold surface_syntax. fold surface_syntax.
      rewrite H13. rewrite H14. rewrite H16. auto. 
-  exists (Config CT (Container (If t1 t2 t3) fs lb sf) ctns h); auto.
+    exists (Config CT (Container (If t1 t2 t3) fs lb sf) ctns h); auto.
+
+  
   + subst. exists (Config CT (Container (If v t2 t3) fs lb sf) ctns h). auto.
 
 - inversion H_config. inversion H7.  subst. inversion H15. inversion H1. subst.  

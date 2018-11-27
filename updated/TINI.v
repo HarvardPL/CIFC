@@ -1251,7 +1251,7 @@ Qed. Hint Resolve  p_reduction_NI.
 
 
 
-Lemma TINI : forall ct ctn1 ctns1 h1 ctn2 ctns2 h2 lb1' sf1' lb2' sf2' final_v1  final_v2  h1' h2' φ T m n, 
+Theorem TINI : forall ct ctn1 ctns1 h1 ctn2 ctns2 h2 lb1' sf1' lb2' sf2' final_v1  final_v2  h1' h2' φ T m n, 
     valid_config (Config ct  ctn1 ctns1 h1 ) ->
     valid_config (Config ct  ctn2 ctns2 h2 ) ->
     config_has_type ct empty_context (Config ct ctn1  ctns1 h1) T ->

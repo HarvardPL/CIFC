@@ -990,7 +990,6 @@ Proof with eauto.
  
 
       inversion H33; subst; auto.
-      inversion H25; subst; auto.
       destruct H31 with (If hole s1 s2) fs; auto.
       subst; auto.
 
@@ -1198,23 +1197,15 @@ Qed. Hint Resolve  expand_heap_preserve_typed_tm.
   Proof with eauto.
     intros.
     induction H0; subst; auto.
-    apply T_EqCmp1 with e1; auto.
-    apply T_EqCmp2 with e2; auto.
-    apply T_hole_FieldAccess with e cls_def (find_fields cls_def); auto.
-    apply T_hole_MethodCall1 with (update_typing empty_context arg_id (classTy arguT)) e cls_def body
-                                  arg_id arguT; subst; auto.
-    apply T_hole_MethodCall2 with (update_typing empty_context arg_id (classTy arguT)) argu T
-                                  cls_def body arg_id; subst; auto.
-    apply T_hole_MethodCall3 with (update_typing empty_context arg_id (classTy arguT)) argu T
-                                  cls_def body arg_id; subst; auto.
-    apply T_hole_labelData with e; auto.
-    apply T_hole_unlabel with e; auto.
-    apply T_hole_labelOf with e; auto.
-    apply T_hole_unlabelOpaque with e; auto.
-    apply T_hole_assignment with e; auto.
-    apply T_hole_FieldWrite1 with x cls_def cls'; auto.
-    apply T_hole_FieldWrite2 with cls_def clsT e; auto.
-    apply T_hole_FieldWrite3 with cls_def clsT e; auto.
+    eauto using T_EqCmp1.
+    eauto using T_EqCmp2.
+    eauto using T_hole_FieldAccess.
+    eauto using T_hole_MethodCall1.
+    eauto using T_hole_MethodCall2.
+    eauto using T_hole_MethodCall3.
+    eauto using T_hole_FieldWrite1.
+    eauto using T_hole_FieldWrite2.
+    eauto using T_hole_FieldWrite3.
     Qed. Hint Resolve expand_heap_preserve_typed_hole_tm.
 
   
@@ -1326,31 +1317,18 @@ Qed. Hint Resolve  expand_heap_preserve_typed_tm.
       eauto using field_write_preserve_typed_tm; auto. 
     apply T_EqCmp2 with e2; auto;
       eauto using field_write_preserve_typed_tm; auto. 
-    apply T_hole_FieldAccess with e cls_def0 (find_fields cls_def0); auto;
-    eauto using field_write_preserve_typed_tm; auto. 
-    
-    apply T_hole_MethodCall1 with (update_typing empty_context arg_id (classTy arguT)) e cls_def0 body
-                                  arg_id arguT; subst; auto;
-      eauto using field_write_preserve_typed_tm; auto. 
-    apply T_hole_MethodCall2 with (update_typing empty_context arg_id (classTy arguT)) argu T
-                                  cls_def0 body arg_id; subst; auto;
+    apply T_hole_FieldAccess with cls_def0 (find_fields cls_def0); auto;
       eauto using field_write_preserve_typed_tm; auto.
-    apply T_hole_MethodCall3 with (update_typing empty_context arg_id (classTy arguT)) argu T
-                                  cls_def0 body arg_id; subst; auto;
-      eauto using field_write_preserve_typed_tm; auto. 
-    apply T_hole_labelData with e; auto; eauto using field_write_preserve_typed_tm; auto.
-    apply T_hole_unlabel with e; auto; eauto using field_write_preserve_typed_tm; auto. 
-    apply T_hole_labelOf with e; auto; eauto using field_write_preserve_typed_tm; auto. 
-    apply T_hole_unlabelOpaque with e; auto; eauto using field_write_preserve_typed_tm; auto. 
-    apply T_hole_assignment with e; auto; eauto using field_write_preserve_typed_tm; auto.
-    apply T_hole_if; auto; eauto using field_write_preserve_typed_tm; auto.
+
+    eauto using T_hole_MethodCall1.
+    eauto using T_hole_MethodCall2.
+    eauto using T_hole_MethodCall3.
     
-    apply T_hole_FieldWrite1 with x cls_def0 cls'; auto;
-      eauto using field_write_preserve_typed_tm; auto. 
-    apply T_hole_FieldWrite2 with cls_def0 clsT0 e; auto;
-      eauto using field_write_preserve_typed_tm; auto.
-        apply T_hole_FieldWrite3 with cls_def0 clsT0 e; auto;
-      eauto using field_write_preserve_typed_tm; auto.  
+    eauto using T_hole_MethodCall1.
+    eauto using T_hole_MethodCall2.
+    eauto using T_hole_MethodCall3.
+
+    eauto using T_hole_FieldWrite1.  
     Qed. Hint Resolve  field_write_preserve_typed_hole_tm.
 
 
@@ -1817,12 +1795,12 @@ Proof with eauto.
     intros. destruct H21 with top fs' ; auto.
     subst; auto.
     inversion H_valid_config; subst; auto.
-    inversion H29; subst; auto.
+    inversion H27; subst; auto.
     inversion H11; subst; auto.
     inversion H2; subst; auto; try (inconsist_hole_free).
 
     inversion H_valid_config; subst; auto.
-    inversion H29; subst; auto.
+    inversion H27; subst; auto.
     inversion H11; subst; auto.
     inversion H2; subst; auto; try (inconsist_hole_free).
     inversion H1.
@@ -1840,7 +1818,7 @@ Proof with eauto.
     rewrite H in H2; intuition. 
     inversion H20; subst; auto.
     inversion H_valid_config; subst; auto.
-    inversion H30; subst; auto.
+    inversion H28; subst; auto.
     inversion H12; subst; auto.
     inversion H3; subst; auto; try (inconsist_hole_free).
     
@@ -1938,9 +1916,7 @@ Proof with eauto.
                            T2; auto.
       unfold hole_free. fold hole_free. apply value_is_hole_free in H.
       rewrite H. auto.
-      apply  T_hole_MethodCall3 with (update_typing empty_context arg_id (classTy arguT))
-                                     (unlabelOpaque e2) T3 cls_def
-                                     body arg_id; auto.
+      eauto using  T_hole_MethodCall3. 
       ++ intros. destruct H19 with top fs'; auto.
          split; auto. subst; auto.
     + intros. split; auto. intro contra; inversion contra.
@@ -2495,12 +2471,12 @@ Proof with eauto.
     intros. destruct H21 with top fs' ; auto.
     subst; auto.
     inversion H_valid_config; subst; auto.
-    inversion H29; subst; auto.
+    inversion H27; subst; auto.
     inversion H11; subst; auto.
     inversion H2; subst; auto; try (inconsist_hole_free).
 
     inversion H_valid_config; subst; auto.
-    inversion H29; subst; auto.
+    inversion H27; subst; auto.
     inversion H11; subst; auto.
     inversion H2; subst; auto; try (inversion H37).
     inversion H1; subst; auto. inversion H1.
@@ -2583,7 +2559,7 @@ Proof with eauto.
     rewrite H0 in H2; intuition.
     inversion H20; subst; auto.
     inversion H_valid_config; subst; auto.
-    inversion H30; subst; auto.
+    inversion H28; subst; auto.
     inversion H12; subst; auto.
     inversion H3; subst; auto; try (inconsist_hole_free).
     apply T_ctn_type with voidTy T4; auto.
@@ -2608,7 +2584,7 @@ Proof with eauto.
                            T2; auto.
       unfold hole_free. fold hole_free. apply value_is_hole_free in H.
       rewrite H. auto.
-      apply  T_hole_FieldWrite3 with cls_def clsT (unlabelOpaque e2); auto.  
+      eauto using T_hole_FieldWrite3. 
       ++ intros; subst; auto.
          destruct H19 with top fs'; auto.
     + intros. split; auto. intro contra; inversion contra.
@@ -2729,7 +2705,6 @@ Proof with eauto.
   inversion H15; subst; auto.
   inversion H6.
   inversion H19; subst; auto.
-  inversion H11; subst; auto. 
   apply T_ctn_type with T' T4; auto.
   destruct H17 with (If hole s1 s2) fs; auto.
   subst; auto.
