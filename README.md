@@ -1,12 +1,12 @@
 ## Coarse-grained Information Flow Control for Java
 
-This is a Coq formalization of a Java-like language, including
+This is a Coq formalization of a Java-like secure language, enforcing information flow control. It includes
 
-1. semantics of the language
+1. Semantics of the language
 2. Proof of type system properties
 3. Proof of noninterference (timing-sensitive noninterference (TINI)) property
 
-The Coq files compiles with version 8.7.2. 
+The Coq files compiles with version 8.7.2. The folder [updated](updated) contains the latest files. The whole project might take about 10 to 15 minutes to compile. 
 
 ### Language
 
@@ -44,7 +44,7 @@ sp_e :=  Object_identifer    (* pointers to objects *)
          | return_hole       (* evaluation context for method calls *)
 ```
 
-The details of the language are in the file [language.v](updated/language.v).
+The details of the language are in the file [language.v](https://github.com/HarvardPL/CIFC/tree/master/updated/language.v).
 
 ### Operational Semantics
 
@@ -232,7 +232,7 @@ Detailed proof of the preservation theorem can be found in the file [preservatio
 
 Deterministic theorem states that reduction of a configuration is deterministic. 
 
-In our formalization. preservation theorem is formalized as below:
+As mentioned above, a configuration could be in a normal state, an error state, and a terminal state. To handle different kinds of configurations, our formalization defines two forms of the deterministic theorem: 
 
 ```
 Theorem deterministic: forall ct ctn ctns h ctn1 ctns1 h1 ctn2 ctns2 h2, 
@@ -243,7 +243,17 @@ Theorem deterministic: forall ct ctn ctns h ctn1 ctns1 h1 ctn2 ctns2 h2,
      ctn1 = ctn2 /\ ctns1 = ctns2 /\ h1 = h2 .
 ```
 
-The theorem states that if a configuration `config` reduces to two configurations `config1` and `config2`, then `config1` is equal to `config2`. 
+and 
+
+```
+Theorem deterministic_prime: forall ct ctn ctns h ctn1 ctns1 h1 config', 
+     Config ct ctn ctns h ==>
+            (Config ct ctn1 ctns1 h1)  ->
+     Config ct ctn ctns h ==>config'   ->
+     (Config ct ctn1 ctns1 h1) = config'.
+```
+
+The first form states that if a configuration steps into two normal configurations `config1` and `config2`, then `config1` and `config2` are identical. The second form states that a configuration cannot step into different kinds of configurations. In particular, the second form essures that exceptions are thrown deterministically.  
 
 Detailed proof of the theorem can be found in the file [deterministic.v](updated/deterministic.v).
 
@@ -442,34 +452,164 @@ Details about low equivalence can be found in the file [Low_eq.v](updated/Low_eq
 
 ### Timing insensitive non-interference
 
-In order to prove the non-interference, we define a new reduction, named *p-reduction*, by merging two executions into one. P-reduction is defined as an inductive relation between two pairs of configurations:
+In order to prove the non-interference, we need some auxiliary definitions and lemmas. 
+
+#### Executions
+
+##### Single execution
+
+In this work. we only concerns executions that terminate. We define an execution as a finite number of reductions:
+
 ```
-Inductive parallel_reduction : config -> config -> config -> config -> Prop :=
+Inductive  terminate_num : config -> config  -> nat ->  Prop :=
+| terminate_zero : forall ctn ct h,
+    terminal_state (Config ct ctn [] h) -> 
+    terminate_num (Config ct ctn [] h)
+                  (Config ct ctn [] h)
+                  0
+| terminate_step : forall ctn1 ctns1  final_ctn  ct h1  n ctn1' ctns1' h1' h_final_1,
+    (Config ct ctn1 ctns1 h1) ==>
+                              (Config ct ctn1' ctns1' h1') ->
+    terminal_state (Config ct final_ctn [] h_final_1) ->
+    terminate_num (Config ct ctn1' ctns1'  h1')
+                  (Config ct final_ctn [] h_final_1)
+                  n ->
+     terminate_num (Config ct ctn1 ctns1 h1)                
+                   (Config ct final_ctn [] h_final_1)
+                   (1 + n) .
 ```
-Intuitively, a p-reduction transits a pair of configurations to another pair of configuration: `<conf1, conf2> =p=> <conf1', conf2'>`. The transition proceeds using the following rules:
 
-- If the top containers of both configurations are low containers, then both configurations take one step reduction.
-- If conf1 already terminates, then conf2 takes one small-step reduction.
-- If conf1 is able to take one step, say to conf1', then the p-reduction depends on the label of conf1':
-  - if conf1' is a high configuration, then conf1 steps to conf1', and no step for conf2;
-  - if conf1' is a low configuration, which means conf1 jumps from high configuration to low configuration, then conf2 proceeds using the two following rules:
-    -- if 
-  
-  and the resulted configuration is also H configuration
+For example, an execution `terminate_num config1 config_final n` means the execution `config` reaches its terminal state `config_final` in n steps. 
 
-Configuration conf1 belongs to execution one; configurations conf2 and conf2' belong to execution two. 
+##### Double execution
 
-Intuitively, for configurations conf1 and conf2, p-reduction either 
+Since non-interference concerns two executions, we define another execution that covers traces of two single executions.
+
+```
+Inductive  two_terminate_num : config -> config -> config -> config -> nat ->  Prop :=
+```
+
+For example, `two_terminate_num config1 config2 final1 final2 k` describes a double execution. In this double execution, config1 reaches final state `final1`; config2 reaches final state `final2`. The total steps taken by the two executions are k.  
+
+The contructors inside the definition cover the possible behaviors of two executions:
+
+1. Two executions are both terminated.
+2. The first execution takes a step.
+3. The second execution takes a step.
+4. Both executions take steps. 
+
+We also define two lemmas that interconnect double execution with single execution: 
+
+1. `two_executions_split`: It says a double execution can be splitted into two single executions, and the steps used by the double execution is the same as the sum of the steps used by two single executions. 
+2. `two_executions_to_one`: It says two single executions can be combined into a double execution. 
+
+##### Parallel reduction
+
+In order to prove the non-interference, we devise a special reduction step named `p-reduction`. It describes a subst of the behaviors shown in the definition of double execution. The p-reduction is a mechinary we used to prove non-interference. One crucial property of p-reduction is that it preserves low-equivalence between two configurations. Such property strongly support the proof of non-interference. 
+
+Specifically, the p-reduction has five contructors:
+
+1. If both configurations, conf1 and conf2, are low configurations, then both take one step
+2. If both configurations are high configurations, and conf1 can step into a high configuration, then conf1 takes a step, while conf2 stays the same.   
+3. If 
+   - conf1 is a high configuration, and it steps into a low configuration; and 
+   - conf2 is a high configuration, and it steps into a high configuration. Then conf1 stays, and conf2 takes a step.   
+4. If 
+   - conf1 is a high configuration, and it steps into a low configuration; and 
+   - conf2 is a high configuration, and it steps into a low configuration. Then conf1 and conf2 both take a step.   
+5. If 
+   - conf1 already reaches its terminal, and 
+   - conf2 is a high configuration, and it steps into a high configuration. Then conf2 takes a step.   
+
+The contructors describe a subst of possible behaviors of two executions. This subst is sufficient to simulate a double execution that preserves low equivalence. 
+
+A multi-step parallel reduction is also defined: 
+
+```
+Inductive multi_step_p_reduction : config -> config -> config -> config -> Prop :=
+| multi_p_reduction_refl : forall config1 config2,
+    multi_step_p_reduction config1 config2 config1 config2
+| multi_p_reduction_step : forall c1 c1'  c2 c2'  c3 c3', 
+                    parallel_reduction c1 c1' c2 c2' ->
+                    multi_step_p_reduction c2 c2' c3 c3' ->
+                    multi_step_p_reduction c1 c1' c3 c3'.                        
+Hint Constructors multi_step_p_reduction. 
+```
+
+##### Double execution to multi-step parallel reduction
+
+The key idea behind our non-interference proof is to prove that we can construct a multi-step p-reduction from a double execution, if the double execution starts with two low-equivalent configurations. This important lemma is stated below: 
+
+```
+Lemma two_exes_to_parallel_execution : forall ct ctn1 ctns_stack1 h1
+                                                    ctn2 ctns_stack2 h2 lb1' sf1' lb2' sf2'
+                                                    final_v1  final_v2  h1' h2' T  φ n, 
+    valid_config (Config ct  ctn1 ctns_stack1 h1 ) ->
+    valid_config (Config ct  ctn2 ctns_stack2 h2 ) ->
+    config_has_type ct empty_context (Config ct ctn1  ctns_stack1 h1) T ->
+    config_has_type ct empty_context (Config ct ctn2  ctns_stack2 h2) T ->
+    two_terminate_num (Config ct ctn1 ctns_stack1 h1)
+                  (Config ct ctn2 ctns_stack2 h2)
+                  (Config ct (Container final_v1 nil lb1' sf1') nil h1')
+                  (Config ct (Container final_v2 nil lb2' sf2') nil h2')
+                  n ->
+    L_equivalence_config (Config ct ctn1 ctns_stack1 h1 )
+            (Config ct ctn2 ctns_stack2 h2)  φ ->
+    value final_v1 -> value final_v2 ->
+    L_equivalence_heap h1 h2 φ ->
+    multi_step_p_reduction (Config ct ctn1 ctns_stack1 h1)
+                           (Config ct ctn2 ctns_stack2 h2)
+                           (Config ct (Container final_v1 nil lb1' sf1') nil h1')
+                           (Config ct (Container final_v2 nil lb2' sf2') nil h2') .
+```
+
+In this statement, two configurations are valid (well-formed), well-typed, low-equivalent, and reach their terminals in a total of n steps. The lemma proves that we can construct a multi-step p-reduction from this double execution. 
 
 
+#### Timing insensitive non-interference
 
+We prove a useful lemma before the final non-interference proof. The lemma states that the multi-step p-reduction is non-interfering. Specifically, two low-equvialent configurations will be low equvialent after multi-step p-reduction. 
 
-- configuration 
+```
+Lemma p_reduction_NI : forall ct ctn1 ctns_stack1 h1 ctn2 ctns_stack2 h2 lb1' sf1' lb2' sf2' final_v1  final_v2  h1' h2' φ T, 
+    valid_config (Config ct  ctn1 ctns_stack1 h1 ) ->
+    valid_config (Config ct  ctn2 ctns_stack2 h2 ) ->
+    config_has_type ct empty_context (Config ct ctn1  ctns_stack1 h1) T ->
+    config_has_type ct empty_context (Config ct ctn2  ctns_stack2 h2) T ->
+    multi_step_p_reduction (Config ct ctn1 ctns_stack1 h1)
+                           (Config ct ctn2 ctns_stack2 h2)
+                           (Config ct (Container final_v1 nil lb1' sf1') nil h1')
+                           (Config ct (Container final_v2 nil lb2' sf2') nil h2') ->
+     L_equivalence_config (Config ct ctn1 ctns_stack1 h1 )
+            (Config ct ctn2 ctns_stack2 h2)  φ ->
+     value final_v1 -> value final_v2 ->
+     L_equivalence_heap h1 h2 φ ->
+     exists  φ', L_equivalence_config (Config ct (Container final_v1 nil lb1' sf1') nil h1')  (Config ct (Container final_v2 nil lb2' sf2') nil h2')  φ'.
+Proof with eauto.
+```
 
-For example, terminating execution #1 takes steps to reduce conf1 to terminal 
+Finally, the non-interference theorem:
 
+```
+Theorem TINI : forall ct ctn1 ctns1 h1 ctn2 ctns2 h2 lb1' sf1' lb2' sf2' final_v1  final_v2  h1' h2' φ T m n, 
+    valid_config (Config ct  ctn1 ctns1 h1 ) ->
+    valid_config (Config ct  ctn2 ctns2 h2 ) ->
+    config_has_type ct empty_context (Config ct ctn1  ctns1 h1) T ->
+    config_has_type ct empty_context (Config ct ctn2  ctns2 h2) T ->
+    terminate_num (Config ct ctn1 ctns1 h1)
+                  (Config ct (Container final_v1 nil lb1' sf1') nil h1')
+                  m ->
+    terminate_num (Config ct ctn2 ctns2 h2)
+                  (Config ct (Container final_v2 nil lb2' sf2') nil h2') 
+                  n -> 
+    L_equivalence_config (Config ct ctn1 ctns1 h1 )
+            (Config ct ctn2 ctns2 h2)  φ ->
+    value final_v1 -> value final_v2 ->
+     L_equivalence_heap h1 h2 φ ->
+     exists  φ', L_equivalence_config (Config ct (Container final_v1 nil lb1' sf1') nil h1')  (Config ct (Container final_v2 nil lb2' sf2') nil h2')  φ'.
+```
 
+The theorem is proved by first showing a multi-step p-reduction can be contructed from two executions, and then applying the `p_reduction_NI` lemma above. 
 
-
-
+Details about non-interference proof can be found in the file [TINI.v](updated/TINI.v).
 
