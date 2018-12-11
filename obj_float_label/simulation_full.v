@@ -9,6 +9,7 @@ Require Import Language Types.
 Require Import Lemmas.
 Require Import Low_eq.
 Require Import Label.
+Require Import decision. 
 
 
 Lemma simulation_H2H_H : forall ct t1 fs1 lb1 sf1 ctns1 h1
@@ -138,6 +139,28 @@ Proof with eauto.
           apply L_equivalence_config_H; auto; 
             unfold low_component; subst; auto; rewrite H; auto;
               rewrite H_flow2;  auto .
+
+  - split; auto.
+    apply change_obj_lbl_h1_with_H_preserve_bijection with ct lo lb1' L_Label; auto.
+    inversion H_valid1; auto.
+    assert (join_label lb1' L_Label = lb1').
+    apply join_L_Label_irrelevant.
+    rewrite H2; auto.
+
+    inversion H_valid1; subst; auto.
+    inversion H_valid2; subst; auto.
+    apply change_obj_lbl_h1_preserve_config_eq with lo lb1' L_Label; auto.
+    apply L_equivalence_config_H; auto.
+    destruct ctns1'.
+    unfold low_component in H19.
+    unfold low_component.
+    rewrite H17. rewrite H17 in H19. auto.
+    unfold low_component in H19.
+    unfold low_component.
+    rewrite H17. rewrite H17 in H19. auto.
+    assert (join_label lb1' L_Label = lb1').
+    apply join_L_Label_irrelevant.
+    rewrite H2; auto. 
 
 (*field update normal *)
   - assert ((join_label lb1' L_Label) = lb1').
@@ -442,6 +465,31 @@ Proof with eauto.
             unfold low_component; subst; auto; rewrite H; auto;
               rewrite H_flow1;  auto .
 
+    (*Config ct (Container (raiseLabel (ObjId o) lo') fs2' lb2' sf2') ctns2' h2*)
+  - split; auto.
+    inversion H_valid1; auto. 
+    inversion H_valid2; auto. 
+    apply change_obj_lbl_h2_with_H_preserve_bijection with ct lo lb2' L_Label ;auto.
+    subst; auto.
+    assert ((join_label lb2' L_Label) = lb2').
+    apply join_L_Label_irrelevant ; auto. rewrite H2. auto. 
+
+    inversion H_valid1; subst; auto. 
+    inversion H_valid2; subst; auto. 
+    apply change_obj_lbl_h2_preserve_config_eq with lo lb2' L_Label; auto.
+
+    apply L_equivalence_config_H; auto.
+    destruct ctns2'.
+    unfold low_component in H19.
+    unfold low_component.
+    rewrite H18. rewrite H18 in H19. auto.
+    unfold low_component in H19.
+    unfold low_component.
+    rewrite H18. rewrite H18 in H19. auto.
+
+    assert ((join_label lb2' L_Label) = lb2').
+    apply join_L_Label_irrelevant ; auto. rewrite H2. auto. 
+    
   - assert ((join_label lb2' L_Label) = lb2').
     apply join_L_Label_irrelevant ; auto. 
     split; auto.
@@ -630,6 +678,33 @@ Proof with eauto.
             unfold low_component; subst; auto; rewrite H; auto;
               rewrite H_flow1;  auto .
 
+  - (*raise label *)
+    split; auto.
+    inversion H_valid1; auto. 
+    inversion H_valid2; auto. 
+    apply change_obj_lbl_h2_with_H_preserve_bijection with ct lo lb2' L_Label ;auto.
+    subst; auto.
+    assert ((join_label lb2' L_Label) = lb2').
+    apply join_L_Label_irrelevant ; auto. rewrite H2. auto. 
+
+    inversion H_valid1; subst; auto. 
+    inversion H_valid2; subst; auto. 
+    apply change_obj_lbl_h2_preserve_config_eq with lo lb2' L_Label; auto.
+
+    apply L_equivalence_config_H; auto.
+    destruct ctns2'.
+    unfold low_component in H19.
+    unfold low_component.
+    rewrite H18. rewrite H18 in H19. auto.
+    unfold low_component in H19.
+    unfold low_component.
+    rewrite H18. rewrite H18 in H19. auto.
+
+    assert ((join_label lb2' L_Label) = lb2').
+    apply join_L_Label_irrelevant ; auto. rewrite H2. auto.
+
+
+    
   - assert ((join_label lb2' L_Label) = lb2').
     apply join_L_Label_irrelevant ; auto. 
     split; auto.

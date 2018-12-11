@@ -236,6 +236,24 @@ Proof with eauto.
          exists (Config ct (Container v fs l' sf) ctns h); auto.
   + exists (Config ct (Container (e) ((unlabelOpaque hole)::fs) lb sf) ctns h); auto.
 
+
+  (*raise label*)
+  -  pose proof (excluded_middle_value e).
+     destruct H11; right.
+     + inversion H11; subst; auto; inversion H9; subst; auto.
+       destruct H25 as [F]. destruct H12 as [lo].
+       case_eq (flow_to lb lo); intro.
+       case_eq (flow_to lo lb0); intro.
+       remember  (update_heap_obj h o (Heap_OBJ cls_def F lb0)) as h'.
+       exists (Config ct (Container Skip fs lb sf) ctns h' ). auto.
+       eauto using ST_raiseLabel3 . 
+
+       exists Error_state. eauto using ST_raiseLabelException2.
+       exists Error_state. eauto using ST_raiseLabelException2.
+       exists Error_state. eauto using ST_raiseLabelException1.
+
+     + exists (Config ct (Container e ((raiseLabel hole lb0) :: fs) lb sf) ctns h ); auto.
+    
   (* skip *)
   - destruct fs. 
     + inversion H_typing; subst; auto.

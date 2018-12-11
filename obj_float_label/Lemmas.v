@@ -273,6 +273,20 @@ exists (Config CT (Container (unlabelOpaque t) fs lb sf) ctns h); auto.
 + subst. assert (hole_free t = true). apply value_is_hole_free. auto. 
 assert (hole_free (unlabelOpaque t) = true). unfold hole_free. fold hole_free. auto. 
 exists (Config CT (Container (unlabelOpaque t) fs lb sf) ctns h); auto.
+
+(* raise label expression *)
+- inversion H_config. inversion H7.  subst. inversion H15. inversion H1. subst.  
+  + subst.
+    assert (surface_syntax (raiseLabel t l) = true).
+    unfold surface_syntax. fold surface_syntax. auto.  
+    apply surface_syntax_is_hole_free in H.  
+    exists (Config CT (Container (raiseLabel t l) fs lb sf) ctns h); auto.
++ subst. exists (Config CT (Container (raiseLabel v l) fs lb sf) ctns h); auto.
++ subst. assert (hole_free t = true). apply value_is_hole_free. auto. 
+assert (hole_free (raiseLabel t l) = true). unfold hole_free. fold hole_free. auto. 
+exists (Config CT (Container (raiseLabel t l) fs lb sf) ctns h); auto.
+
+
 - exists (Config CT (Container Skip fs lb sf) ctns h); auto.
 - inversion H_config. inversion H7.  subst. inversion H15. inversion H1. subst.  
 + subst. assert (surface_syntax (Assignment i t) = true). unfold surface_syntax. fold surface_syntax. auto.  
@@ -1423,6 +1437,7 @@ Proof.
   + apply T_unlabel; auto.
   + apply T_labelOf with (T:=T); auto. 
   + apply T_unlabelOpaque; auto.
+  + apply T_raiseLabel with clsT; auto.        
   + apply T_skip.
   + apply T_assignment with (T:=T); auto. (*(lsf:=lsf) (s':=s') (lb:=lb) (sf:=sf); auto. *)
   + apply T_FieldWrite with (cls_def:=cls_def) (clsT:=clsT) (cls':=cls'); auto. 
@@ -1699,4 +1714,267 @@ Proof. intros.
        rewrite H1 in H.  rewrite H0 in H.
        fold update_heap_obj  in H. fold lookup_heap_obj in H.
        fold lookup_heap_obj. apply IHh. auto. 
-Qed. Hint Resolve   lookup_updated_heap_must_none.      
+Qed. Hint Resolve   lookup_updated_heap_must_none.
+
+
+Ltac empty_sf :=
+  match goal with
+  | H : empty_stack_frame _  = Some _ |- _
+    =>  solve [inversion H]
+  end.   
+             
+Ltac inconsist_label :=
+  match goal with
+  | H1 : flow_to ?T ?X  = true |- _
+    => match goal with
+       | H2 : flow_to ?T ?X  = false |- _                        
+         => solve [rewrite H1 in H2; inversion H2]
+       end
+  end.       
+
+Ltac inconsist :=
+  match goal with
+  | H1 : ?T  = true |- _
+    => match goal with
+       | H2 : ?T  = false |- _                        
+         => solve [rewrite H1 in H2; inversion H2]
+       end
+  end.     
+
+Ltac rewrite_lookup :=
+ match goal with
+  | H1 : Some ?A  = ?T  |- _
+    => match goal with
+       | H2 : Some ?B  = ?T |- _                        
+         => solve [rewrite <-H1 in H2; inversion H2;subst;  auto; try (inconsist)]
+       end
+  end.     
+
+Lemma beq_oid_same_not_false : forall o,
+    beq_oid o o = false -> False.
+Proof with eauto.
+  intros. pose proof (beq_oid_same o). rewrite H0 in H. inversion H.
+  Qed. Hint Resolve beq_oid_same_not_false.
+
+Ltac beq_oid_inconsist :=
+  match goal with
+  | H1 : beq_oid ?T ?A  = false  |- _
+    => match goal with
+       | H2 : ?T = ?A |- _                        
+         => solve [rewrite H2 in H1; apply  beq_oid_same_not_false in H1;
+                    intuition
+                  ]
+       end
+  end.
+
+Lemma config_typing_lead_to_tm_typing : forall h ct t fs lb sf ctns T, 
+    config_has_type ct empty_context (Config ct (Container t fs lb sf) ctns h) T ->
+    t <> return_hole ->
+    exists T' gamma , tm_has_type ct gamma  h t T'.
+Proof with eauto.
+  intros.
+  inversion H; subst;  auto.
+  inversion H4; subst; auto.
+  exists T1. exists Gamma'. auto.
+  intuition. 
+Qed.
+Hint Resolve config_typing_lead_to_tm_typing.
+
+
+
+Lemma change_obj_label_preserve_wfe_heap : 
+  forall CT o h h' F lo lo' cls_def,
+  wfe_heap CT h ->
+  Some (Heap_OBJ cls_def F lo) = lookup_heap_obj h o ->
+  h' = (update_heap_obj h o
+           (Heap_OBJ cls_def F lo')) ->
+  wfe_heap CT h'.
+
+Proof.
+  intros CT o h h' F lo lo' cls_def.
+  intro wfe_h.  intro Ho. intro Hy.
+
+  generalize dependent h. induction h'.
+  intros.
+  apply empty_heap_wfe.
+  intros. destruct h.  inversion Ho. 
+
+  induction a. induction h.
+  case_eq (beq_oid o o1). 
+  (*beq_oid o o1 = true  *)
+  unfold update_heap_obj in Hy. intro. rewrite H in Hy. inversion Hy. 
+  inversion wfe_h.
+  apply heap_wfe with (h':= ((o, (Heap_OBJ cls_def F lo')) :: h0)) 
+        (o:=o) (cls_def:=cls_def0) (F:=F) (cn:=cn) 
+        (h:=h0) 
+        (ho:=(Heap_OBJ cls_def F lo'))
+        (lo:=lo') (method_defs:=method_defs) (field_defs:=field_defs); auto.
+
+  inversion H0. auto. apply beq_oid_equal in H. rewrite H. rewrite H12. auto.
+  inversion H0. auto.
+  unfold lookup_heap_obj in Ho. rewrite H in Ho. fold lookup_heap_obj in Ho. inversion Ho.
+
+  inversion H0. rewrite <- H12 in H14. rewrite H6 in H14. inversion H14. auto.
+
+  (*beq_oid o o1 = false  *)
+  unfold update_heap_obj in Hy. intro. rewrite H in Hy. fold update_heap_obj in Hy.
+  inversion Hy; subst; auto. 
+  inversion wfe_h; subst; auto.
+  inversion H0; subst; auto. 
+  apply heap_wfe with (update_heap_obj h1 o (Heap_OBJ cls_def F lo')) o0
+                      (class_def cn field_defs method_defs) F0 cn
+                      (Heap_OBJ (class_def cn field_defs method_defs) F0 lo0)
+                      lo0 method_defs field_defs; auto.
+
+  unfold  lookup_heap_obj in Ho. rewrite H in Ho. fold  lookup_heap_obj in Ho. 
+  
+  apply object_write_preserve_heap_order with CT o
+                                              ((o0, Heap_OBJ (class_def cn field_defs method_defs) F0 lo0) :: h1) h1  F F cls_def lo lo' (Heap_OBJ (class_def cn field_defs method_defs) F0 lo0); auto.
+
+  apply IHh' with h1; auto.  
+  unfold  lookup_heap_obj in Ho. rewrite H in Ho. fold  lookup_heap_obj in Ho. auto. 
+Qed. Hint Resolve  change_obj_label_preserve_wfe_heap.
+
+
+
+Lemma change_obj_label_preserve_field_wfe : 
+  forall CT o h h' F lo lo' cls_def,
+  field_wfe_heap CT h ->
+  Some (Heap_OBJ cls_def F lo) = lookup_heap_obj h o ->
+  h' = (update_heap_obj h o
+           (Heap_OBJ cls_def F lo')) ->
+  field_wfe_heap CT h'.
+
+Proof.
+  intros CT o h h' F lo lo' cls_def.
+  intro field_wfe_h.  intro Ho. intro Hy.
+  inversion field_wfe_h; subst; auto.
+  apply  heap_wfe_fields; auto.
+  intros.
+
+  case_eq (beq_oid o0 o); intro. 
+  (*beq_oid o o0 = true  *)
+  assert ( Some (Heap_OBJ cls_def0 F0 lo0)
+         = lookup_heap_obj (update_heap_obj h o (Heap_OBJ cls_def F lo')) o0); auto. 
+  assert (Some (Heap_OBJ cls_def0 F0 lo0) = Some (Heap_OBJ cls_def F lo')).
+  apply lookup_updated_heap_new_obj with h o0 o; auto.
+  inversion H6; subst; auto.
+  
+  destruct H with o (class_def cls_name field_defs method_defs) F cls_name
+                  lo method_defs field_defs f cls'; auto.
+  destruct H2. 
+  exists x.
+  split; auto.
+  destruct H7. auto.
+  right.
+  destruct H7 as [o'].
+  destruct H7 as [F0].
+  destruct H7 as [lo0].
+  destruct H7 as [field_defs0].
+  destruct H7 as [method_defs0].
+  destruct H7. destruct H8.
+  subst; auto.
+  exists o'. exists F0.
+
+  (* field pointing to the object being upgraded *)
+  case_eq (beq_oid o o'); intro.
+  apply beq_oid_equal in H7; subst; auto.
+  rewrite <- Ho in H8; inversion H8; subst; auto.
+  
+  exists lo'.
+  exists field_defs0. exists method_defs0.
+  split; auto.
+  split; auto.
+  
+  assert (Some (Heap_OBJ (class_def cls' field_defs0 method_defs0) F0 lo')
+          =  lookup_heap_obj (update_heap_obj h o'
+                                              (Heap_OBJ (class_def cls' field_defs0 method_defs0) F0 lo')) o').
+  apply lookup_updated with h  (Heap_OBJ (class_def cls' field_defs0 method_defs0) F0 lo0); auto.
+  auto. 
+
+  (* field pointing to another object*)
+  assert (Some (Heap_OBJ (class_def cls' field_defs0 method_defs0) F0 lo0)
+          = lookup_heap_obj
+      (update_heap_obj h o
+                       (Heap_OBJ (class_def cls_name field_defs method_defs) F lo')) o').
+  apply lookup_updated_not_affected with o (Heap_OBJ (class_def cls_name field_defs method_defs) F lo') h
+  ; auto.
+  intro contra. rewrite contra in H7.
+  assert (beq_oid o o = true).
+  apply beq_oid_same. try (inconsist).
+
+
+  exists lo0. 
+  exists field_defs0. exists method_defs0.
+  split; auto.
+  
+
+
+  (* beq_oid o0 o = false*)
+
+
+  assert (Some (Heap_OBJ cls_def0 F0 lo0) = lookup_heap_obj h o0).
+  apply lookup_updated_not_affected_reverse with o (Heap_OBJ cls_def F lo') (update_heap_obj h o (Heap_OBJ cls_def F lo'));auto.
+  intro contra. rewrite contra in H4.
+  assert (beq_oid o o = true). apply beq_oid_same.
+  rewrite H5 in H4. intuition.
+  
+  assert ( Some (Heap_OBJ cls_def0 F0 lo0) = lookup_heap_obj (update_heap_obj h o (Heap_OBJ cls_def F lo')) o0).
+  apply lookup_updated_not_affected with o  (Heap_OBJ cls_def F lo') h; auto.
+  intro contra. rewrite contra in H4.
+  assert (beq_oid o o = true). apply beq_oid_same.
+  rewrite H6 in H4. intuition.
+  
+  destruct H with o0 cls_def0 F0 cls_name
+                  lo0 method_defs field_defs f cls'; auto.
+  destruct H7. 
+  exists x.
+  split; auto.
+  destruct H8. auto.
+  right.
+  destruct H8 as [o'].
+  destruct H8 as [F0'].
+  destruct H8 as [lo0'].
+  destruct H8 as [field_defs0'].
+  destruct H8 as [method_defs0'].
+  destruct H8. destruct H9.
+  subst; auto.
+  exists o'. 
+
+  (* field pointing to the object being upgraded *)
+  case_eq (beq_oid o o'); intro.
+  exists F0'.
+  apply beq_oid_equal in H2; subst; auto.
+  rewrite <- Ho in H9; inversion H9; subst; auto.
+  
+  exists lo'.
+  exists field_defs0'. exists method_defs0'.
+  split; auto.
+
+  split; auto. 
+
+  
+  assert (Some (Heap_OBJ (class_def cls' field_defs0' method_defs0') F0' lo')
+          =  lookup_heap_obj (update_heap_obj h o'
+                                              (Heap_OBJ (class_def cls' field_defs0' method_defs0') F0' lo')) o').
+  apply lookup_updated with h  (Heap_OBJ (class_def cls' field_defs0' method_defs0') F0' lo0'); auto.
+  auto. 
+
+  (* field pointing to another object*)
+  assert (Some (Heap_OBJ (class_def cls' field_defs0' method_defs0') F0' lo0')
+          = lookup_heap_obj
+      (update_heap_obj h o
+                       (Heap_OBJ cls_def F lo')) o').
+  apply lookup_updated_not_affected with o (Heap_OBJ cls_def F lo') h
+  ; auto.
+  intro contra. rewrite contra in H2.
+  assert (beq_oid o o = true).
+  apply beq_oid_same. try (inconsist).
+
+  exists F0'.
+  exists lo0'. 
+  exists field_defs0'. exists method_defs0'.
+  split; auto.
+Qed. Hint Resolve change_obj_label_preserve_field_wfe.
+
+

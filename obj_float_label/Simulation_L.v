@@ -391,11 +391,11 @@ Lemma simulation_L : forall ct t1 fs1 lb1 sf1 ctns_stack1 h1  t2 fs2 lb2 sf2 ctn
 
   destruct H28; subst; auto.
   destruct H33; subst; auto.
-  destruct H33. destruct H33.
+  destruct H33.
   
   inversion H31; subst; auto. 
   assert (v = null \/ exists o', v = ObjId o').
-  apply field_value  with h1' o cls4 F3 lb5 fname0 ct cls' gamma1; auto.
+  apply field_value  with h1' o cls4 F3 lb4 fname0 ct cls' gamma1; auto.
 
   inversion H32; subst; auto. 
   assert (v0 = null \/ exists o', v0 = ObjId o').
@@ -415,12 +415,23 @@ Lemma simulation_L : forall ct t1 fs1 lb1 sf1 ctns_stack1 h1  t2 fs2 lb2 sf2 ctn
   subst; auto.
   destruct H34 with fname0 o1 o2; auto. rename x into hfo1.
   destruct H35 as [hfo2].
+  destruct H35 as [lof1]. destruct H35 as [lof2].
+  destruct H35 as [FF1]. destruct H35 as [FF2].
   destruct H35. destruct H36.
+  
+  destruct H39.
+  (*field is low object*)
   assert (L_equivalence_object o1 h1' o2 h2' φ).
   apply H1; auto.
+  apply H39. 
   inversion H42; subst; auto. 
   apply L_equivalence_tm_eq_object_L with cls1 F1 lb0 cls2 F2 lb3 ; auto.
+  apply H39. 
 
+  (*field is high object*)
+  destruct H39.
+  eauto using L_equivalence_tm_eq_object_H. 
+  
   intro contra; inversion contra.
   intro contra; inversion contra. 
 
@@ -838,7 +849,7 @@ Lemma simulation_L : forall ct t1 fs1 lb1 sf1 ctns_stack1 h1  t2 fs2 lb2 sf2 ctn
   apply L_Label_flow_to_L in H26. rewrite <- H26 in H25. auto. 
 
   split; auto.  split; auto.
-  split; auto. split; auto.  
+  split; auto.   
   intros.  
   pose proof (initilized_fields_empty (find_fields cls_def) fname).
   
@@ -855,13 +866,13 @@ Lemma simulation_L : forall ct t1 fs1 lb1 sf1 ctns_stack1 h1  t2 fs2 lb2 sf2 ctn
   assert ( lookup_heap_obj
      (add_heap_obj h1 (get_fresh_oid h1)
        (Heap_OBJ cls_def
-          (init_field_map (find_fields cls_def) empty_field_map) lb1)) o1 = Some (Heap_OBJ cls2 F1 lb3) ).
+          (init_field_map (find_fields cls_def) empty_field_map) lb1)) o1 = Some (Heap_OBJ cls2 F1 lb0) ).
   apply extend_heap_lookup_eq; auto. 
 
   destruct (oid_decision (get_fresh_oid h2) o2 ).
    assert (lookup_heap_obj h2 (get_fresh_oid h2)  = None). 
-   apply fresh_oid_heap with ct; auto.  rewrite e in H32.
-   rewrite H32 in H22. inversion H22.
+   apply fresh_oid_heap with ct; auto.  rewrite e in H33.
+   rewrite H33 in H22. inversion H22.
    
    assert ( lookup_heap_obj
      (add_heap_obj h2 (get_fresh_oid h2)
@@ -869,26 +880,35 @@ Lemma simulation_L : forall ct t1 fs1 lb1 sf1 ctns_stack1 h1  t2 fs2 lb2 sf2 ctn
           (init_field_map (find_fields cls_def) empty_field_map) lb2)) o2 = Some (Heap_OBJ cls2 F2 lb3) ).
    apply extend_heap_lookup_eq; auto.
 
-   apply object_equal_L with lb3 lb3 cls2 cls2 F1 F2; auto.  
+   apply object_equal_L with lb0 lb3 cls2 cls2 F1 F2; auto.  
    split; auto.
    split; auto. 
-   destruct H31. destruct H33.     
-   split; auto. split; auto.
+   destruct H31.     
+   split; auto. 
    intros.
-   destruct H34 with fname fo1 fo2; auto. rename x into hof1.
-   destruct H37 as [hof2]. destruct H37. destruct H38.
-   exists hof1. exists hof2.
+   destruct H34 with fname fo1 fo2; auto. rename x into cls_f1.
+   destruct H37 as [cls_f2]. destruct H37 as [lof1]. destruct H37 as [lof2].
+   destruct H37 as [FF1]. destruct H37 as [FF2].
+   destruct H37. destruct H38.
+
+   exists cls_f1. exists cls_f2.
+   exists lof1. exists lof2.
+   exists FF1. exists FF2. 
    split; auto. 
    apply extend_heap_lookup_eq; auto. 
-   apply lookup_extend_heap_fresh_oid with ct hof1 ; auto. 
+   apply lookup_extend_heap_fresh_oid with ct  (Heap_OBJ cls_f1 FF1 lof1) ; auto. 
    split; auto. 
    apply extend_heap_lookup_eq; auto. 
-   apply lookup_extend_heap_fresh_oid with ct hof2 ; auto. 
+   apply lookup_extend_heap_fresh_oid with ct (Heap_OBJ cls_f2 FF2 lof2) ; auto. 
    assert (fo1 <> get_fresh_oid h1  ).
-   apply lookup_extend_heap_fresh_oid with ct hof1 ; auto.
+   apply lookup_extend_heap_fresh_oid with ct  (Heap_OBJ cls_f1 FF1 lof1) ; auto.
    assert ( bijection.left (bijection.extend_bijection φ (get_fresh_oid h1) (get_fresh_oid h2) H6 H7)  fo1 = 
-          bijection.left φ fo1) by (apply bijection.left_extend_bijection_neq; auto).
-   rewrite H41.   auto.
+            bijection.left φ fo1) by (apply bijection.left_extend_bijection_neq; auto).
+
+   destruct H39.
+   destruct H39.  left. rewrite H41. auto.
+   right; auto. 
+   
    
    
    intros. subst; auto.  destruct (oid_decision (get_fresh_oid h1) o). subst; auto.
@@ -1180,6 +1200,96 @@ Lemma simulation_L : forall ct t1 fs1 lb1 sf1 ctns_stack1 h1  t2 fs2 lb2 sf2 ctn
                   end.
   split; auto.
 
+  (* raise label *)
+- inversion H_reduction2; subst; auto; try (solve_by_invert_ctn).
+  inversion H17; subst; auto. 
+  inversion H19; subst; auto.
+  exists φ. split; auto.
+
+  inversion H17; subst; auto.
+  inversion H21; subst; auto.
+  assert (value e). apply value_L_eq with  (ObjId o) h1' h2 φ; auto. intuition.
+
+
+- inversion H_reduction2; subst; auto; try (solve_by_invert_ctn).
+  (* L_equivalence_config
+               (Config ct (Container t1 (raiseLabel hole lo :: fs) lb1 sf1) ctns_stack1' h1')
+               (Config ct (Container t2 (raiseLabel hole lo0 :: fs0) lb2 sf2) ctns_stack2' h2') φ *)
+  inversion H17; subst; auto. 
+  inversion H20; subst; auto.
+  inversion H9; subst; auto. 
+  exists φ. split; auto.
+  inversion H17; subst; auto.
+  inversion H21; subst; auto.
+  inversion H9; subst;auto.
+  inversion H3; subst; auto.
+  inversion H12. 
+
+- inversion H_reduction2; subst; auto; try (solve_by_invert_ctn).
+(*L_equivalence_config
+               (Config ct (Container (raiseLabel (ObjId o) lo') fs1 lb1 sf1) ctns_stack1' h1)
+               (Config ct (Container (raiseLabel e lo0) fs2 lb2 sf2) ctns_stack2' h2') φ*)
+  inversion H19; subst; auto. 
+  inversion H21; subst; auto.
+  assert (value e). apply value_L_eq2 with  (ObjId o) h1 h2' φ; auto. intuition.
+
+  inversion H19; subst; auto. 
+  inversion H23; subst; auto.
+
+
+  case_eq (flow_to lo'0 L_Label).
+  (*lo'0 is low*)
+  + exists φ. split; auto. 
+    apply lbl_L_change_obj_both_lbl_preserve_bijection with ct lo lo0 lb1 lb2; auto. 
+    inversion H_valid1; subst; auto.
+    inversion H16; subst; auto.
+
+    inversion H_valid2; subst; auto.
+    inversion H35; subst; auto.    
+    apply lbl_L_change_obj_both_lbl_preserve_l_eq_config with lo lo0; auto.
+    
+  + (*lo' is high*)
+    intro.
+    case_eq (flow_to lo L_Label); intro.
+    ++
+      assert (flow_to lo0 L_Label = true).
+      inversion H10; subst; auto.
+      +++ 
+        rewrite <- H12 in H6; inversion H6; subst; auto.
+      +++
+        rewrite <- H7 in H; inversion H; subst; auto. try (inconsist).
+      +++
+        inversion H10; subst; auto.
+        assert (forall a1 a2 : oid, decision.Decision (a1 = a2)); auto. 
+        exists (reduce_bijection φ o o0 H8).
+        split; auto.
+        eauto using lbl_H_raise_obj_both_lbl_preserve_bijection.
+        inversion H_valid1; subst; auto.
+        inversion H33; subst; auto.
+        inversion H_valid2; subst; auto.
+        inversion H43; subst; auto.    
+        apply lbl_H_raise_obj_both_lbl_preserve_l_eq_config with φ lo lo0 H8; auto.
+        rewrite <- H8 in H; inversion H; subst; auto.
+        try (inconsist).
+    ++
+      assert (flow_to lo0 L_Label = false).
+      inversion H10; subst; auto.
+      rewrite <- H8 in H; inversion H; subst; auto.
+      try (inconsist).
+
+      rewrite <- H9 in H6; inversion H6; subst; auto.
+
+
+      exists φ. split; auto.
+      eauto using  lbl_H_change_obj_both_lbl_preserve_l_eq_config.
+      assert (forall a1 a2 : oid, decision.Decision (a1 = a2)); auto.
+      inversion H_valid1; subst; auto.
+      inversion H28; subst; auto.
+      inversion H_valid2; subst; auto.
+      inversion H38; subst; auto.    
+      apply lbl_H_change_obj_both_lbl_preserve_l_eq_config  with lo lo0; auto. 
+            
+  
   
 - inversion H_reduction2; subst; auto; try (solve_by_invert_ctn).
   (*L_eq_container (Container (Assignment id e) fs1 lb1 sf1) h1' (Container t2 fs2 lb2 sf2) h2 φ*)
@@ -1782,8 +1892,15 @@ Lemma simulation_L : forall ct t1 fs1 lb1 sf1 ctns_stack1 h1  t2 fs2 lb2 sf2 ctn
   + inversion H18; subst; auto.
   inversion H21; subst; auto.
   inversion H10; subst; auto.
+  inversion H6; subst; auto.
+  inversion H0.
+
+  + inversion H18; subst; auto.
+  inversion H21; subst; auto.
+  inversion H10; subst; auto.
   inversion H7; subst; auto.
   inversion H0.
+  
   
   + inversion H18; subst; auto.
   inversion H22; subst; auto.

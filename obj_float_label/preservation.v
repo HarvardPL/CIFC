@@ -6,9 +6,8 @@ Require Import Coq.omega.Omega.
 Require Import Coq.Lists.List.
 Require Import Language.
 Require Import Lemmas.
-Require Import Low_eq.
+(* Require Import Low_eq. *)
 Require Import Label.
-Require Import simulation_full.
 Require Import Types. 
 
 
@@ -163,6 +162,81 @@ Proof with eauto.
        destruct a. auto.
        inversion H0; subst; auto.
 Qed. Hint Resolve  update_heap_preserve_valid_ctns.
+
+
+Lemma change_obj_label_preserve_wfe_stack_val : forall o v h ct F cls lo lo',
+         value v ->
+         wfe_heap ct h ->
+         wfe_stack_val ct h v ->
+         Some (Heap_OBJ cls F lo) = lookup_heap_obj h o ->
+         wfe_stack_val ct (update_heap_obj h o (Heap_OBJ cls F lo')) v.
+Proof with eauto.
+  intros.
+  induction H; subst; auto.
+  inversion H1; subst; auto.
+  case_eq (beq_oid o0 o); intro.
+  apply beq_oid_equal in H. subst; auto. 
+  assert (Some (Heap_OBJ cls F lo') =
+                     lookup_heap_obj
+                       (update_heap_obj h o (Heap_OBJ cls F lo')) o).
+  apply lookup_updated with h (Heap_OBJ cls F lo); auto.       
+  apply stack_val_object with cls_name F lo'
+                              field_defs  method_defs; auto.
+  rewrite <- H2 in H3; inversion H3; subst; auto. 
+
+  inversion H1; subst; auto.
+  assert (Some (Heap_OBJ (class_def cls_name0 field_defs0 method_defs0) F1 lo1) =
+                     lookup_heap_obj
+                       (update_heap_obj h o (Heap_OBJ cls F lo')) o0).
+  apply lookup_updated_not_affected with o (Heap_OBJ cls F lo') h; auto.
+  intro contra. rewrite contra in H.
+  pose proof (beq_oid_same o).
+  try (inconsist).
+  apply stack_val_object with cls_name0 F1 lo1
+                              field_defs0  method_defs0; auto.
+
+  inversion H1; subst; auto.
+  inversion H1; subst; auto. 
+  
+Qed. Hint Resolve change_obj_label_preserve_wfe_stack_val .
+
+
+Lemma change_obj_label_preserve_valid_ctn  : forall  o h ct F cls lo lo' ctn,
+    wfe_heap ct h ->
+    valid_ctn ct ctn h ->
+    Some (Heap_OBJ cls F lo) = lookup_heap_obj h o ->
+    valid_ctn ct ctn (update_heap_obj h o (Heap_OBJ cls F lo')).
+Proof with eauto.
+  intros.
+  inversion H0; subst; auto.
+  apply valid_container; auto.
+  apply stack_frame_wfe; auto.
+  intros.
+  split; auto.
+  inversion H6; subst; auto.
+  destruct H8 with x v; auto.
+
+  apply change_obj_label_preserve_wfe_stack_val with lo; auto.
+  inversion H6; subst; auto.
+  destruct H8 with x v; auto.
+
+  inversion H6; subst; auto.
+  destruct H8 with x v; auto.
+Qed. Hint Resolve change_obj_label_preserve_valid_ctn.
+
+
+Lemma change_obj_label_preserve_valid_ctns : forall  o h ct F cls lo lo' ctns,
+    wfe_heap ct h ->
+    valid_ctns ct ctns h ->
+    Some (Heap_OBJ cls F lo) = lookup_heap_obj h o ->
+    valid_ctns ct ctns (update_heap_obj h o (Heap_OBJ cls F lo')).
+Proof with eauto.
+       intros. induction ctns. auto.
+       destruct a. auto.
+       inversion H0; subst; auto.
+       apply valid_ctns_list; auto.
+       apply change_obj_label_preserve_valid_ctn with lo; auto. 
+Qed. Hint Resolve change_obj_label_preserve_valid_ctns.
 
 
 
@@ -701,7 +775,18 @@ Proof with eauto.
                                             field_defs
                                             method_defs lb; auto.
      apply fresh_oid_heap with ct ; auto.
-      
+
+     (* raise label*)
+   -
+     apply valid_conf; auto.
+     apply change_obj_label_preserve_valid_ctns with lo; auto.
+     apply change_obj_label_preserve_valid_ctn with lo; auto.
+     inversion H19; subst; auto.
+
+     eauto using change_obj_label_preserve_wfe_heap.
+     eauto using change_obj_label_preserve_field_wfe.
+
+     (* assignment *)
    -  apply valid_conf; auto;
     match goal with
     | H : valid_ctn _ _ _ |- _
@@ -1175,6 +1260,7 @@ Lemma expand_heap_preserve_typed_tm : forall t h ct ho T Gamma,
     apply T_MethodCall with (update_typing empty_context arg_id (classTy arguT))
                             T cls_def body arg_id arguT; subst; auto.
     eauto using tm_has_type.
+    apply T_raiseLabel with clsT; auto. 
     apply T_assignment with T; subst; auto.
     apply T_FieldWrite with cls_def clsT cls'; subst;  auto.
     apply T_sequence with T; subst; auto. 
@@ -1203,9 +1289,9 @@ Qed. Hint Resolve  expand_heap_preserve_typed_tm.
     eauto using T_hole_MethodCall1.
     eauto using T_hole_MethodCall2.
     eauto using T_hole_MethodCall3.
+    eauto using T_hole_raiseLabel. 
     eauto using T_hole_FieldWrite1.
     eauto using T_hole_FieldWrite2.
-    eauto using T_hole_FieldWrite3.
     Qed. Hint Resolve expand_heap_preserve_typed_hole_tm.
 
   
@@ -1275,6 +1361,7 @@ Qed. Hint Resolve  expand_heap_preserve_typed_tm.
     apply T_MethodCall with (update_typing empty_context arg_id (classTy arguT))
                             T cls_def0 body arg_id arguT; subst; auto.
     eauto using tm_has_type.
+    apply T_raiseLabel with clsT0; auto. 
     apply T_assignment with T; subst; auto.
     apply T_FieldWrite with cls_def0 clsT0 cls'; subst;  auto.
     apply T_sequence with T; subst; auto. 
@@ -1328,7 +1415,8 @@ Qed. Hint Resolve  expand_heap_preserve_typed_tm.
     eauto using T_hole_MethodCall2.
     eauto using T_hole_MethodCall3.
 
-    eauto using T_hole_FieldWrite1.  
+    eauto using T_hole_FieldWrite1.
+    
     Qed. Hint Resolve  field_write_preserve_typed_hole_tm.
 
 
@@ -1410,6 +1498,121 @@ Qed. Hint Resolve  expand_heap_preserve_typed_tm.
   Qed. Hint Resolve field_write_preserve_typed_ctns.
   
 
+
+
+
+  Lemma change_obj_label_preserve_typed_hole_tm : forall ct h t Gamma o F lo lo' T
+                                               cls_def clsT field_defs method_defs,
+      wfe_heap ct h ->
+      tm_hole_has_type ct Gamma h t T ->
+      Some (Heap_OBJ cls_def F lo) = lookup_heap_obj h o ->
+      cls_def = class_def clsT field_defs method_defs ->
+      Some cls_def = ct clsT ->
+      tm_hole_has_type ct Gamma (update_heap_obj h o (Heap_OBJ cls_def F lo')) t T.
+  Proof with eauto.
+    intros.
+    induction H0; subst; auto.
+    apply T_EqCmp1 with e1; auto;
+      eauto using field_write_preserve_typed_tm; auto. 
+    apply T_EqCmp2 with e2; auto;
+      eauto using field_write_preserve_typed_tm; auto. 
+    apply T_hole_FieldAccess with cls_def0 (find_fields cls_def0); auto;
+      eauto using field_write_preserve_typed_tm; auto.
+
+    eauto using T_hole_MethodCall1.
+    eauto using T_hole_MethodCall2.
+    eauto using T_hole_MethodCall3.
+    
+    eauto using T_hole_MethodCall1.
+    eauto using T_hole_MethodCall2.
+    eauto using T_hole_MethodCall3.
+
+    eauto using T_hole_FieldWrite1.
+    
+    Qed. Hint Resolve  change_obj_label_preserve_typed_hole_tm.
+
+
+
+   Lemma change_obj_label_preserve_typed_fs : forall ct h fs Gamma o F lo lo' T T0
+                                                cls_def clsT field_defs method_defs ,
+      wfe_heap ct h ->
+      fs_has_type ct Gamma h fs (ArrowTy T T0) ->
+      Some (Heap_OBJ cls_def F lo) = lookup_heap_obj h o ->
+      cls_def = class_def clsT field_defs method_defs ->
+      Some cls_def = ct clsT ->
+      fs_has_type ct Gamma (update_heap_obj h o (Heap_OBJ cls_def F lo')) fs (ArrowTy T T0).
+  Proof with eauto.
+    intros. generalize dependent T. generalize dependent T0.
+    induction fs; intros; auto.
+    inversion H0; auto.
+    inversion H0; subst; auto.
+    apply T_fs_no_hole with T2; auto.
+    eauto using field_write_preserve_typed_tm; auto.     
+    apply T_fs_hole with T' T2; auto.
+    eauto using field_write_preserve_typed_hole_tm; auto.
+  Qed. Hint Resolve change_obj_label_preserve_typed_fs.
+
+
+  Lemma change_obj_label_preserve_typed_sf : forall ct h sf Gamma o F lo lo'
+                                                cls_def clsT field_defs method_defs,
+      wfe_heap ct h ->
+      well_typed_stack_frame ct Gamma sf h ->
+      Some (Heap_OBJ cls_def F lo) = lookup_heap_obj h o ->
+      cls_def = class_def clsT field_defs method_defs ->
+      Some cls_def = ct clsT ->
+      well_typed_stack_frame ct Gamma sf (update_heap_obj h o (Heap_OBJ cls_def F lo')).
+  Proof with eauto.
+    intros.     
+    inversion H0; subst; auto.
+    apply well_typed_sf; auto; intros.
+    destruct H4 with x T; auto. destruct H5.
+    rename x0 into v. 
+    exists v; split; auto.    
+    apply field_write_preserve_typed_tm with F lo clsT field_defs
+                                             method_defs; auto.
+  Qed. Hint Resolve change_obj_label_preserve_typed_sf.
+
+  Lemma change_obj_label_preserve_typed_ctn : forall ct h ctn Gamma o F lo lo' T T0
+                                                cls_def clsT field_defs method_defs ,
+      wfe_heap ct h ->
+      ctn_has_type ct Gamma h ctn (ArrowTy T T0) ->
+      Some (Heap_OBJ cls_def F lo) = lookup_heap_obj h o ->
+      cls_def = class_def clsT field_defs method_defs ->
+      Some cls_def = ct clsT ->
+      ctn_has_type ct Gamma (update_heap_obj h o (Heap_OBJ cls_def F lo')) ctn (ArrowTy T T0).
+  Proof with eauto.
+    intros.
+    induction H0; subst; auto.
+    apply T_ctn_type with T1 T2; auto.
+    eauto using field_write_preserve_typed_tm; auto.
+    eauto using field_write_preserve_typed_sf; auto.
+    eauto using field_write_preserve_typed_fs; auto.
+    
+    apply T_ctn_caller with T2; auto.
+    eauto using field_write_preserve_typed_tm; auto.
+    eauto using field_write_preserve_typed_sf; auto.
+  Qed. Hint Resolve change_obj_label_preserve_typed_ctn.
+  
+  
+  Lemma change_obj_label_preserve_typed_ctns : forall ct h ctns Gamma o F lo lo' T T0
+                                                cls_def clsT field_defs method_defs ,
+      wfe_heap ct h ->
+     ctn_list_has_type ct Gamma h ctns (ArrowTy T T0) ->
+      Some (Heap_OBJ cls_def F lo) = lookup_heap_obj h o ->
+      cls_def = class_def clsT field_defs method_defs ->
+      Some cls_def = ct clsT ->
+      ctn_list_has_type ct Gamma (update_heap_obj h o (Heap_OBJ cls_def F lo')) ctns (ArrowTy T T0).
+  Proof with eauto.
+    intros.
+    induction H0; subst; auto.
+    apply T_ctn_list with T2 Gamma'; auto.
+    eauto using field_write_preserve_typed_ctn; auto.
+  Qed. Hint Resolve change_obj_label_preserve_typed_ctns.
+
+
+
+
+  
   
 Theorem typing_preservation : forall T ct
                                    ctn ctns h
@@ -1580,7 +1783,8 @@ Proof with eauto.
     inversion H16; subst; auto.
     inversion H7.
     apply value_is_hole_free in H.
-    rewrite H in H2; intuition.
+    rewrite H in H2. inversion H2.
+    
     inversion H20; subst; auto.
     inversion H_valid_config; subst; auto.
     inversion H29; subst; auto.
@@ -1815,7 +2019,7 @@ Proof with eauto.
     inversion H16; subst; auto.
     inversion H7.
     apply value_is_hole_free in H.
-    rewrite H in H2; intuition. 
+    rewrite H in H2. inversion H2. 
     inversion H20; subst; auto.
     inversion H_valid_config; subst; auto.
     inversion H28; subst; auto.
@@ -2338,6 +2542,125 @@ Proof with eauto.
   inversion H1; subst; auto.
   apply T_ctn_type with T1 T2; auto.
 
+       
+(* (Config ct (Container e (raiseLabel hole lo :: fs) lb sf) ctns' h') *)
+  -  inversion H_typing; subst; auto.
+     apply T_config_ctns with T0 Gamma'; auto.
+     inversion H3; subst; auto.
+     inversion H8; subst; auto.
+     inversion H9; subst; auto. 
+     + assert (tm_hole_has_type ct Gamma' h' (raiseLabel hole lo)
+                                   (ArrowTy (classTy clsT)  voidTy)).
+       eauto using tm_hole_has_type.          
+       apply T_ctn_type with (classTy clsT)  (classTy clsT) ; auto.
+       destruct fs.          
+       ++ apply T_fs_hole with voidTy voidTy; auto.
+          intros. split; auto.
+          intro contra; inversion contra. inversion H1.
+          inversion H15; subst; auto.
+          destruct H16; auto. 
+
+       ++ case_eq (hole_free t); intro.
+          +++ apply T_fs_hole with voidTy T2  ; auto.
+              intros. inversion H4; subst; auto; try (inconsist).
+          +++ apply T_fs_hole with voidTy T2 ; auto.
+          intros. inversion H4; subst; auto;
+                    destruct H17 with top fs'; auto.
+       ++ intros. inversion H1; subst; auto. split; auto.
+          intro contra; inversion contra. 
+      
+     + assert (tm_hole_has_type ct Gamma' h' (raiseLabel hole lo)
+                                   (ArrowTy (classTy clsT) voidTy)).
+       eauto using tm_hole_has_type.          
+       apply T_ctn_type with (classTy clsT)  (classTy clsT) ; auto.
+       destruct fs.          
+       ++ apply T_fs_hole with voidTy T2; auto.
+          intros. inversion H1. 
+       ++ case_eq (hole_free t); intro.           
+          apply T_fs_hole with voidTy T2; auto.
+          intros. inversion H4; subst; auto; try (inconsist).
+          apply T_fs_hole with voidTy T2; auto.
+          intros. inversion H4; subst; auto;
+                    destruct H17 with top fs'; auto.
+       ++ intros. split; auto. intro contra; inversion contra. 
+         
+  (* (Container (raiseLabel v lo) fs lb sf)*)
+  - inversion H_typing; subst; auto. 
+    apply T_config_ctns with T0 Gamma'; auto.
+    inversion H3; subst; auto.  
+    inversion H15; subst; auto.
+    inversion H6.
+    inversion H19; subst; auto.
+    apply T_ctn_type with voidTy T4; auto.
+    destruct H17 with (raiseLabel hole lo) fs; auto.
+    subst; auto.
+    eauto using tm_has_type.
+    intros.
+    destruct H21 with top fs' ; auto.
+    subst; auto.
+
+    inversion H.
+
+
+-  (*(Container (raiseLabel (ObjId o) lo') fs lb sf)*)
+  inversion H_typing; subst; auto.
+  apply T_config_ctns with T0 Gamma'; auto.
+  inversion H5; subst; auto.
+  inversion H10; subst; auto.
+  apply T_ctn_type with voidTy T2; auto.
+  apply well_typed_sf; auto.
+  intros.
+  inversion H16; subst; auto.
+  apply H3 in H2; auto. destruct H2 as [v]. destruct H2.
+  exists v. split; auto.
+  apply heap_preserve_typing with h0; auto.
+  intros.
+  case_eq (beq_oid o0 o); intro.
+  apply beq_oid_equal in H13; subst; auto.
+  assert (Some (Heap_OBJ cls F lo') =
+          lookup_heap_obj (update_heap_obj h0 o (Heap_OBJ cls F lo')) o).
+  apply lookup_updated with h0 ((Heap_OBJ cls F lo)); auto.
+  exists F. exists lo'.
+  rewrite H7 in H; inversion H; subst; auto. 
+
+  assert (Some  (Heap_OBJ cls_def F0 lo0) =
+          lookup_heap_obj (update_heap_obj h0 o (Heap_OBJ cls F lo')) o0).
+  apply lookup_updated_not_affected with o (Heap_OBJ cls F lo') h0; auto.
+  intro contra; subst; auto.
+  assert (beq_oid o o = true).
+  apply beq_oid_same. try(inconsist).
+  exists F0. exists lo0.  auto. 
+
+  
+  destruct H21 as [cls_def].
+  destruct H2 as [field_defs].
+  destruct H2 as [method_defs].
+  destruct H2.
+  inversion H14; subst; auto.
+  destruct H24 as [F0].
+  destruct H3 as [lo0].
+  rewrite H3 in H; inversion H; subst; auto. 
+  apply change_obj_label_preserve_typed_fs with lo0 clsT field_defs
+                                                method_defs; auto.
+  inversion H_valid_config; subst; auto. 
+  
+
+  rewrite <- H13 in H2. inversion H2; auto. 
+
+  inversion H5; subst; auto.
+  inversion H10; subst; auto.
+  destruct H21 as [cls_def].
+  destruct H2 as [field_defs].
+  destruct H2 as [method_defs].
+  destruct H2.
+  inversion H14; subst; auto.
+  destruct H24 as [F0].
+  destruct H3 as [lo0].
+  rewrite H3 in H; inversion H; subst; auto. 
+  apply change_obj_label_preserve_typed_ctns with lo0 clsT field_defs
+                                                  method_defs; auto.
+  inversion H_valid_config; subst; auto. 
+  rewrite <- H13 in H2. inversion H2; auto.   
   
 (*(Assignment id0 hole :: fs0)  *)
 - inversion H_typing; subst; auto.
@@ -2549,6 +2872,7 @@ Proof with eauto.
 
     
 
+        
 (*(Container (FieldWrite v1 f v2)*)
   - inversion H_typing; subst; auto. 
     apply T_config_ctns with T0 Gamma'; auto.
@@ -2556,7 +2880,7 @@ Proof with eauto.
     inversion H16; subst; auto.
     inversion H7.
     apply value_is_hole_free in H0.
-    rewrite H0 in H2; intuition.
+    rewrite H0 in H2. inversion H2. 
     inversion H20; subst; auto.
     inversion H_valid_config; subst; auto.
     inversion H28; subst; auto.

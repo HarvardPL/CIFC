@@ -44,6 +44,7 @@ Inductive tm : Type :=
   | unlabel : tm -> tm
   | labelOf : tm -> tm
   | unlabelOpaque : tm -> tm
+  | raiseLabel : tm -> Label -> tm                          
 
 (* statements *)
   | Skip : tm
@@ -244,6 +245,8 @@ Fixpoint surface_syntax (t : tm) :=
     | unlabel e => (surface_syntax e)
     | labelOf e => (surface_syntax e)
     | unlabelOpaque e => (surface_syntax e)
+    | raiseLabel e lb => (surface_syntax e)
+                           
 (* statements *)
     | Skip => false
     | Assignment x e => (surface_syntax e)
@@ -396,6 +399,18 @@ Inductive valid_syntax :  tm -> Prop :=
       value v ->
       valid_syntax (unlabelOpaque v)
 
+(* raise label *)
+  | Valid_raiseLabel1 : forall e lb,
+      surface_syntax e = true ->
+      valid_syntax (raiseLabel e lb)
+
+  | Valid_raiseLabel2 : forall lb,
+      valid_syntax (raiseLabel hole lb)
+
+  | Valid_raiseLabel3 : forall v lb,
+      value v ->
+      valid_syntax (raiseLabel v lb)
+                   
 (* Skip *)
   | Valid_skip : 
       valid_syntax Skip
@@ -503,6 +518,7 @@ Fixpoint hole_free (t : tm) :=
     | unlabel e => (hole_free e)
     | labelOf e => (hole_free e)
     | unlabelOpaque e => (hole_free e)
+    | raiseLabel e lb => (hole_free e)
 (* statements *)
     | Skip => true
     | Assignment x e => (hole_free e)
@@ -770,6 +786,31 @@ Inductive reduction : config -> config -> Prop :=
   | ST_unlabel_opaqueDataException : forall h ct fs ctns sf lb,
       Config ct (Container (unlabelOpaque null) fs lb sf) ctns h ==> Error_state
 
+
+(* raise label of an object *)
+  (* context rule *)
+  | ST_raiseLabel1 : forall h e ct fs lb sf ctns lo,
+      ~ value e ->
+      Config ct (Container (raiseLabel e lo) fs lb sf) ctns h ==> Config ct (Container e ((raiseLabel hole lo) :: fs) lb sf) ctns h 
+  | ST_raiseLabel2 : forall h ct fs v lb lo ctns sf,
+      value v ->
+      Config ct (Container v ((raiseLabel hole lo) :: fs) lb sf) ctns h ==> Config ct (Container (raiseLabel v lo) fs lb sf) ctns h 
+
+  | ST_raiseLabel3 : forall h ct fs sf ctns cls F lb lo lo' o h',
+      Some (Heap_OBJ cls F lo) = lookup_heap_obj h o -> 
+      flow_to lb lo = true  ->
+      flow_to lo lo' = true ->
+      h' = update_heap_obj h o (Heap_OBJ cls F lo') ->
+      Config ct (Container (raiseLabel (ObjId o) lo') fs lb sf) ctns h ==>  Config ct (Container (Skip) fs lb sf) ctns h'
+  (*  raise label  exception *)
+  | ST_raiseLabelException1 : forall h lb ct fs lo ctns sf,
+      Config ct (Container (raiseLabel null lo) fs lb sf) ctns h ==> Error_state
+  | ST_raiseLabelException2 : forall h lb ct fs o ctns sf lo' cls F lo,
+      Some (Heap_OBJ cls F lo) = lookup_heap_obj h o -> 
+      (flow_to lb lo = false \/ 
+      flow_to lo lo' = false ) ->
+      Config ct (Container (raiseLabel (ObjId o) lo') fs lb sf) ctns h ==>  Error_state
+             
 (* assignment *)
   (* context rule *)
   | ST_assignment1 : forall h e ct fs lb sf ctns id,

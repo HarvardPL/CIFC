@@ -94,6 +94,14 @@ Inductive tm_has_type : Class_table -> typing_context -> heap -> tm -> ty -> Pro
       tm_has_type CT Gamma h e (OpaqueLabeledTy T) ->
       T <> voidTy ->
       tm_has_type CT Gamma h (unlabelOpaque e) T
+(* raise label *)
+  | T_raiseLabel : forall h Gamma lb CT e clsT,
+      tm_has_type CT Gamma h (l lb) LabelTy ->
+      tm_has_type CT Gamma h e (classTy clsT) ->
+      (exists cls_def field_defs method_defs, CT clsT = Some cls_def /\
+              cls_def = class_def clsT field_defs method_defs) ->
+      tm_has_type CT Gamma h (raiseLabel e lb) (voidTy)
+                  
 (* Skip *)
   | T_skip : forall h Gamma CT,
       tm_has_type CT Gamma h Skip voidTy
@@ -235,6 +243,12 @@ Inductive tm_hole_has_type : Class_table -> typing_context -> heap -> tm -> ty -
       T <> voidTy ->
       tm_hole_has_type CT Gamma h (unlabelOpaque hole) (ArrowTy (OpaqueLabeledTy T) T)
 
+
+  | T_hole_raiseLabel : forall  Gamma lo'  CT clsT h,
+      (exists cls_def field_defs method_defs, CT clsT = Some cls_def /\
+              cls_def = class_def clsT field_defs method_defs) ->
+      tm_hole_has_type CT Gamma h (raiseLabel hole lo') (ArrowTy (classTy clsT) voidTy)
+                       
 (* assignment *)
   | T_hole_assignment : forall h Gamma CT  T x , 
       (* tm_has_type CT Gamma h (Assignment x e) voidTy -> *)
