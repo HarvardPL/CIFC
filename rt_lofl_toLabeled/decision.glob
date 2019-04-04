@@ -1,0 +1,23 @@
+DIGEST 032eb3f5da7a5433fe207c5f68230990
+Fdecision
+R15:19 Coq.Arith.Arith <> <> lib
+ind 115:122 <> Decision
+constr 143:148 <> decide
+rec 115:122 <> Decision
+proj 143:148 <> decide
+R151:151 Coq.Init.Specif <> :type_scope:'{'_x_'}'_'+'_'{'_x_'}' not
+R153:157 Coq.Init.Specif <> :type_scope:'{'_x_'}'_'+'_'{'_x_'}' not
+R161:161 Coq.Init.Specif <> :type_scope:'{'_x_'}'_'+'_'{'_x_'}' not
+R152:152 decision <> P var
+R158:159 Coq.Init.Logic <> :type_scope:'~'_x not
+R160:160 decision <> P var
+R174:179 decision <> decide def
+R174:179 decision <> decide def
+inst 199:205 <> nat_dec
+R223:225 Coq.Init.Datatypes <> nat ind
+R228:235 decision <> Decision class
+R240:242 Coq.Init.Logic <> :type_scope:x_'='_x not
+R238:239 decision <> n1 var
+R243:244 decision <> n2 var
+R261:270 Coq.Arith.Peano_dec <> eq_nat_dec syndef
+R261:270 Coq.Arith.Peano_dec <> eq_nat_dec syndef
