@@ -2194,6 +2194,12 @@ Ltac invert_l_eq_fs :=
       eauto using L_equivalence_config_H; auto.
 
 - inversion H_reduction2; subst; auto; try (solve_by_invert_ctn).
+  (* L_eq_container (Container getCurrentLevel fs1 lb2 sf1) h1'
+          (Container getCurrentLevel fs2 lb2 sf2) h2' φ *)
+  invert_l_eq_ctn.
+  exists φ. split; auto. 
+      
+- inversion H_reduction2; subst; auto; try (solve_by_invert_ctn).
   (*L_eq_container (Container (Assignment id e) fs1 lb1 sf1) h1' (Container t2 fs2 lb2 sf2) h2 φ*)
   + invert_l_eq_ctn.
     invert_l_eq_tm.

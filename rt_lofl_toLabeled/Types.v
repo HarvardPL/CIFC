@@ -110,7 +110,9 @@ Inductive tm_has_type : Class_table -> typing_context -> heap -> tm -> ty -> Pro
       T <> voidTy ->
       tm_has_type CT Gamma h e T ->
       tm_has_type CT Gamma h (toLabeled e v) (LabelelTy T)
-                  
+(* getCurrentLevel *)
+  | T_getCurrentLevel : forall h Gamma CT,
+      tm_has_type CT Gamma h (getCurrentLevel) LabelTy                  
 (* Skip *)
   | T_skip : forall h Gamma CT,
       tm_has_type CT Gamma h Skip voidTy

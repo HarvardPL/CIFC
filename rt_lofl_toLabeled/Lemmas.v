@@ -347,6 +347,11 @@ exists (Config CT (Container (raiseLabel t l) fs lb sf) ctns h); auto.
     apply surface_syntax_is_hole_free in H13.  rewrite H. rewrite H13.     auto. 
     exists (Config CT (Container (toLabeled t1 t2) fs lb sf) ctns h); auto.
 
+(* getCurrentLevel *)
+    
+- 
+  exists (Config CT (Container getCurrentLevel fs lb sf) ctns h); auto.
+    
 - exists (Config CT (Container Skip fs lb sf) ctns h); auto.
 - inversion H_config. inversion H7.  subst. inversion H15. inversion H1. subst.  
 + subst. assert (surface_syntax (Assignment i t) = true). unfold surface_syntax. fold surface_syntax. auto.  
@@ -1543,7 +1548,8 @@ Proof.
   + apply T_labelOf with (T:=T); auto. 
   + apply T_objectLabelOf with clsT; auto.  
   + apply T_raiseLabel with clsT; auto.
-  + apply T_toLabeled; auto. 
+  + apply T_toLabeled; auto.
+  + apply T_getCurrentLevel; auto.   
   + apply T_skip.
   + apply T_assignment with (T:=T); auto. (*(lsf:=lsf) (s':=s') (lb:=lb) (sf:=sf); auto. *)
   + apply T_FieldWrite with (cls_def:=cls_def) (clsT:=clsT) (cls':=cls'); auto. 

@@ -45,7 +45,9 @@ Inductive tm : Type :=
   | labelOf : tm -> tm
   | objectLabelOf : tm -> tm   
   | raiseLabel : tm -> Label -> tm
-  | toLabeled : tm -> tm -> tm                                
+  | toLabeled : tm -> tm -> tm
+  | getCurrentLevel : tm                            
+                              
                                
 
 (* statements *)
@@ -231,21 +233,22 @@ Fixpoint assignment_free (t : tm) :=
     | objectLabelOf e => (assignment_free e)
     | raiseLabel e lb => (assignment_free e)
     | toLabeled e1 e2 => if (assignment_free e1) then (assignment_free e2) else false
+    | getCurrentLevel => true
                            
 (* statements *)
-    | Skip => false
+    | Skip => true
     | Assignment x e => false
     | FieldWrite e1 f e2 =>  if (assignment_free e1) then (assignment_free e2) else false
     | If guard e1 e2 =>  if assignment_free guard then (if (assignment_free e1) then (assignment_free e2) else false )  else false
     | Sequence e1 e2 =>  if (assignment_free e1) then (assignment_free e2) else false
 
 (* special terms *)
-    | ObjId o =>  false
+    | ObjId o =>  true
   (* runtime labeled date*)
-    | v_l e lb => false
-    | v_opa_l e lb => false
-    | hole => false
-    | return_hole => false
+    | v_l e lb => true
+    | v_opa_l e lb => true
+    | hole => true
+    | return_hole => true
   end.
 
 Fixpoint surface_syntax (t : tm) :=
@@ -266,6 +269,8 @@ Fixpoint surface_syntax (t : tm) :=
     | objectLabelOf e => (surface_syntax e)
     | raiseLabel e lb => (surface_syntax e)
     | toLabeled e1 e2 => if ((surface_syntax e1) &&  (assignment_free e1))  then (surface_syntax e2) else false
+    | getCurrentLevel => true
+    
                            
 (* statements *)
     | Skip => false
@@ -444,6 +449,10 @@ Inductive valid_syntax :  tm -> Prop :=
       assignment_free e = true ->
       valid_syntax (toLabeled e v)
 
+  (*get current context level *)                 
+  | Valid_getCurrentLevel :
+      valid_syntax getCurrentLevel
+  
   
                    
 (* Skip *)
@@ -555,7 +564,9 @@ Fixpoint hole_free (t : tm) :=
     | labelOf e => (hole_free e)
     | objectLabelOf e => hole_free e
     | raiseLabel e lb => (hole_free e)
-    | toLabeled e1 e2 => if (hole_free e1) then (hole_free e2) else false                   
+    | toLabeled e1 e2 => if (hole_free e1) then (hole_free e2) else false
+    | getCurrentLevel => true
+    
 (* statements *)
     | Skip => true
     | Assignment x e => (hole_free e)
@@ -900,7 +911,10 @@ Inductive reduction : config -> config -> Prop :=
              ==> Config ct (Container (toLabeled e1 v) fs (join_label lb ell) sf) ctns h
   |  ST_toLabeledException : forall h ct fs ctns sf lb e,
       Config ct (Container (toLabeled e null) fs lb sf) ctns h ==> Error_state
-             
+
+  (*getCurrentLevel *)
+  |  ST_getCurrentLevel : forall h ct fs ctns sf lb,
+      Config ct (Container getCurrentLevel fs lb sf) ctns h ==>  Config ct (Container (l lb) fs lb sf) ctns h      
              
 (* assignment *)
   (* context rule *)

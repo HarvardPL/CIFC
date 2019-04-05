@@ -54,7 +54,9 @@ Inductive L_equivalence_tm : tm -> heap -> tm -> heap ->  (bijection oid oid )->
   | L_equivalence_tm_eq_toLabeled : forall e1 e2 l1 l2 h1 h2  φ,
       L_equivalence_tm e1 h1 e2 h2  φ->
       L_equivalence_tm l1 h1 l2 h2  φ->
-      L_equivalence_tm (toLabeled e1 l1) h1 (toLabeled e2 l2) h2  φ                      
+      L_equivalence_tm (toLabeled e1 l1) h1 (toLabeled e2 l2) h2  φ
+  | L_equivalence_tm_eq_getCurrentLevel : forall h1 h2 φ ,
+      L_equivalence_tm getCurrentLevel h1 getCurrentLevel h2 φ                     
   | L_equivalence_tm_eq_skip : forall h1 h2 φ ,
       L_equivalence_tm Skip h1 Skip h2 φ
   | L_equivalence_tm_eq_Assignment : forall e1 e2 x1 x2 h1 h2 φ, 

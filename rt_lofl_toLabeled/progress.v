@@ -264,6 +264,9 @@ Proof with eauto.
            auto.
      +
        exists (Config ct (Container v ((toLabeled e hole) :: fs) lb sf) ctns h ); auto.
+
+  (* getCurrentLevel *)     
+  - right. exists (Config ct (Container (l lb) fs lb sf) ctns h); auto.
        
   (* skip *)
   - destruct fs. 

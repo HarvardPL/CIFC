@@ -2952,8 +2952,15 @@ Proof with eauto.
   inversion H8; subst; auto.
   apply T_ctn_type with (LabelelTy T3) T2; auto.
   apply  T_toLabeled; auto.
-  inversion H2; subst; auto. 
-    
+  inversion H2; subst; auto.
+  
+- (*  getCurrentLevel  *)
+  inversion H_typing; subst; auto.
+  apply T_config_ctns with T0 Gamma'; auto.
+  inversion H2; subst; auto.
+  inversion H7; subst; auto.
+  apply T_ctn_type with (LabelTy) T2; auto.
+
 (*(Assignment id0 hole :: fs0)  *)
 - inversion H_typing; subst; auto.
   apply T_config_ctns with T0 Gamma'; auto.
