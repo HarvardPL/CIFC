@@ -212,6 +212,42 @@ Hint Constructors config.
 Reserved Notation "c '==>' c'"
   (at level 40, c' at level 39).
 
+
+Fixpoint assignment_free (t : tm) :=
+  match t with
+    | Tvar x => true
+    | null => true
+    | EqCmp e1 e2  => if (assignment_free e1) then (assignment_free e2) else false
+    | FieldAccess e f => (assignment_free e)
+    | MethodCall e1 meth e2 => if (assignment_free e1) then (assignment_free e2) else false
+    | NewExp cls => true
+    | B_true => true
+    | B_false => true
+(* label related *)
+    | l lb => true
+    | labelData e lb => (assignment_free e)
+    | unlabel e => (assignment_free e)
+    | labelOf e => (assignment_free e)
+    | objectLabelOf e => (assignment_free e)
+    | raiseLabel e lb => (assignment_free e)
+    | toLabeled e1 e2 => if (assignment_free e1) then (assignment_free e2) else false
+                           
+(* statements *)
+    | Skip => false
+    | Assignment x e => false
+    | FieldWrite e1 f e2 =>  if (assignment_free e1) then (assignment_free e2) else false
+    | If guard e1 e2 =>  if assignment_free guard then (if (assignment_free e1) then (assignment_free e2) else false )  else false
+    | Sequence e1 e2 =>  if (assignment_free e1) then (assignment_free e2) else false
+
+(* special terms *)
+    | ObjId o =>  false
+  (* runtime labeled date*)
+    | v_l e lb => false
+    | v_opa_l e lb => false
+    | hole => false
+    | return_hole => false
+  end.
+
 Fixpoint surface_syntax (t : tm) :=
   match t with
     | Tvar x => true
@@ -229,7 +265,7 @@ Fixpoint surface_syntax (t : tm) :=
     | labelOf e => (surface_syntax e)
     | objectLabelOf e => (surface_syntax e)
     | raiseLabel e lb => (surface_syntax e)
-    | toLabeled e1 e2 => if (surface_syntax e1) then (surface_syntax e2) else false
+    | toLabeled e1 e2 => if ((surface_syntax e1) &&  (assignment_free e1))  then (surface_syntax e2) else false
                            
 (* statements *)
     | Skip => false
@@ -246,6 +282,9 @@ Fixpoint surface_syntax (t : tm) :=
     | hole => false
     | return_hole => false
   end.
+
+
+
 
 Inductive valid_syntax :  tm -> Prop :=
   (*variable *)
@@ -390,16 +429,19 @@ Inductive valid_syntax :  tm -> Prop :=
 (* toLabeled e1 e2 *)
   | Valid_toLabeled1 : forall e1 e2,
       surface_syntax e1 = true ->
+      assignment_free e1 = true ->
       surface_syntax e2 = true -> 
       valid_syntax (toLabeled e1 e2)
 
   | Valid_toLabeled2 : forall e, 
-      surface_syntax e = true ->
+      surface_syntax e = true  ->
+      assignment_free e = true ->
       valid_syntax (toLabeled e hole)
                    
   | Valid_toLabeled3 : forall v e,
       value v -> 
-      surface_syntax e = true -> 
+      surface_syntax e = true  ->
+      assignment_free e = true ->
       valid_syntax (toLabeled e v)
 
   

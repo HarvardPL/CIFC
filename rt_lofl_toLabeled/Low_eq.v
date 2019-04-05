@@ -4,6 +4,7 @@ Require Import Lemmas.
 Require Import Coq.Lists.List.
 Require Import bijection.
 Require Import decision. 
+Require Import Coq.Bool.Bool. 
 
 
 
@@ -542,7 +543,13 @@ Proof with eauto.
   intros.
   induction body; subst;  inversion H; auto;
     try (apply surface_syntax_if in H2; destruct H2; apply IHbody1 in H1; 
-         apply IHbody2 in H2; auto).  
+         apply IHbody2 in H2; auto).
+
+  case_eq ((surface_syntax body1 && assignment_free body1)%bool); intro;
+  rewrite H1 in H2.
+  apply andb_true_iff  in H1. destruct H1.
+  apply   IHbody1 in H1.  apply  IHbody2 in H2. auto.
+  inversion H2.   
   apply surface_syntax_triple in H2. destruct H2.
   destruct H2. auto. 
 Qed.  

@@ -74,6 +74,13 @@ Proof with eauto.
   try (inversion H; auto;
   apply  surface_syntax_if in H1; destruct H1; auto).
   inversion H; auto.
+  case_eq (surface_syntax t1 && assignment_free t1 ); intro;
+  rewrite H0 in H1.
+  apply andb_true_iff in H0. destruct H0. 
+  apply  Valid_toLabeled1 ; auto.
+  inversion H1.
+
+  inversion H; auto.
   apply surface_syntax_triple in H1. destruct H1. destruct H1. auto. 
 Qed.
 Hint Resolve surface_syntax_is_valid_syntax.
@@ -85,14 +92,22 @@ Proof.
   induction t; auto;
     try (apply surface_syntax_if in H; destruct H; apply IHt1 in H; apply IHt2 in H0; 
          unfold hole_free; fold hole_free); try (rewrite H); auto;
-      try (unfold surface_syntax in H; inversion H).
-  fold surface_syntax. fold surface_syntax in H. fold surface_syntax in H1.
-  apply surface_syntax_triple in H1. destruct H1. destruct H1. auto.
-  rewrite H0. rewrite H1.        rewrite H2.
-  auto.
-  unfold hole_free. fold hole_free.
-  apply IHt1 in H0. apply IHt2 in H1. apply IHt3 in H2.
-  rewrite H0. rewrite H1. rewrite H2.  auto. 
+      try (unfold surface_syntax in H; inversion H);
+    fold surface_syntax; fold surface_syntax in H; fold surface_syntax in H1.
+  +
+    case_eq (surface_syntax t1 && assignment_free t1 ); intro;
+    rewrite H0 in H1.    apply andb_true_iff in H0; destruct H0.
+    rewrite H1. unfold hole_free.  fold hole_free. apply  IHt1 in H0. apply IHt2 in H1.
+    rewrite H0; auto.
+    inversion H1. 
+    
+  +    
+    apply surface_syntax_triple in H1. destruct H1. destruct H1. auto.
+    rewrite H0. rewrite H1.        rewrite H2.
+    auto.
+    unfold hole_free. fold hole_free.
+    apply IHt1 in H0. apply IHt2 in H1. apply IHt3 in H2.
+    rewrite H0. rewrite H1. rewrite H2.  auto. 
 Qed. 
 Hint Resolve surface_syntax_is_hole_free. 
 
@@ -316,10 +331,12 @@ exists (Config CT (Container (objectLabelOf t) fs lb sf) ctns h); auto.
 assert (hole_free (raiseLabel t l) = true). unfold hole_free. fold hole_free. auto. 
 exists (Config CT (Container (raiseLabel t l) fs lb sf) ctns h); auto.
 
+(* toLabeled *)
 - inversion H_config.
-  inversion H7.  subst. inversion H15. inversion H1. subst; auto. 
-  + subst. assert (surface_syntax (toLabeled t1 t2) = true).
-    unfold surface_syntax. fold surface_syntax. rewrite H12. rewrite H13.  auto.  
+  inversion H7.  subst. inversion H15. inversion H1; subst; auto. 
+  + assert (surface_syntax (toLabeled t1 t2) = true).
+    unfold surface_syntax. fold surface_syntax. rewrite H12. rewrite H13.
+    assert (true && true = true). apply andb_diag.  rewrite H.    auto.  
     apply surface_syntax_is_hole_free in H. 
     exists (Config CT (Container (toLabeled t1 t2) fs lb sf) ctns h); auto.
   + subst; auto.

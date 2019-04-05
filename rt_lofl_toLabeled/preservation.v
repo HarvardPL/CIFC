@@ -887,7 +887,9 @@ Proof with eauto.
      apply valid_conf; auto.
      apply valid_container; auto.
      apply  Valid_toLabeled3; auto.
+     inversion H2; subst; auto.
      inversion H2; subst; auto. 
+
      intros. intro contra.
      rewrite contra in H3; inversion H3; subst; auto.
      intros. intro contra.
@@ -895,7 +897,7 @@ Proof with eauto.
      unfold hole_free; fold hole_free.
      apply value_is_hole_free in H.
      inversion H2; subst; auto.
-     + inversion H14.
+     + inversion H15.
      +
        apply surface_syntax_is_hole_free in H1.
        rewrite H1. rewrite H. auto.
@@ -923,7 +925,7 @@ Proof with eauto.
      apply valid_conf; auto.
      apply valid_container; auto.
      inversion H7; subst; auto.
-     inversion H3; subst; auto.
+     inversion H6; subst; auto.
      apply Valid_toLabeled3 ; auto. 
      inversion H2; subst; auto. 
        
