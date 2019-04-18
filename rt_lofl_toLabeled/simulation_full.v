@@ -429,22 +429,18 @@ intros ct t1 fs1 lb1 sf1 ctns1 h1
   try (inconsist_label).
 
 
-- assert (flow_to (join_label lo lb1) L_Label = false).
-  apply flow_join_label with lb1 lo; auto.
-  assert (flow_to (join_label (join_label lo lb1) ll) L_Label = false).
-  apply flow_transitive with (join_label lo lb1);auto.
+- assert (flow_to (join_label lb1 ll) L_Label = false).
+  apply flow_transitive with lb1;auto.
   apply  join_def_flow1; auto. 
   try (inconsist_label).
 
 
-- assert (flow_to (join_label lo (join_label lb1 ell)) L_Label = false).
-  apply flow_join_label with (join_label lb1 ell) lo; auto.
-  apply flow_join_label with lb1 ell; auto.
-  eauto using join_label_commutative.
-
-  assert (flow_to (join_label (join_label lo (join_label lb1 ell)) ll) L_Label = false).
-  apply flow_transitive with (join_label lo (join_label lb1 ell));auto.
-  apply  join_def_flow1; auto. 
+-
+  assert (flow_to (join_label (join_label lb1 ell) ll) L_Label = false).
+  apply flow_transitive with  (join_label lb1 ell); auto.
+  apply flow_transitive with lb1; auto.
+  apply join_def_flow1; auto.
+  apply join_def_flow1; auto. 
   try (inconsist_label).
 
 - assert (flow_to (join_label lb1 lo) L_Label = false).
@@ -538,11 +534,11 @@ intros ct t1 fs1 lb1 sf1 ctns1 h1
     apply flow_dist in H_flow2'; destruct H_flow2'; auto.
     try (inconsist_label).
     
-  + assert (flow_to (join_label lo (join_label lb2 ell)) L_Label = false).
-    apply flow_join_label with (join_label lb2 ell) lo ;auto.
-    apply flow_join_label with lb2 ell ;auto.
-    apply join_label_commutative.
-    apply flow_dist in H_flow2'; destruct H_flow2'; auto.    
+  + assert (flow_to (join_label (join_label lb2 ell) ll) L_Label = false).
+    apply flow_transitive with (join_label lb2 ell); auto.
+    apply flow_transitive with lb2; auto.
+    apply join_def_flow1; auto.
+    apply join_def_flow1; auto. 
     try (inconsist_label).
 
   + assert (flow_to (join_label lb2 lo) L_Label = false).
@@ -670,10 +666,9 @@ intros ct t1 fs1 lb1 sf1 ctns1 h1
     apply join_label_commutative.
     try (inconsist_label).
 
-  + assert (flow_to (join_label lo (join_label lb2 ell0)) L_Label = false).
-    apply flow_join_label with (join_label lb2 ell0) lo ;auto.
-    apply flow_join_label with lb2 ell0;auto.
-    apply join_label_commutative.
+  + assert (flow_to (join_label lb2 ell0) L_Label = false).
+    apply flow_transitive with lb2; auto.
+    apply join_def_flow1; auto. 
     try (inconsist_label).
 
   + assert (flow_to (join_label lb2 ell0) L_Label = false).

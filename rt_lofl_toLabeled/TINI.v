@@ -661,16 +661,12 @@ Proof. intros ct t1 lb1 sf1 h1
          apply join_def_flow1.
          apply join_def_flow1.
 
-       - apply flow_transitive with (join_label lo lb); auto.
-         apply flow_transitive with lb; auto.
-         apply join_def_flow2.
+       - apply flow_transitive with lb; auto.
          apply join_def_flow1.
 
-       - apply flow_transitive with (join_label lo (join_label lb ell)); auto.
-         apply flow_transitive with (join_label lb ell); auto.
+       - apply flow_transitive with (join_label lb ell); auto.
          apply flow_transitive with lb; auto.
          apply join_def_flow1.
-         apply join_def_flow2.
          apply join_def_flow1.
 
        -
@@ -780,23 +776,16 @@ Proof. intros ct t2 lb2 sf2 h2
          apply join_def_flow1.
          apply join_def_flow1.
 
-       - apply flow_transitive with (join_label lo lb); auto.
-         apply flow_transitive with lb; auto.
-         apply join_def_flow2.
-         apply join_def_flow1.
-
        - apply flow_transitive with (join_label lb ell); auto.
          apply flow_transitive with lb; auto.
          apply join_def_flow1.
-         apply flow_trans with (join_label lo (join_label lb ell)).
-         apply join_def_flow2.
          apply join_def_flow1.
+
 
        - apply flow_transitive with (join_label lb ell); auto.
          apply flow_transitive with lb; auto.
          apply join_def_flow1.
          apply join_def_flow2.
-
 
        - unfold low_component in H18.
          rewrite H16 in H18. rewrite H17 in H18.

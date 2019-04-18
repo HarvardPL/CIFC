@@ -720,7 +720,7 @@ Inductive reduction : config -> config -> Prop :=
       value v ->
       sf' = sf_update empty_stack_frame arg_id v ->
       Config ct (Container (MethodCall (ObjId o) meth v) fs lb sf ) ctns h 
-      ==> Config ct (Container body nil (join_label (join_label lo lb) ll) sf' ) ((Container (return_hole) fs lb sf ) :: ctns) h
+      ==> Config ct (Container body nil (join_label lb ll) sf' ) ((Container (return_hole) fs lb sf ) :: ctns) h
 
   (* normal method call opaque obj *)
   | ST_MethodCall_normal_opaque_obj : forall o h cls fields v lo sf  arg_id cls_a body meth returnT ct fs ctns lb sf' ell lb' ll,
@@ -730,7 +730,7 @@ Inductive reduction : config -> config -> Prop :=
       sf' = sf_update empty_stack_frame arg_id v ->
       lb' = join_label lb ell ->
       Config ct (Container (MethodCall (v_opa_l (ObjId o) ell) meth v) fs lb sf ) ctns h 
-             ==> Config ct (Container body nil (join_label (join_label lo lb') ll) sf' ) ((Container (return_hole) fs lb sf ) :: ctns) h
+             ==> Config ct (Container body nil (join_label lb' ll) sf' ) ((Container (return_hole) fs lb sf ) :: ctns) h
 
   (* null pointer exception for method call *)
   | ST_MethodCallException : forall h v meth ct fs lb sf  ctns,

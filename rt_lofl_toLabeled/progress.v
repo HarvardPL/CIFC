@@ -107,7 +107,7 @@ Proof with eauto.
          destruct H22 as [ll].
          subst. rewrite <- H10 in H23. inversion H23;subst. 
          remember (sf_update empty_stack_frame arg_id argu) as sf'.
-         exists (Config ct (Container body nil (join_label (join_label lx lb) ll) sf' ) ((Container (return_hole) fs lb  sf ) :: ctns) h). 
+         exists (Config ct (Container body nil (join_label lb ll) sf' ) ((Container (return_hole) fs lb  sf ) :: ctns) h). 
          eauto using reduction.
 
       ++  exists (Config ct (Container argu ((MethodCall (ObjId o) meth hole) :: fs) lb sf) ctns h). apply  ST_MethodCall3 ; auto.
@@ -123,7 +123,7 @@ Proof with eauto.
          rewrite <- H10 in H28. inversion H28; subst. 
          remember (sf_update empty_stack_frame arg_id argu) as sf'.
          remember ( join_label lb lb0) as lb'. 
-         exists (Config ct (Container body nil (join_label (join_label lo lb') ll) sf' ) ((Container (return_hole) fs lb sf ) :: ctns) h). 
+         exists (Config ct (Container body nil (join_label lb' ll) sf' ) ((Container (return_hole) fs lb sf ) :: ctns) h). 
          eauto using reduction.
          +++ exists Error_state. eauto using reduction. 
          +++ destruct H22 with v0 lb1. auto. 

@@ -1357,7 +1357,7 @@ Ltac invert_l_eq_fs :=
       exists  φ. split; auto.
       rewrite <- H5 in H; inversion H; subst; auto.
       rewrite <- H9 in H6; inversion H6; subst; auto.
-      remember (join_label (join_label lo1 lb2) ll1) as lb''.
+      remember (join_label lb2 ll1) as lb''.
       case_eq (flow_to lb'' L_Label); intro.
       **
       apply L_equivalence_config_L; auto.
@@ -1397,11 +1397,11 @@ Ltac invert_l_eq_fs :=
       rewrite <- H4 in H; inversion H; subst; auto.
       rewrite <- H5 in H6; inversion H6; subst; auto.
 
-      assert (flow_to (join_label (join_label lo1 lb2) ll1) L_Label = false).
+      assert ( flow_to (join_label lb2 ll1) L_Label = false).
       apply flow_transitive with ll1; auto. 
       apply join_def_flow2 ; auto. 
 
-      assert (flow_to (join_label (join_label lo2 lb2) ll2) L_Label = false).
+      assert (flow_to (join_label lb2 ll2) L_Label = false).
       apply flow_transitive with ll2; auto. 
       apply join_def_flow2 ; auto.
       apply  L_equivalence_config_H; auto.
@@ -1430,7 +1430,7 @@ Ltac invert_l_eq_fs :=
           rewrite <- H0 in H14; inversion H14; subst; auto. 
           rewrite <- H5 in H; inversion H; subst; auto.
           rewrite <- H11 in H7; inversion H7; subst; auto.
-          remember  (join_label (join_label lo1 (join_label lb2 ell0)) ll1) as lb''.
+          remember  (join_label (join_label lb2 ell0) ll1) as lb''.
           case_eq (flow_to lb'' L_Label); intro.
           apply L_equivalence_config_L; auto.
           apply L_eq_ctn; auto. 
@@ -1464,40 +1464,30 @@ Ltac invert_l_eq_fs :=
           eauto using  L_equivalence_config_H; auto.
 
       +++
-        assert (flow_to (join_label (join_label lo (join_label lb2 ell0)) ll) L_Label = false).
+        assert (flow_to (join_label (join_label lb2 ell0) ll) L_Label = false).
         rewrite <- H4 in H; inversion H; subst; auto.
-        apply flow_transitive with (join_label lo1 ll1); auto.
         apply flow_transitive with ll1; auto.
         apply  join_def_flow2; auto. 
-        apply join_flow_transitivity; auto.
-        apply  join_def_flow1; auto. 
         
-        assert (flow_to (join_label (join_label lo0 (join_label lb2 ell0)) ll0) L_Label = false). 
+        assert (flow_to (join_label (join_label lb2 ell0) ll0) L_Label = false). 
         rewrite <- H5 in H7; inversion H7; subst; auto.
-        apply flow_transitive with (join_label lo2 ll2); auto.
         apply flow_transitive with ll2; auto.
         apply  join_def_flow2; auto. 
-        apply join_flow_transitivity; auto.
-        apply  join_def_flow1; auto. 
         
         apply  L_equivalence_config_H; auto.
 
     ++
       exists φ. split;  auto.
-      assert (flow_to (join_label (join_label lo (join_label lb2 ell)) ll) L_Label = false).
-      apply flow_transitive with (join_label lo (join_label lb2 ell)); auto.
+      assert (flow_to (join_label (join_label lb2 ell) ll) L_Label = false).
       apply flow_transitive with (join_label lb2 ell); auto.
       apply flow_transitive with ell; auto.
       apply  join_def_flow2; auto.
-      apply  join_def_flow2; auto. 
       apply  join_def_flow1; auto. 
         
-      assert (flow_to (join_label (join_label lo0 (join_label lb2 ell0)) ll0) L_Label = false). 
-      apply flow_transitive with (join_label lo0 (join_label lb2 ell0)); auto.
+      assert (flow_to (join_label (join_label lb2 ell0) ll0) L_Label = false). 
       apply flow_transitive with (join_label lb2 ell0); auto.
       apply flow_transitive with ell0; auto.
       apply  join_def_flow2; auto.
-      apply  join_def_flow2; auto. 
       apply  join_def_flow1; auto.
       
       apply  L_equivalence_config_H; auto.
