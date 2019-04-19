@@ -253,7 +253,9 @@ Ltac invert_l_eq_fs :=
           inversion H12; subst; auto.
           unfold runtime_label. unfold runtime_val. unfold object_label. rewrite <- H13.
           rewrite <- H27. rewrite <- H33. rewrite <- H35.
-          remember (join_label (join_label (join_label L_Label L_Label) lb2) (join_label (join_label lo ll) (join_label lo0 ll0))) as lb''.
+          remember ((join_label
+             (join_label (join_label L_Label L_Label) lb2)
+             (join_label ll ll0))) as lb''.
           case_eq (flow_to lb'' L_Label); intro. 
           apply L_equivalence_config_L; auto.          
           apply L_eq_ctn;auto.
@@ -277,21 +279,17 @@ Ltac invert_l_eq_fs :=
 
            unfold runtime_label. unfold runtime_val. unfold object_label. rewrite <- H13.
            rewrite <- H27. rewrite <- H31. rewrite <- H33.
-           assert (flow_to (join_label (join_label (join_label L_Label L_Label) lb2) (join_label (join_label lo ll) (join_label lo1 ll1))) L_Label = false).
+           assert (flow_to (join_label (join_label (join_label L_Label L_Label) lb2) (join_label ll ll1))  L_Label = false).
            apply flow_transitive with ll1; auto.
-           apply flow_trans with (join_label (join_label lo ll) (join_label lo1 ll1)); auto.
-           apply flow_trans with (join_label lo1 ll1); auto. 
-           apply join_def_flow2.
+           apply flow_trans with (join_label ll ll1); auto.
            apply join_def_flow2.
            apply join_def_flow2.
 
-           assert (flow_to (join_label (join_label (join_label L_Label L_Label) lb2) (join_label (join_label lo ll) (join_label lo2 ll2))) L_Label = false).
+           assert (flow_to (join_label (join_label (join_label L_Label L_Label) lb2) (join_label ll ll2))  L_Label = false).
            apply flow_transitive with ll2; auto.
-           apply flow_trans with (join_label (join_label lo ll) (join_label lo2 ll2)); auto.
-           apply flow_trans with (join_label lo2 ll2); auto. 
+           apply flow_trans with (join_label ll ll2); auto. 
            apply join_def_flow2.
            apply join_def_flow2.
-           apply join_def_flow2.  
            
            apply L_equivalence_config_H; auto.
 
@@ -299,7 +297,7 @@ Ltac invert_l_eq_fs :=
           inversion H12; subst; auto.
           unfold runtime_label. unfold runtime_val. unfold object_label. rewrite <- H13.
           rewrite <- H27.
-          remember (join_label (join_label (join_label L_Label L_Label) lb2) (join_label (join_label lo ll) L_Label)) as lb''.
+          remember (join_label (join_label (join_label L_Label L_Label) lb2) (join_label ll L_Label)) as lb''.
           case_eq (flow_to lb'' L_Label); intro. 
           apply L_equivalence_config_L; auto.          
           apply L_eq_ctn;auto.
@@ -324,7 +322,7 @@ Ltac invert_l_eq_fs :=
                unfold runtime_label.
              unfold runtime_val. unfold object_label. rewrite <- H13. rewrite <- H27.              
              rewrite <- H42.             rewrite <- H44.
-             remember (join_label (join_label (join_label L_Label lb) lb2) (join_label (join_label lo ll) (join_label lo0 ll0))) as lb''.
+             remember(join_label (join_label (join_label L_Label lb) lb2) (join_label ll ll0))  as lb''.
 
              case_eq (flow_to lb'' L_Label); intro. 
              apply L_equivalence_config_L; auto.          
@@ -351,23 +349,18 @@ Ltac invert_l_eq_fs :=
                +++++++
                  unfold runtime_val. unfold runtime_label.
                unfold object_label. rewrite <- H13. rewrite <-H42. rewrite <- H33. rewrite <- H27.
-               assert (flow_to (join_label (join_label (join_label L_Label lb) lb2) (join_label (join_label lo ll) (join_label lo1 ll1))) L_Label = false).
+               assert (flow_to (join_label (join_label (join_label L_Label lb) lb2) (join_label ll ll1)) L_Label = false).
                apply flow_transitive with ll1; auto.
-               apply flow_trans with (join_label (join_label lo ll) (join_label lo1 ll1)); auto.
-               apply flow_trans with (join_label lo1 ll1); auto. 
+               apply flow_trans with (join_label ll ll1); auto. 
                apply join_def_flow2.
                apply join_def_flow2.
-               apply join_def_flow2.
-
            
 
-               assert (flow_to (join_label (join_label (join_label L_Label lb) lb2) (join_label (join_label lo ll) (join_label lo2 ll2))) L_Label =   false).
+               assert (flow_to (join_label (join_label (join_label L_Label lb) lb2) (join_label ll ll2)) L_Label =   false).
                apply flow_transitive with ll2; auto.
-               apply flow_trans with (join_label (join_label lo ll) (join_label lo2 ll2)); auto.
-               apply flow_trans with (join_label lo2 ll2); auto. 
+               apply flow_trans with (join_label ll ll2); auto. 
                apply join_def_flow2.
                apply join_def_flow2.
-               apply join_def_flow2. 
            
                apply L_equivalence_config_H; auto.
                ++++++
@@ -375,7 +368,7 @@ Ltac invert_l_eq_fs :=
                unfold runtime_label.
                unfold runtime_val. unfold object_label.
                rewrite <- H13. rewrite <- H27.
-               remember (join_label (join_label (join_label L_Label lb) lb2) (join_label (join_label lo ll) L_Label))  as lb''.
+               remember (join_label (join_label (join_label L_Label lb) lb2) (join_label ll L_Label))  as lb''.
                case_eq (flow_to lb'' L_Label); intro. 
                apply L_equivalence_config_L; auto.          
                apply L_eq_ctn;auto.
@@ -398,23 +391,19 @@ Ltac invert_l_eq_fs :=
                +++
                  assert (flow_to
     (join_label (join_label (join_label (runtime_label (ObjId o)) (runtime_label v2)) lb2)
-                (join_label (object_label (runtime_val (ObjId o)) h1') (object_label (runtime_val v2) h1'))) L_Label = false).
+             (join_label (object_label (runtime_val (ObjId o)) h1') (object_label (runtime_val v2) h1'))) L_Label = false).
                  apply flow_transitive with (join_label (object_label (runtime_val (ObjId o)) h1') (object_label (runtime_val v2) h1')); auto.
                  apply flow_transitive with (object_label (runtime_val (ObjId o)) h1').
-                 unfold runtime_val.                   unfold object_label. rewrite <- H7.
-                 apply flow_transitive with ll1; auto.
-                 apply join_def_flow2; auto. 
+                 unfold runtime_val.                   unfold object_label. rewrite <- H7; auto. 
                  apply join_def_flow1; auto. 
                  apply join_def_flow2; auto.
 
                  assert (flow_to
     (join_label (join_label (join_label (runtime_label (ObjId o2)) (runtime_label v3)) lb2)
-                (join_label (object_label (runtime_val (ObjId o2)) h2') (object_label (runtime_val v3) h2'))) L_Label = false).
+             (join_label (object_label (runtime_val (ObjId o2)) h2') (object_label (runtime_val v3) h2'))) L_Label = false).
                  apply flow_transitive with (join_label (object_label (runtime_val (ObjId o2)) h2') (object_label (runtime_val v3) h2')); auto.
                  apply flow_transitive with (object_label (runtime_val (ObjId o2)) h2').
-                 unfold runtime_val.                   unfold object_label. rewrite <- H13.
-                 apply flow_transitive with ll2; auto.
-                 apply join_def_flow2; auto. 
+                 unfold runtime_val.                   unfold object_label. rewrite <- H13; auto. 
                  apply join_def_flow1; auto. 
                  apply join_def_flow2; auto.
                  apply L_equivalence_config_H; auto.
@@ -430,7 +419,7 @@ Ltac invert_l_eq_fs :=
           *
           unfold runtime_label. unfold runtime_val. unfold object_label. rewrite <- H25.
           rewrite <- H31.
-          remember (join_label (join_label (join_label L_Label L_Label) lb2) (join_label L_Label (join_label lo ll))) as lb''.
+          remember (join_label (join_label (join_label L_Label L_Label) lb2) (join_label L_Label ll)) as lb''.
           case_eq (flow_to lb'' L_Label); intro.
           **
           apply L_equivalence_config_L; auto.          
@@ -447,19 +436,15 @@ Ltac invert_l_eq_fs :=
             eauto using L_equivalence_config_H; auto.
           *
             unfold runtime_label.  unfold runtime_val. unfold object_label. rewrite <- H7. rewrite <- H25.                 
-            assert (flow_to (join_label (join_label (join_label L_Label L_Label) lb2) (join_label L_Label (join_label lo1 ll1))) L_Label = false).
-            apply flow_transitive with (join_label L_Label (join_label lo1 ll1)); auto.
-            apply flow_transitive with (join_label lo1 ll1); auto.
+            assert (flow_to (join_label (join_label (join_label L_Label L_Label) lb2) (join_label L_Label ll1)) L_Label = false).
+            apply flow_transitive with (join_label L_Label ll1); auto.
             apply flow_transitive with ll1; auto. 
             apply join_def_flow2.
             apply join_def_flow2.
-            apply join_def_flow2.
 
-            assert (flow_to (join_label (join_label (join_label L_Label L_Label) lb2) (join_label L_Label (join_label lo2 ll2))) L_Label = false).
-            apply flow_transitive with (join_label L_Label (join_label lo2 ll2)); auto.
-            apply flow_transitive with (join_label lo2 ll2); auto.
+            assert (flow_to (join_label (join_label (join_label L_Label L_Label) lb2) (join_label L_Label ll2)) L_Label = false).
+            apply flow_transitive with  (join_label L_Label ll2); auto.
             apply flow_transitive with ll2; auto. 
-            apply join_def_flow2.
             apply join_def_flow2.
             apply join_def_flow2.
             
@@ -485,7 +470,7 @@ Ltac invert_l_eq_fs :=
             **
               unfold runtime_label. unfold runtime_val. unfold object_label. rewrite <- H35.
               rewrite <- H37.
-              remember  (join_label (join_label (join_label L_Label lb) lb2) (join_label L_Label (join_label lo ll)))  as lb''.
+              remember  (join_label (join_label (join_label L_Label lb) lb2) (join_label L_Label ll))  as lb''.
               case_eq (flow_to lb'' L_Label); intro.
               ***
               apply L_equivalence_config_L; auto.
@@ -499,22 +484,20 @@ Ltac invert_l_eq_fs :=
                 eauto using  L_equivalence_config_H.
             **
               unfold runtime_label. unfold runtime_val.
-              assert (flow_to (join_label (join_label (join_label L_Label lb) lb2) (join_label (object_label null h1') (object_label (ObjId o) h1')))
+              assert (flow_to (join_label (join_label (join_label L_Label lb) lb2)
+             (join_label (object_label null h1') (object_label (ObjId o) h1')))
                               L_Label = false).
               apply flow_transitive with (object_label (ObjId o) h1'); auto.
               unfold object_label ;auto. rewrite <- H13; auto.
-              apply flow_transitive with ll1; auto.
-              apply join_def_flow2. 
               apply flow_trans with (join_label (object_label null h1') (object_label (ObjId o) h1')); auto. 
               apply join_def_flow2. 
               apply join_def_flow2. 
 
-              assert (flow_to (join_label (join_label (join_label L_Label lb) lb2) (join_label (object_label null h2') (object_label (ObjId o2) h2')))
+              assert (flow_to (join_label (join_label (join_label L_Label lb) lb2)
+             (join_label (object_label null h2') (object_label (ObjId o2) h2')))
                               L_Label = false).
               apply flow_transitive with (object_label (ObjId o2) h2'); auto.
               unfold object_label ;auto. rewrite <- H35; auto.
-              apply flow_transitive with ll2; auto.
-              apply join_def_flow2. 
               apply flow_trans with (join_label (object_label null h2') (object_label (ObjId o2) h2')); auto. 
               apply join_def_flow2. 
               apply join_def_flow2.
@@ -555,7 +538,7 @@ Ltac invert_l_eq_fs :=
             **
               unfold runtime_label. unfold runtime_val. unfold object_label. rewrite <- H36.
               rewrite <- H41. rewrite <- H45. rewrite <- H47. 
-              remember (join_label (join_label (join_label lb L_Label) lb2) (join_label (join_label lo0 ll0) (join_label lo ll)))  as lb''.
+              remember ((join_label (join_label (join_label lb L_Label) lb2) (join_label ll0 ll)))  as lb''.
               case_eq (flow_to lb'' L_Label); intro.
             ***
               apply L_equivalence_config_L; auto.          
@@ -583,19 +566,15 @@ Ltac invert_l_eq_fs :=
           **
             unfold runtime_val. unfold runtime_label. unfold object_label.
             rewrite <- H36.              rewrite <- H41. rewrite <- H44. rewrite <- H45. 
-            assert (flow_to (join_label (join_label (join_label lb L_Label) lb2) (join_label (join_label lo1 ll1) (join_label lo ll))) L_Label = false).            
-            apply flow_transitive with (join_label (join_label lo1 ll1) (join_label lo ll)); auto.
-            apply flow_transitive with (join_label lo1 ll1); auto.
+            assert (flow_to  (join_label (join_label (join_label lb L_Label) lb2) (join_label ll1 ll)) L_Label = false).            
+            apply flow_transitive with (join_label ll1 ll); auto.
             apply flow_transitive with ll1; auto. 
-            apply join_def_flow2.
             apply join_def_flow1.
             apply join_def_flow2.
 
-            assert (flow_to (join_label (join_label (join_label lb L_Label) lb2) (join_label (join_label lo2 ll2) (join_label lo ll))) L_Label = false).            
-            apply flow_transitive with (join_label (join_label lo2 ll2) (join_label lo ll)); auto.
-            apply flow_transitive with (join_label lo2 ll2); auto.
+            assert (flow_to (join_label (join_label (join_label lb L_Label) lb2) (join_label ll2 ll)) L_Label = false).            
+            apply flow_transitive with (join_label ll2 ll); auto.
             apply flow_transitive with ll2; auto. 
-            apply join_def_flow2.
             apply join_def_flow1.
             apply join_def_flow2.
             
@@ -606,9 +585,7 @@ Ltac invert_l_eq_fs :=
              (join_label (object_label (ObjId o0) h1') (object_label (ObjId o) h1'))) L_Label = false).            
             apply flow_transitive with (join_label (object_label (ObjId o0) h1') (object_label (ObjId o) h1')); auto.
             apply flow_transitive with (object_label (ObjId o) h1'); auto.
-            unfold object_label. rewrite <- H13. 
-            apply flow_transitive with ll1; auto. 
-            apply join_def_flow2.
+            unfold object_label. rewrite <- H13; auto. 
             apply join_def_flow2.
             apply join_def_flow2.
 
@@ -616,9 +593,7 @@ Ltac invert_l_eq_fs :=
              (join_label (object_label e2 h2') (object_label (ObjId o2) h2'))) L_Label = false).            
             apply flow_transitive with (join_label (object_label e2 h2') (object_label (ObjId o2) h2')); auto.
             apply flow_transitive with (object_label (ObjId o2) h2'); auto.
-            unfold object_label. rewrite <- H36. 
-            apply flow_transitive with ll2; auto. 
-            apply join_def_flow2.
+            unfold object_label. rewrite <- H36; auto. 
             apply join_def_flow2.
             apply join_def_flow2.
             
@@ -631,7 +606,7 @@ Ltac invert_l_eq_fs :=
          inversion H38; subst; auto.
          unfold runtime_label. unfold runtime_val. unfold object_label. rewrite <- H35.
          rewrite <- H37. 
-         remember (join_label (join_label (join_label lb L_Label) lb2) (join_label L_Label (join_label lo ll))) as lb''.
+         remember (join_label (join_label (join_label lb L_Label) lb2) (join_label L_Label ll)) as lb''.
          case_eq (flow_to lb'' L_Label); intro.
          **
            apply L_equivalence_config_L; auto.          
@@ -648,22 +623,17 @@ Ltac invert_l_eq_fs :=
          inversion H38; subst; auto. 
          unfold runtime_val. unfold runtime_label. unfold object_label.
          rewrite <- H35.              rewrite <- H13.  
-         assert (flow_to (join_label (join_label (join_label lb L_Label) lb2) (join_label L_Label (join_label lo1 ll1))) L_Label = false).            
-         apply flow_transitive with (join_label L_Label (join_label lo1 ll1)); auto.
-            apply flow_transitive with (join_label lo1 ll1); auto.
+         assert (flow_to (join_label (join_label (join_label lb L_Label) lb2) (join_label L_Label ll1))  L_Label = false).            
+            apply flow_transitive with (join_label L_Label ll1); auto.
             apply flow_transitive with ll1; auto. 
             apply join_def_flow2.
             apply join_def_flow2.
-            apply join_def_flow2.
 
-            assert (flow_to (join_label (join_label (join_label lb L_Label) lb2) (join_label L_Label (join_label lo2 ll2))) L_Label = false).            
-            apply flow_transitive with (join_label L_Label (join_label lo2 ll2)); auto.
-            apply flow_transitive with (join_label lo2 ll2); auto.
+            assert (flow_to (join_label (join_label (join_label lb L_Label) lb2) (join_label L_Label ll2))  L_Label = false).            
+            apply flow_transitive with (join_label L_Label ll2); auto.
             apply flow_transitive with ll2; auto. 
             apply join_def_flow2.
             apply join_def_flow2.
-            apply join_def_flow2.
-            
             apply L_equivalence_config_H; auto.
 
          ++++
@@ -679,7 +649,7 @@ Ltac invert_l_eq_fs :=
        *
          unfold object_label. rewrite <- H35.
          rewrite <- H37.
-         remember (join_label (join_label (join_label lb L_Label) lb2) (join_label (join_label lo ll) L_Label))   as lb''.
+         remember  (join_label (join_label (join_label lb L_Label) lb2) (join_label ll L_Label))   as lb''.
          case_eq (flow_to lb'' L_Label); intro.
          **
            apply L_equivalence_config_L; auto.          
@@ -697,19 +667,15 @@ Ltac invert_l_eq_fs :=
        *
          unfold object_label.
          rewrite <- H13.              rewrite <- H35.
-         assert (flow_to (join_label (join_label (join_label lb L_Label) lb2) (join_label (join_label lo1 ll1) L_Label))  L_Label = false).            
-         apply flow_transitive with (join_label (join_label lo1 ll1) L_Label); auto.
-         apply flow_transitive with (join_label lo1 ll1); auto.
+         assert (flow_to (join_label (join_label (join_label lb L_Label) lb2) (join_label ll1 L_Label))  L_Label = false).            
+         apply flow_transitive with (join_label ll1 L_Label); auto.
          apply flow_transitive with ll1; auto. 
-         apply join_def_flow2.
          apply join_def_flow1.
          apply join_def_flow2.
 
-         assert (flow_to (join_label (join_label (join_label lb L_Label) lb2) (join_label (join_label lo2 ll2) L_Label))  L_Label = false).            
-         apply flow_transitive with (join_label (join_label lo2 ll2) L_Label); auto.
-         apply flow_transitive with (join_label lo2 ll2); auto.
+         assert (flow_to (join_label (join_label (join_label lb L_Label) lb2) (join_label ll2 L_Label))  L_Label = false).            
+         apply flow_transitive with (join_label ll2 L_Label); auto.
          apply flow_transitive with ll2; auto. 
-         apply join_def_flow2.
          apply join_def_flow1.
          apply join_def_flow2.
             
@@ -745,7 +711,7 @@ Ltac invert_l_eq_fs :=
                 ****
                   unfold object_label. rewrite <- H47.
               rewrite <- H49. rewrite <- H53. rewrite <- H55. 
-              remember (join_label (join_label (join_label lb lb0) lb2) (join_label (join_label lo ll) (join_label lo0 ll0)))  as lb''.
+              remember (join_label (join_label (join_label lb lb0) lb2) (join_label ll ll0))  as lb''.
               case_eq (flow_to lb'' L_Label); intro.
               *****
                 apply L_equivalence_config_L; auto.          
@@ -773,19 +739,15 @@ Ltac invert_l_eq_fs :=
                 ****
                   unfold object_label. rewrite <- H47.
                   rewrite <- H49. rewrite <- H50. rewrite <- H53.
-                  assert (flow_to(join_label (join_label (join_label lb lb0) lb2) (join_label (join_label lo ll) (join_label lo1 ll1))) L_Label = false).            
-                  apply flow_transitive with (join_label (join_label lo ll) (join_label lo1 ll1)); auto.
-                  apply flow_transitive with (join_label lo1 ll1); auto.
+                  assert (flow_to (join_label (join_label (join_label lb lb0) lb2) (join_label ll ll1)) L_Label = false).            
+                  apply flow_transitive with (join_label ll ll1); auto.
                   apply flow_transitive with ll1; auto. 
                   apply join_def_flow2.
                   apply join_def_flow2.
-                  apply join_def_flow2.
 
-                  assert (flow_to (join_label (join_label (join_label lb lb0) lb2) (join_label (join_label lo ll) (join_label lo2 ll2))) L_Label = false).            
-                  apply flow_transitive with (join_label (join_label lo ll) (join_label lo2 ll2)); auto.
-                  apply flow_transitive with (join_label lo2 ll2); auto.
+                  assert (flow_to (join_label (join_label (join_label lb lb0) lb2) (join_label ll ll2))  L_Label = false).            
+                  apply flow_transitive with (join_label ll ll2); auto.
                   apply flow_transitive with ll2; auto. 
-                  apply join_def_flow2.
                   apply join_def_flow2.
                   apply join_def_flow2.
                   apply L_equivalence_config_H; auto.
@@ -795,7 +757,7 @@ Ltac invert_l_eq_fs :=
                 inversion H51; subst; auto.
                 unfold runtime_val. unfold runtime_label. unfold object_label.
                 rewrite <- H47. rewrite <- H49. 
-                remember  (join_label (join_label (join_label lb lb0) lb2) (join_label (join_label lo ll) L_Label))  as lb''.
+                remember  (join_label (join_label (join_label lb lb0) lb2) (join_label ll L_Label))  as lb''.
                 case_eq (flow_to lb'' L_Label); intro.
                 ****
                   destruct H3. inversion H3.
@@ -816,18 +778,14 @@ Ltac invert_l_eq_fs :=
              
               apply flow_transitive with (join_label (object_label (ObjId o) h1') (object_label v0 h1')); auto.
               apply flow_transitive with (object_label (ObjId o) h1'); auto.
-              unfold object_label. rewrite <- H35. 
-              apply flow_transitive with ll1; auto. 
-              apply join_def_flow2.
+              unfold object_label. rewrite <- H35; auto. 
               apply join_def_flow1.
               apply join_def_flow2.
 
               assert (flow_to  (join_label (join_label (join_label lb lb0) lb2) (join_label (object_label (ObjId o2) h2') (object_label e0 h2'))) L_Label = false).             
               apply flow_transitive with (join_label (object_label (ObjId o2) h2') (object_label e0  h2')); auto.
               apply flow_transitive with (object_label (ObjId o2) h2'); auto.
-              unfold object_label. rewrite <- H47.
-              apply flow_transitive with ll2; auto. 
-              apply join_def_flow2.
+              unfold object_label. rewrite <- H47; auto. 
               apply join_def_flow1.
               apply join_def_flow2.
             
@@ -866,7 +824,7 @@ Ltac invert_l_eq_fs :=
            ***
               unfold object_label. rewrite <- H45.
               rewrite <- H47.
-              remember (join_label (join_label (join_label lb lb0) lb2) (join_label L_Label (join_label lo ll))) as lb''.
+              remember (join_label (join_label (join_label lb lb0) lb2) (join_label L_Label ll)) as lb''.
               case_eq (flow_to lb'' L_Label); intro.
               ****
                 apply L_equivalence_config_L; auto.          
@@ -882,19 +840,15 @@ Ltac invert_l_eq_fs :=
            ***             
              unfold runtime_val. unfold runtime_label. unfold object_label.
              rewrite <- H35.              rewrite <- H45.  
-         assert (flow_to (join_label (join_label (join_label lb lb0) lb2) (join_label L_Label (join_label lo1 ll1))) L_Label = false).            
-         apply flow_transitive with (join_label L_Label (join_label lo1 ll1)); auto.
-         apply flow_transitive with (join_label lo1 ll1); auto.
+         assert (flow_to  (join_label (join_label (join_label lb lb0) lb2) (join_label L_Label ll1)) L_Label = false).            
+         apply flow_transitive with (join_label L_Label ll1); auto.
          apply flow_transitive with ll1; auto. 
          apply join_def_flow2.
          apply join_def_flow2.
-         apply join_def_flow2.
 
-         assert (flow_to (join_label (join_label (join_label lb lb0) lb2) (join_label L_Label (join_label lo2 ll2))) L_Label = false).            
-         apply flow_transitive with (join_label L_Label (join_label lo2 ll2)); auto.
-         apply flow_transitive with (join_label lo2 ll2); auto.
+         assert (flow_to (join_label (join_label (join_label lb lb0) lb2) (join_label L_Label ll2)) L_Label = false).            
+         apply flow_transitive with (join_label L_Label ll2); auto.
          apply flow_transitive with ll2; auto. 
-         apply join_def_flow2.
          apply join_def_flow2.
          apply join_def_flow2.
 
@@ -940,11 +894,7 @@ Ltac invert_l_eq_fs :=
            
          ++++
            destruct H7 with v1 lb1; auto.
-           
-
-
-
-       
+          
 
 (*field access*)  
 - inversion H_reduction2; subst; auto; try (solve_by_invert_ctn).

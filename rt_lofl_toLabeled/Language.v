@@ -600,7 +600,7 @@ Fixpoint runtime_val (t : tm) : tm  :=
 Fixpoint object_label (t : tm)  (h : heap) : Label :=
   match t with
   | ObjId o => match (lookup_heap_obj h o) with
-                | Some (Heap_OBJ cls F lo ll) => (join_label lo ll)
+                | Some (Heap_OBJ cls F lo ll) => ll
                 | None => L_Label
                end
   | _ => L_Label
