@@ -79,8 +79,6 @@ Definition label_eq (lb1 : Label) (lb2 : Label) :=
 
 (* unrestricted access L *)
 Definition L_Label := LB nil.
-(* unrestricted access L *)
-Definition H_Label := LB (cons (Principal "Jian") nil).
 
 
 Axiom flow_join_label : forall lb joined_lb lb' L,
@@ -104,14 +102,6 @@ Axiom join_label_commutative : forall l1 l2,
     join_label l1 l2 = join_label l2 l1. 
 
 
-Axiom H_Label_not_flow_to_L : forall lb, 
-   flow_to lb L_Label = false -> lb = H_Label.
-
-
-Axiom L_Label_flow_to_L : forall lb, 
-   flow_to lb L_Label = true -> lb = L_Label.
-
-
 Axiom join_L_label_flow_to_L : forall lb1 lb2, 
   flow_to lb1 L_Label = true ->
   flow_to lb2 L_Label = true ->
@@ -124,8 +114,6 @@ Axiom join_L_Label_irrelevant : forall lb,
 Axiom exclude_middle_label : forall (lb1:Label) (lb2:Label),
     lb1 = lb2 \/ lb1 <> lb2.
 
-Compute flow_to H_Label L_Label.
-Compute flow_to H_Label H_Label.
 
 Axiom join_def_flow1 : forall (lb1 : Label) (lb2 : Label),
     flow_to lb1 (join_label lb1 lb2) = true.

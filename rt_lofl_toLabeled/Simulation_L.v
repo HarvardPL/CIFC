@@ -1754,9 +1754,6 @@ Ltac invert_l_eq_fs :=
 
     ++
       exists φ. split; auto.
-      assert (flow_to (join_label lb2 lo) L_Label = false).
-      apply flow_join_label with lo lb2; auto.
-
       assert (flow_to (join_label lb2 lo0) L_Label = false).
       apply flow_join_label with lo0 lb2; auto.
       apply L_equivalence_config_H; auto.
@@ -1829,8 +1826,6 @@ Ltac invert_l_eq_fs :=
   
     exists φ. split; auto.
     exists φ. split; auto.
-    apply H_Label_not_flow_to_L in H6. 
-    apply H_Label_not_flow_to_L in H9. subst; auto. 
  
 - inversion H_reduction2; subst; auto; try (solve_by_invert_ctn).
   (*L_eq_container (Container (labelOf (v_opa_l v ell)) fs1 lb1 sf1) h1' (Container t2 fs2 lb2 sf2) h2 φ*)
@@ -2849,14 +2844,8 @@ Ltac invert_l_eq_fs :=
        apply  L_equivalence_config_L; auto.
        apply L_eq_ctn; auto.
        assert (flow_to (join_label ell0 lb2) L_Label = true).
-       apply join_L_label_flow_to_L; auto. 
-       apply L_Label_flow_to_L in H.
-       
-       assert (flow_to (join_label ell0 lb2) L_Label = true).
-       apply join_L_label_flow_to_L; auto. 
-       apply L_Label_flow_to_L in H0.
-       subst; auto. rewrite H.  
-       apply L_equivalence_tm_eq_v_opa_l_L; auto.
+       apply join_L_label_flow_to_L; auto.
+       apply  L_equivalence_tm_eq_v_opa_l_L; auto. 
        inversion H5; subst; auto.
        inversion H11; subst; auto.
        

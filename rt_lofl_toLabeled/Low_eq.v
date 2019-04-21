@@ -94,11 +94,10 @@ Inductive L_equivalence_tm : tm -> heap -> tm -> heap ->  (bijection oid oid )->
       L_equivalence_tm e1 h1 e2 h2 φ->
       value e1 -> value e2 ->
       L_equivalence_tm (v_l e1 lb) h1 (v_l e2 lb) h2 φ
-  | L_equivalence_tm_eq_v_l_H : forall e1 e2 l1 l2 h1 h2 φ, 
-      flow_to l1 L_Label = false ->
-      flow_to l2 L_Label = false ->
+  | L_equivalence_tm_eq_v_l_H : forall e1 e2 lb h1 h2 φ, 
+      flow_to lb L_Label = false ->
        value e1 -> value e2 ->
-      L_equivalence_tm (v_l e1 l1) h1 (v_l e2 l2) h2 φ
+      L_equivalence_tm (v_l e1 lb) h1 (v_l e2 lb) h2 φ
   | L_equivalence_tm_eq_v_opa_l_L : forall lb e1 e2 h1 h2 φ, 
       flow_to lb L_Label = true ->
       value (v_opa_l e1 lb) ->
@@ -832,7 +831,7 @@ Proof with eauto.
   inversion H8; subst; auto.
   assert ( flow_to (join_label lb1 lx0) L_Label = true).
   apply join_L_label_flow_to_L; auto.
-  apply L_Label_flow_to_L in H13. rewrite H13 in H4. 
+  (* apply L_Label_flow_to_L in H13. rewrite H13 in H4. *) 
 
   assert ( flow_to (join_label lb2 lx0) L_Label = true).
   apply join_L_label_flow_to_L; auto.
