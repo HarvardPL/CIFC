@@ -28,10 +28,14 @@ e  := x                      (* variables *)
       | sp_e                 (* special expressions for inner syntax *)
    
 le := ℓ (* label values *)
-      | labelData e ℓ        (* label operations *)
       | unlabel e            (* unlabel the target expressions *)
       | labelOf e            (* get the label of the target expressions *)
       | unlabelOpaque e      (* unlabel the opaque labeled value *)
+      | objectLabelOf e      (* get the object label of an object *)   
+      | raiseLabel e e       (* raise the field label of an object *)     
+      | toLabeled e e        (* create a container to run the computation *)
+      | getCurrentLevel.     (* get the current context label *)         
+      
 ```
 
 Some additional expressions are used for the purpose of modeling inner structures and configurations:
@@ -41,7 +45,7 @@ sp_e :=  Object_identifer    (* pointers to objects *)
          | v_l e ℓ           (* runtime representation of the labeled expression *)
          | v_opa_l e ℓ       (* runtime representation of opaquely labeled expression *)
          | hole              (* evaluation context *)
-         | return_hole       (* evaluation context for method calls *)
+         | labelData e ℓ     (* from evaluating toLabeled e e *)
 ```
 
 The details of the language are in the file [language.v](coinflow/Language.v).
