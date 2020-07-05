@@ -6,7 +6,7 @@ This is a Coq formalization of a Java-like secure language, enforcing informatio
 2. Proof of type system properties
 3. Proof of noninterference (timing-sensitive noninterference (TINI)) property
 
-The Coq files compiles with version 8.7.2. The folder [updated](updated) contains the latest files. The whole project might take about 10 to 15 minutes to compile. 
+The Coq files compiles with version 8.7.2. The folder [coinflow](coinflow) contains the latest files. The whole project might take about 10 to 15 minutes to compile. 
 
 ### Language
 
@@ -44,7 +44,7 @@ sp_e :=  Object_identifer    (* pointers to objects *)
          | return_hole       (* evaluation context for method calls *)
 ```
 
-The details of the language are in the file [language.v](https://github.com/HarvardPL/CIFC/tree/master/updated/language.v).
+The details of the language are in the file [language.v](https://github.com/HarvardPL/CIFC/tree/master/coinflow/language.v).
 
 ### Operational Semantics
 
@@ -108,7 +108,7 @@ In addition to the two kinds of configurations above, an execution can run into 
 
 #### Reduction
 
-A small-step semantics is used for the reduction. The reduction is defined as an inductive relation: `config -> config -> Prop`. Details about the reduction semantics can be found the file [language.v](updated/language.v).
+A small-step semantics is used for the reduction. The reduction is defined as an inductive relation: `config -> config -> Prop`. Details about the reduction semantics can be found the file [language.v](coinflow/language.v).
 
 We define a function `hole_free` to separate closed terms and open terms. Closed terms are free of hole, and open terms are not. 
 
@@ -179,7 +179,7 @@ The typing environment Γ is a finite partial map from variables to their types.
 6. Typing rules for program context: Program context is a list of containers. The type of a container list is of the form `τ' -> τ`.
 7. Typing rules for configuration: The type of a configuration depends on the type of the container being evaluated, and the type of the program context. If the type of the container being evaluated is `void -> τ'`, and the type of the program context is `τ' -> τ`, then the type of the configuration is `τ`.
 
-Details about the type system can be found in the file [Types.v](updated/Types.v).
+Details about the type system can be found in the file [Types.v](coinflow/Types.v).
 
 #### Progress
 
@@ -225,7 +225,7 @@ In order to prove this theorem, several lemmas were needed:
 4. Updating a heap object preserves typing of configurations. 
 5. Reduction from one config to another preserve well-formedness. 
 
-Detailed proof of the preservation theorem can be found in the file [preservation.v](updated/preservation.v).
+Detailed proof of the preservation theorem can be found in the file [preservation.v](coinflow/preservation.v).
 
 
 #### Deterministic
@@ -255,7 +255,7 @@ Theorem deterministic_prime: forall ct ctn ctns h ctn1 ctns1 h1 config',
 
 The first form states that if a configuration steps into two normal configurations `config1` and `config2`, then `config1` and `config2` are identical. The second form states that a configuration cannot step into different kinds of configurations. In particular, the second form essures that exceptions are thrown deterministically.  
 
-Detailed proof of the theorem can be found in the file [deterministic.v](updated/deterministic.v).
+Detailed proof of the theorem can be found in the file [deterministic.v](coinflow/deterministic.v).
 
 ### Information flow security
 
@@ -448,7 +448,7 @@ Inductive L_equivalence_config : config -> config -> (bijection oid oid ) -> Pro
 Hint Constructors L_equivalence_config.
 ```
 
-Details about low equivalence can be found in the file [Low_eq.v](updated/Low_eq.v).
+Details about low equivalence can be found in the file [Low_eq.v](coinflow/Low_eq.v).
 
 ### Timing insensitive non-interference
 
@@ -611,5 +611,5 @@ Theorem TINI : forall ct ctn1 ctns1 h1 ctn2 ctns2 h2 lb1' sf1' lb2' sf2' final_v
 
 The theorem is proved by first showing a multi-step p-reduction can be contructed from two executions, and then applying the `p_reduction_NI` lemma above. 
 
-Details about non-interference proof can be found in the file [TINI.v](updated/TINI.v).
+Details about non-interference proof can be found in the file [TINI.v](coinflow/TINI.v).
 
