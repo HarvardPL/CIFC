@@ -1,6 +1,8 @@
-## Coarse-grained Information Flow Control for Java
+## Coarse-grained Information Flow Control for Java-like languages
 
-This is a Coq formalization of a Java-like secure language, enforcing information flow control. It includes
+This document is the Coq formalization of our paper to be published in S&P 2021: Co-Inflow: Coarse-grained Information Flow Control for Java-like Languages.
+
+This document includes:
 
 1. Semantics of the language
 2. Proof of type system properties
@@ -34,7 +36,7 @@ le := ℓ (* label values *)
       | objectLabelOf e      (* get the object label of an object *)   
       | raiseLabel e e       (* raise the field label of an object *)     
       | toLabeled e e        (* create a container to run the computation *)
-      | getCurrentLevel.     (* get the current context label *)         
+      | getCurrentLevel      (* get the current context label *)         
       
 ```
 
