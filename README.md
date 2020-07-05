@@ -1,7 +1,10 @@
 ## Coarse-grained Information Flow Control for Java-like languages
 
-This document is the Coq formalization of our paper to be published in S&P 2021: Co-Inflow: Coarse-grained Information Flow Control for Java-like Languages.
+### paper
 
+This document is the Coq formalization of our paper to be appear in S&P 2021: Co-Inflow: Coarse-grained Information Flow Control for Java-like Languages.([link](https://people.seas.harvard.edu/~chong/abstracts/XiangC2021.html))
+
+### Contents
 This document includes:
 
 1. Semantics of the language
@@ -9,6 +12,22 @@ This document includes:
 3. Proof of noninterference (timing-sensitive noninterference (TINI)) property
 
 The Coq files compiles with version 8.7.2. The folder [coinflow](coinflow) contains the latest files. The whole project might take about 10 to 15 minutes to compile. 
+
+The directory of this repo is the following: 
+```
+.
+├── build_scripts # Scripts for building our repo and subrepos
+├── docs          # Documents
+│   ├── images    
+│   └── read_me   
+├── src           # All the src code
+│   ├── AirSim
+│   ├── darknet
+│   ├── mav-bench-apps
+│   ├── opencv
+│   └── pcl
+└── test_benches
+```
 
 ### Language
 
