@@ -44,7 +44,7 @@ sp_e :=  Object_identifer    (* pointers to objects *)
          | return_hole       (* evaluation context for method calls *)
 ```
 
-The details of the language are in the file [language.v](https://github.com/HarvardPL/CIFC/tree/master/coinflow/language.v).
+The details of the language are in the file [language.v](coinflow/Language.v).
 
 ### Operational Semantics
 
@@ -108,7 +108,7 @@ In addition to the two kinds of configurations above, an execution can run into 
 
 #### Reduction
 
-A small-step semantics is used for the reduction. The reduction is defined as an inductive relation: `config -> config -> Prop`. Details about the reduction semantics can be found the file [language.v](coinflow/language.v).
+A small-step semantics is used for the reduction. The reduction is defined as an inductive relation: `config -> config -> Prop`. Details about the reduction semantics can be found the file [language.v](coinflow/Language.v).
 
 We define a function `hole_free` to separate closed terms and open terms. Closed terms are free of hole, and open terms are not. 
 
