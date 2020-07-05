@@ -1,8 +1,8 @@
 ## Coarse-grained Information Flow Control for Java-like languages
 
-### paper
+### Paper
 
-This document is the Coq formalization of our paper to be appear in S&P 2021: Co-Inflow: Coarse-grained Information Flow Control for Java-like Languages.([link](https://people.seas.harvard.edu/~chong/abstracts/XiangC2021.html))
+This document is the Coq formalization of our paper to appear in S&P 2021: Co-Inflow: Coarse-grained Information Flow Control for Java-like Languages.([link](https://people.seas.harvard.edu/~chong/abstracts/XiangC2021.html))
 
 ### Contents
 This document includes:
@@ -16,17 +16,19 @@ The Coq files compiles with version 8.7.2. The folder [coinflow](coinflow) conta
 The directory of this repo is the following: 
 ```
 .
-├── build_scripts # Scripts for building our repo and subrepos
-├── docs          # Documents
-│   ├── images    
-│   └── read_me   
-├── src           # All the src code
-│   ├── AirSim
-│   ├── darknet
-│   ├── mav-bench-apps
-│   ├── opencv
-│   └── pcl
-└── test_benches
+├── coinflow         # main formalization results corresponding to the paper
+│   ├── Language.v    # language definition
+│   ├── Language.v    # language definition
+│   ├── Language.v    # language definition
+│   ├── Language.v    # language definition
+│   ├── Language.v    # language definition
+│   ├── Language.v    # language definition
+│   ├── Language.v    # language definition
+│   ├── Language.v    # language definition
+│   ├── 
+├── lib              # some tactics used
+├── plain            # a old version with no floating label
+├── obj_float_label  # a old version with floating label for objects│   
 ```
 
 ### Language
