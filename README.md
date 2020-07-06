@@ -17,15 +17,6 @@ The directory of this repo is the following:
 ```
 .
 ├── coinflow         # main formalization results corresponding to the paper
-│   ├── Language.v    # language definition
-│   ├── Language.v    # language definition
-│   ├── Language.v    # language definition
-│   ├── Language.v    # language definition
-│   ├── Language.v    # language definition
-│   ├── Language.v    # language definition
-│   ├── Language.v    # language definition
-│   ├── Language.v    # language definition
-│   ├── 
 ├── lib              # some tactics used
 ├── plain            # a old version with no floating label
 ├── obj_float_label  # a old version with floating label for objects│   
