@@ -2,10 +2,10 @@
 
 ### Paper
 
-This document is the Coq formalization of our paper to appear in S&P 2021: Co-Inflow: Coarse-grained Information Flow Control for Java-like Languages.([link](https://people.seas.harvard.edu/~chong/abstracts/XiangC2021.html))
+This repo contains the Coq formalization of our paper to appear in S&P 2021: Co-Inflow: Coarse-grained Information Flow Control for Java-like Languages.([link](https://people.seas.harvard.edu/~chong/abstracts/XiangC2021.html))
 
 ### Contents
-This document includes:
+The Coq formalization provides:
 
 1. Semantics of the language
 2. Proof of type system properties
@@ -17,18 +17,9 @@ The directory of this repo is the following:
 ```
 .
 ├── coinflow         # main formalization results corresponding to the paper
-│   ├── Language.v    # language definition
-│   ├── Language.v    # language definition
-│   ├── Language.v    # language definition
-│   ├── Language.v    # language definition
-│   ├── Language.v    # language definition
-│   ├── Language.v    # language definition
-│   ├── Language.v    # language definition
-│   ├── Language.v    # language definition
-│   ├── 
 ├── lib              # some tactics used
 ├── plain            # a old version with no floating label
-├── obj_float_label  # a old version with floating label for objects│   
+├── obj_float_label  # a old version with floating label for objects 
 ```
 
 ### Language
