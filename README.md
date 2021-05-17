@@ -8,9 +8,9 @@ This repo contains the Coq formalization of the main calculus CIFC introduced in
 ### Contents
 The Coq formalization provides:
 
-1. Semantics of the language
+1. Semantics of the CIFC language
 2. Proof of type system properties
-3. Proof of noninterference (timing-sensitive noninterference (TINI)) property
+3. Proof of noninterference (timing-sensitive noninterference (TINI))
 
 The Coq files compiles with version 8.7.2. The folder [coinflow](coinflow) contains the latest files. The whole project might take about 15 minutes to compile. 
 
