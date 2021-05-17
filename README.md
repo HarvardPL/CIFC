@@ -18,7 +18,7 @@ The directory of this repo is the following: (feel free to explore the old versi
 ```
 .
 ├── coinflow         # main formalization results corresponding to the paper
-├── lib              # some tactics used
+├── lib              # some old tactics
 ├── plain            # a old version with no floating label
 ├── obj_float_label  # a old version with floating label for objects 
 ```
