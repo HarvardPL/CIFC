@@ -1,4 +1,4 @@
-## Coq formalization of CIFC calculus (Oakland 2021 Co-Inflow paper) 
+## (Oakland 2021 Co-Inflow paper) Coq formalization of CIFC calculus 
 
 ### Paper
 
