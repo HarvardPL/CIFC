@@ -2,7 +2,8 @@
 
 ### Paper
 
-This repo contains the Coq formalization of our paper in S&P 2021: Co-Inflow: Coarse-grained Information Flow Control for Java-like Languages.([link](https://people.seas.harvard.edu/~chong/abstracts/XiangC2021.html))
+This repo contains the Coq formalization of the main calculus CIFC introduced in our 2021 Oakland paper: Co-Inflow: Coarse-grained Information Flow Control for Java-like Languages.([link](https://people.seas.harvard.edu/~chong/abstracts/XiangC2021.html))
+
 
 ### Contents
 The Coq formalization provides:
