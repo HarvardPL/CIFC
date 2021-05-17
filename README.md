@@ -12,7 +12,7 @@ The Coq formalization provides:
 2. Proof of type system properties
 3. Proof of noninterference (timing-sensitive noninterference (TINI)) property
 
-The Coq files compiles with version 8.7.2. The folder [coinflow](coinflow) contains the latest files. The whole project might take about 10 to 15 minutes to compile. 
+The Coq files compiles with version 8.7.2. The folder [coinflow](coinflow) contains the latest files. The whole project might take about 15 minutes to compile. 
 
 The directory of this repo is the following: 
 ```
