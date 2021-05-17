@@ -14,7 +14,7 @@ The Coq formalization provides:
 
 The Coq files compiles with version 8.7.2. The folder [coinflow](coinflow) contains the latest files. The whole project might take about 15 minutes to compile. 
 
-The directory of this repo is the following: 
+The directory of this repo is the following: (feel free to explore the old versions if interested)
 ```
 .
 ├── coinflow         # main formalization results corresponding to the paper
