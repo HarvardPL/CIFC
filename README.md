@@ -1,4 +1,4 @@
-## Coarse-grained Information Flow Control for Java-like languages
+## Coq formalization of CIFC calculus (Oakland 2021 Co-Inflow paper) 
 
 ### Paper
 
