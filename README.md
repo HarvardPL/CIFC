@@ -14,12 +14,13 @@ The Coq formalization provides:
 
 The Coq files compiles with version 8.7.2. The folder [coinflow](coinflow) contains the latest files. The whole project might take about 15 minutes to compile. 
 
-The directory of this repo is the following: (feel free to explore the old versions if interested)
+(A side note: at the moment, proofs in this project are mostly not automated, and may enjoy a major update on tactics later)
+
+The directory of this repo is the following: 
 ```
 .
 ├── coinflow         # main formalization results corresponding to the paper
-├── lib              # some old tactics
-├── plain            # a old version with no floating label
+├── lib              # some old tactics (not really used at the moment)
 ├── obj_float_label  # a old version with floating label for objects 
 ```
 
