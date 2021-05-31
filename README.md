@@ -331,6 +331,8 @@ The reduction rule essures that:
 
 ### Low equivalence
 
+The current formalization works on a two point lattice at the moment. 
+
 In order to define the low equivalence relation between two configurations, we need an approach to connect and compare the addresses allocated by two configurations. We borrow a partial bijection φ defined by [ni-formal-gc](https://github.com/MathiasVP/ni-formal-gc/blob/master/README.md). The domain (codomain) of φ is the set of object identifiers of the first (second) configuration.
 
 #### Low equivalence of terms
