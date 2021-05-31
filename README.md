@@ -1,23 +1,24 @@
-## Coarse-grained Information Flow Control for Java-like languages
+## (Oakland 2021 Co-Inflow paper) Coq formalization of CIFC calculus 
 
 ### Paper
 
-This repo contains the Coq formalization of our paper to appear in S&P 2021: Co-Inflow: Coarse-grained Information Flow Control for Java-like Languages.([link](https://people.seas.harvard.edu/~chong/abstracts/XiangC2021.html))
+This repo contains the Coq formalization of the main calculus CIFC introduced in our 2021 Oakland paper: Co-Inflow: Coarse-grained Information Flow Control for Java-like Languages.([link](https://people.seas.harvard.edu/~chong/abstracts/XiangC2021.html))
+
 
 ### Contents
 The Coq formalization provides:
 
-1. Semantics of the language
+1. Semantics of the CIFC language
 2. Proof of type system properties
-3. Proof of noninterference (timing-sensitive noninterference (TINI)) property
+3. Proof of noninterference (timing-sensitive noninterference (TINI))
 
-The Coq files compiles with version 8.7.2. The folder [coinflow](coinflow) contains the latest files. The whole project might take about 10 to 15 minutes to compile. 
+The Coq files compiles with version 8.7.2. The folder [coinflow](coinflow) contains the latest files. The whole project might take about 15 minutes to compile. 
 
-The directory of this repo is the following: 
+The directory of this repo is the following: (feel free to explore the old versions if interested)
 ```
 .
 ├── coinflow         # main formalization results corresponding to the paper
-├── lib              # some tactics used
+├── lib              # some old tactics
 ├── plain            # a old version with no floating label
 ├── obj_float_label  # a old version with floating label for objects 
 ```
@@ -73,7 +74,7 @@ In Java-like languages, the stack frame plays an important role for program exec
 In this language, we use an abstract concept, *execution container*, to model the status of program execution. Every container records information that corresponds to the execution status of a method call and its stack frame. In our formalization, a container consists:
 
 - **Term** : The closed term to be evaluated. 
-- **Frame stack** : This is the program context in which the term is currently being evaluated. Specifically, it comprises the terms that left to be evaluated in this container. 
+- **Frame stack** : This is the program context (continuations) in which the term is currently being evaluated. Specifically, it comprises the terms that left to be evaluated in this container. 
 - **Label** : This is the security label of this container. More details will be explained later. 
 - **Variable state** : This variable state maps variables to their values.
 
@@ -87,7 +88,7 @@ Runtime environment of valid programs comprises several essential pieces of info
 - **Class Definition**: A class definition is composed of a class name, a list of fields, and a list of method definitions: `cn -> (list field) -> (list method_def) -> CLASS`.
 - **Class Table**: A class table maps class names to their definitions: `cn -> option CLASS`. 
 - **Object Identifier**: Object addresses are modeled as a special type: object identifers `nat -> oid`. 
-- **Stack Frame / Variable state**: Stack frames are abstractly modeled as a function `id -> option tm`. It maps variable identifiers to their values. 
+- **Variable state**: Stack frames are abstractly modeled as a function `id -> option tm`. It maps variable identifiers to their values. 
 - **Heap**: The heap is simply modeled as a list of entries of heap objects. Every heap entry comprises an object identifier that represents the address and a heap object. A heap object comprises the class definition of the object, a field function, and a security label. A field function is a partial finite map from field names to values. A security label describes the security level of the object. Heap objects are formalized as `CLASS -> FieldMap -> Label -> heapObj`.
 
 #### Lookup functions
@@ -476,7 +477,7 @@ In order to prove the non-interference, we need some auxiliary definitions and l
 
 ##### Single execution
 
-In this work. we only concerns executions that terminate. We define an execution as a finite number of reductions:
+In this work. we only concerns timing-insensitive non-interference, i.e., executions that terminate. We define an execution as a finite number of reductions:
 
 ```
 Inductive  terminate_num : config -> config  -> nat ->  Prop :=
