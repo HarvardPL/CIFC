@@ -10,6 +10,8 @@ Definition left_inverse {A B : Type} (f : A -> option B) (g : B -> option A) :=
     g y = Some x.
 Hint Unfold left_inverse.
 
+Check left_inverse. 
+
 Definition right_inverse {A B : Type} (f : A -> option B) (g : B -> option A) :=
   forall (x : A) (y : B),
     g y = Some x ->

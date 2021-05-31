@@ -18,6 +18,7 @@ Inductive cn : Type :=
 Inductive field : Type :=
   | fd : cn -> id -> field.
 
+
 (* comparison of identifiers *)
 Definition beq_id x y :=
   match x,y with
