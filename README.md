@@ -12,7 +12,7 @@ The Coq formalization provides:
 2. Proof of type system properties
 3. Proof of noninterference (timing-sensitive noninterference (TINI))
 
-The Coq files compiles with version 8.9.1 The folder [coinflow](coinflow) contains the latest files. The whole project might take about 30~40 minutes to compile. (we believe the performance is not so great due to the fact that do case analysis for important proofs.) 
+The Coq files compiles with version 8.9.1 The folder [coinflow](coinflow) contains the latest files. The whole project might take about 30~40 minutes to compile. (We believe the time is mainly spent on case analysis of proving that low-equivalence is preserved for two executions, in particular, the simulation_L.v file) 
 
 (A side note: at the moment, proofs in this project are mostly not automated, and may enjoy a major update on tactics later)
 
