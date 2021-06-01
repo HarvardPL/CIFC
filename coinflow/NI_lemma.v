@@ -5,7 +5,7 @@ Require Import Coq.Arith.EqNat.
 Require Import Coq.omega.Omega.
 Require Import Coq.Lists.List.
 
-Require Import SfLib.
+(* Require Import SfLib. *)
 Require Import Language Types.
 Require Import Lemmas.
 Require Import Low_eq.

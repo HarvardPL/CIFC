@@ -120,7 +120,6 @@ Definition fields_update (F : FieldMap) (x : id) (v : tm) :=
 Inductive heapObj : Type :=
   | Heap_OBJ : CLASS -> FieldMap -> Label -> Label -> heapObj.
 
-(*Definition heap := oid -> (option heapObj).*)
 
 Inductive Heap_entry : Type := 
   | heap_entry : oid -> heapObj -> Heap_entry. 

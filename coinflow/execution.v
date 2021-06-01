@@ -5,7 +5,6 @@ Require Import Coq.Arith.EqNat.
 Require Import Coq.omega.Omega.
 Require Import Coq.Lists.List.
 
-Require Import SfLib.
 Require Import Language Types.
 Require Import Lemmas.
 Require Import Low_eq.
@@ -77,15 +76,15 @@ Inductive parallel_reduction : config -> config -> config -> config -> Prop :=
 | finished_running_execution :  forall ct  t1 lb1 sf1 h1 
                            t2 fs2 lb2 sf2 ctns2 h2
                            t2' fs2' lb2' sf2' ctns2' h2', 
-    terminal_state (Config ct (Container t1 [] lb1 sf1) [] h1) ->
+    terminal_state (Config ct (Container t1 nil lb1 sf1) nil h1) ->
     flow_to lb1 L_Label = false ->
     Config ct (Container t2 fs2 lb2 sf2) ctns2 h2 ==>
            Config ct (Container t2' fs2' lb2' sf2') ctns2' h2' ->
     flow_to lb2 L_Label = false ->
     flow_to lb2' L_Label = false ->
-    parallel_reduction (Config ct (Container t1 [] lb1 sf1) [] h1)
+    parallel_reduction (Config ct (Container t1 nil lb1 sf1) nil h1)
                        (Config ct (Container t2 fs2 lb2 sf2) ctns2 h2)
-                       (Config ct (Container t1 [] lb1 sf1) [] h1)
+                       (Config ct (Container t1 nil lb1 sf1) nil h1)
                        (Config ct (Container t2' fs2' lb2' sf2') ctns2' h2').
     
 Hint Constructors parallel_reduction.
@@ -176,7 +175,7 @@ Qed. Hint Resolve typing_preservation_p_reduction.
 
 Lemma terminate_state_no_more_reduction : forall ct v lb sf h c,
     value v ->
-    (Config ct (Container v [ ] lb sf) [ ] h) ==> c ->
+    (Config ct (Container v nil lb sf) nil h) ==> c ->
     False.
 Proof with eauto.
   intros. induction H; inversion H0.
@@ -195,64 +194,64 @@ Hint Constructors multi_step_p_reduction.
 
 Inductive  terminate_num : config -> config  -> nat ->  Prop :=
 | terminate_zero : forall ctn ct h,
-    terminal_state (Config ct ctn [] h) -> 
-    terminate_num (Config ct ctn [] h)
-                  (Config ct ctn [] h)
+    terminal_state (Config ct ctn nil h) -> 
+    terminate_num (Config ct ctn nil h)
+                  (Config ct ctn nil h)
                   0
 | terminate_step : forall ctn1 ctns1  final_ctn  ct h1  n ctn1' ctns1' h1' h_final_1,
     (Config ct ctn1 ctns1 h1) ==>
                               (Config ct ctn1' ctns1' h1') ->
-    terminal_state (Config ct final_ctn [] h_final_1) ->
+    terminal_state (Config ct final_ctn nil h_final_1) ->
     terminate_num (Config ct ctn1' ctns1'  h1')
-                  (Config ct final_ctn [] h_final_1)
+                  (Config ct final_ctn nil h_final_1)
                   n ->
      terminate_num (Config ct ctn1 ctns1 h1)                
-                   (Config ct final_ctn [] h_final_1)
+                   (Config ct final_ctn nil h_final_1)
                    (1 + n) .
 Hint Constructors terminate_num.
 
 Inductive  two_terminate_num : config -> config -> config -> config -> nat ->  Prop :=
 | two_terminate_zero : forall final_ctn1 h_final_1 final_ctn2 h_final_2 ct,
-    terminal_state (Config ct final_ctn1 [] h_final_1) ->
-    terminal_state (Config ct final_ctn2 [] h_final_2) -> 
-    two_terminate_num (Config ct final_ctn1 [] h_final_1)
-                  (Config ct final_ctn2 [] h_final_2)
-                  (Config ct final_ctn1 [] h_final_1)
-                  (Config ct final_ctn2 [] h_final_2)
+    terminal_state (Config ct final_ctn1 nil h_final_1) ->
+    terminal_state (Config ct final_ctn2 nil h_final_2) -> 
+    two_terminate_num (Config ct final_ctn1 nil h_final_1)
+                  (Config ct final_ctn2 nil h_final_2)
+                  (Config ct final_ctn1 nil h_final_1)
+                  (Config ct final_ctn2 nil h_final_2)
                   0
 | two_terminate_first : forall ctn1 ctn2 ctns1 ctns2 ct
                                final_ctn1 final_ctn2 n ctn1' ctns1' h1'
                                h_final_1 h_final_2 h1 h2,
     (Config ct ctn1 ctns1 h1) ==>
                               (Config ct ctn1' ctns1' h1') ->
-    terminal_state (Config ct final_ctn1 [] h_final_1) ->
-    terminal_state (Config ct final_ctn2 [] h_final_2) -> 
+    terminal_state (Config ct final_ctn1 nil h_final_1) ->
+    terminal_state (Config ct final_ctn2 nil h_final_2) -> 
     two_terminate_num (Config ct ctn1' ctns1'  h1')
                   (Config ct ctn2 ctns2 h2)
-                  (Config ct final_ctn1 [] h_final_1)
-                  (Config ct final_ctn2 [] h_final_2)
+                  (Config ct final_ctn1 nil h_final_1)
+                  (Config ct final_ctn2 nil h_final_2)
                   n ->
     two_terminate_num (Config ct ctn1 ctns1 h1)
                   (Config ct ctn2 ctns2 h2)
-                  (Config ct final_ctn1 [] h_final_1)
-                  (Config ct final_ctn2 [] h_final_2)
+                  (Config ct final_ctn1 nil h_final_1)
+                  (Config ct final_ctn2 nil h_final_2)
                   (1 + n) 
                   
 | two_terminate_second : forall ctn1 ctn2 ctns1 ctns2 ct final_ctn1 h1 final_ctn2 h2 n ctn2' ctns2' h2'
   h_final_1 h_final_2,
     (Config ct ctn2 ctns2 h2) ==>
                               (Config ct ctn2' ctns2' h2') ->
-    terminal_state (Config ct final_ctn1 [] h_final_1) ->
-    terminal_state (Config ct final_ctn2 [] h_final_2) ->
+    terminal_state (Config ct final_ctn1 nil h_final_1) ->
+    terminal_state (Config ct final_ctn2 nil h_final_2) ->
     two_terminate_num (Config ct ctn1 ctns1 h1)
                   (Config ct ctn2' ctns2' h2')
-                  (Config ct final_ctn1 [] h_final_1)
-                  (Config ct final_ctn2 [] h_final_2)
+                  (Config ct final_ctn1 nil h_final_1)
+                  (Config ct final_ctn2 nil h_final_2)
                   n ->
     two_terminate_num (Config ct ctn1 ctns1 h1)
                   (Config ct ctn2 ctns2 h2)
-                  (Config ct final_ctn1 [] h_final_1)
-                  (Config ct final_ctn2 [] h_final_2)
+                  (Config ct final_ctn1 nil h_final_1)
+                  (Config ct final_ctn2 nil h_final_2)
                   (1 + n) 
                   
 | two_terminate_both : forall ctn1 ctn2 ctns1 ctns2 ct final_ctn1 h1 final_ctn2 h2 n
@@ -263,17 +262,17 @@ Inductive  two_terminate_num : config -> config -> config -> config -> nat ->  P
                               (Config ct ctn2' ctns2' h2') ->
     (Config ct ctn1 ctns1 h1) ==>
                               (Config ct ctn1' ctns1' h1') ->
-    terminal_state (Config ct final_ctn1 [] h_final_1) ->
-    terminal_state (Config ct final_ctn2 [] h_final_2) ->
+    terminal_state (Config ct final_ctn1 nil h_final_1) ->
+    terminal_state (Config ct final_ctn2 nil h_final_2) ->
         two_terminate_num (Config ct ctn1' ctns1' h1')
                   (Config ct ctn2' ctns2' h2')
-                  (Config ct final_ctn1 [] h_final_1)
-                  (Config ct final_ctn2 [] h_final_2)
+                  (Config ct final_ctn1 nil h_final_1)
+                  (Config ct final_ctn2 nil h_final_2)
                   n ->
         two_terminate_num (Config ct ctn1 ctns1 h1)
                   (Config ct ctn2 ctns2 h2)
-                  (Config ct final_ctn1 [] h_final_1)
-                  (Config ct final_ctn2 [] h_final_2)
+                  (Config ct final_ctn1 nil h_final_1)
+                  (Config ct final_ctn2 nil h_final_2)
                   (2 + n)  . 
 Hint Constructors   two_terminate_num.
 
@@ -282,7 +281,7 @@ Require Import deterministic.
 Lemma execution_no_exception : forall ct ctn ctns h config'
                                       final_ctn h_final n,
     terminate_num (Config ct ctn ctns h)
-                  (Config ct final_ctn [] h_final)
+                  (Config ct final_ctn nil h_final)
                   n ->
     (Config ct ctn ctns h) ==> config' ->
     exists ctn' ctns' h', config' = 
@@ -319,14 +318,14 @@ Lemma two_executions_split : forall ct ctn1 ctns1 h1 ctn2 ctns2 h2
                                      final_ctn2 h_final_2 k,
     two_terminate_num (Config ct ctn1 ctns1 h1)
                   (Config ct ctn2 ctns2 h2)
-                  (Config ct final_ctn1 [] h_final_1)
-                  (Config ct final_ctn2 [] h_final_2)
+                  (Config ct final_ctn1 nil h_final_1)
+                  (Config ct final_ctn2 nil h_final_2)
                   k ->
     exists m n, terminate_num (Config ct ctn1 ctns1 h1)
-                  (Config ct final_ctn1 [] h_final_1)
+                  (Config ct final_ctn1 nil h_final_1)
                   m /\
                 terminate_num (Config ct ctn2 ctns2 h2)
-                  (Config ct final_ctn2 [] h_final_2)
+                  (Config ct final_ctn2 nil h_final_2)
                   n /\ (m + n = k).
 Proof with eauto.
   intros ct ctn1 ctns1 h1 ctn2 ctns2 h2
@@ -342,8 +341,8 @@ Proof with eauto.
   + intros. inversion Hy; subst; auto.
     ++ exists 0. exists 0. split; auto.
     ++  assert (exists m0 n0 : nat,
-          terminate_num (Config ct ctn1' ctns1' h1') (Config ct final_ctn1 [ ] h_final_1) m0 /\
-          terminate_num (Config ct ctn2 ctns2 h2) (Config ct final_ctn2 [ ] h_final_2) n0 /\ (m0 + n0 = n)).
+          terminate_num (Config ct ctn1' ctns1' h1') (Config ct final_ctn1 nil h_final_1) m0 /\
+          terminate_num (Config ct ctn2 ctns2 h2) (Config ct final_ctn2 nil h_final_2) n0 /\ (m0 + n0 = n)).
         apply IHk; auto.
         destruct H as [m0]. destruct H as [n0].  
         destruct H. exists (1 + m0). exists n0. split; auto.
@@ -382,11 +381,11 @@ Qed. Hint Resolve two_executions_split.
 Lemma execution_num_step : forall ct ctn ctns h final_ctn h_final
                                   ctn' ctns' h' n,
     terminate_num (Config ct ctn ctns h)
-                  (Config ct final_ctn [] h_final)
+                  (Config ct final_ctn nil h_final)
                   n ->
     (Config ct ctn ctns h) ==> (Config ct ctn' ctns' h') ->
     terminate_num (Config ct ctn' ctns' h')
-                  (Config ct final_ctn [] h_final)
+                  (Config ct final_ctn nil h_final)
                   (n - 1).
 Proof with eauto.
   intros.
@@ -406,7 +405,7 @@ Qed. Hint Resolve execution_num_step.
 Lemma execution_num_step_nonzero : forall ct ctn ctns h final_ctn h_final
                                   ctn' ctns' h' n,
     terminate_num (Config ct ctn ctns h)
-                  (Config ct final_ctn [] h_final)
+                  (Config ct final_ctn nil h_final)
                   n ->
     (Config ct ctn ctns h) ==> (Config ct ctn' ctns' h') ->
     exists m, 1 + m = n . 
@@ -423,15 +422,15 @@ Lemma two_executions_to_one : forall ct ctn1 ctns1 h1 ctn2 ctns2 h2
                                      final_ctn1 h_final_1
                                      final_ctn2 h_final_2 m n,
     terminate_num (Config ct ctn1 ctns1 h1)
-                  (Config ct final_ctn1 [] h_final_1)
+                  (Config ct final_ctn1 nil h_final_1)
                   m ->
     terminate_num (Config ct ctn2 ctns2 h2)
-                  (Config ct final_ctn2 [] h_final_2)
+                  (Config ct final_ctn2 nil h_final_2)
                   n -> 
     two_terminate_num (Config ct ctn1 ctns1 h1)
                   (Config ct ctn2 ctns2 h2)
-                  (Config ct final_ctn1 [] h_final_1)
-                  (Config ct final_ctn2 [] h_final_2)
+                  (Config ct final_ctn1 nil h_final_1)
+                  (Config ct final_ctn2 nil h_final_2)
                   (m+n).
 Proof with eauto.
   intros ct ctn1 ctns1 h1 ctn2 ctns2 h2
@@ -472,28 +471,28 @@ Lemma two_executions_split_first : forall ctn1 ctns1 h1
                                      final_ctn2 h_final_2 k,
     two_terminate_num (Config ct ctn1 ctns1 h1)
                   (Config ct ctn2 ctns2 h2)
-                  (Config ct final_ctn1 [] h_final_1)
-                  (Config ct final_ctn2 [] h_final_2)
+                  (Config ct final_ctn1 nil h_final_1)
+                  (Config ct final_ctn2 nil h_final_2)
                   (1 + k) ->
     (Config ct ctn1 ctns1 h1) ==> (Config ct ctn1' ctns1' h1') ->
     two_terminate_num (Config ct ctn1' ctns1' h1')
                   (Config ct ctn2 ctns2 h2)
-                  (Config ct final_ctn1 [] h_final_1)
-                  (Config ct final_ctn2 [] h_final_2)
+                  (Config ct final_ctn1 nil h_final_1)
+                  (Config ct final_ctn2 nil h_final_2)
                   k.
 Proof with eauto.
   intros.
   assert (exists m n, terminate_num (Config ct ctn1 ctns1 h1)
-                  (Config ct final_ctn1 [] h_final_1)
+                  (Config ct final_ctn1 nil h_final_1)
                   m /\
                 terminate_num (Config ct ctn2 ctns2 h2)
-                  (Config ct final_ctn2 [] h_final_2)
+                  (Config ct final_ctn2 nil h_final_2)
                   n /\ (m + n =  1 + k)).
   eauto using two_executions_split.
   destruct H1 as [m0]. destruct H1 as [n0].
   destruct H1.  destruct H2. 
   assert (terminate_num (Config ct ctn1' ctns1' h1')
-                  (Config ct final_ctn1 [] h_final_1)
+                  (Config ct final_ctn1 nil h_final_1)
                   (m0 - 1)). 
   eauto using execution_num_step.
   assert (exists m1, 1 + m1 = m0).
@@ -504,7 +503,7 @@ Proof with eauto.
   simpl in H4. pose proof  minus_zero m1.
   rewrite H6 in H4. 
   assert (two_terminate_num (Config ct ctn1' ctns1' h1') (Config ct ctn2 ctns2 h2)
-                            (Config ct final_ctn1 [ ] h_final_1) (Config ct final_ctn2 [ ] h_final_2)
+                            (Config ct final_ctn1 nil h_final_1) (Config ct final_ctn2 nil h_final_2)
                             (m1 + n0)).
   apply  two_executions_to_one; auto.
   assert (m1 + n0 = k).
@@ -519,12 +518,12 @@ Lemma terminate_H_must_2H : forall ct t1 lb1 sf1 h1
                                             ctn2 ctns2 h2  sf2' lb2' fs2'
                                             t2' ctns2' h2'
                                              T  φ ,
-    valid_config (Config ct (Container t1 [] lb1 sf1) [] h1) ->
+    valid_config (Config ct (Container t1 nil lb1 sf1) nil h1) ->
     valid_config (Config ct ctn2 ctns2 h2) ->
-    config_has_type ct empty_context (Config ct (Container t1 [] lb1 sf1) [] h1) T ->
+    config_has_type ct empty_context (Config ct (Container t1 nil lb1 sf1) nil h1) T ->
     config_has_type ct empty_context (Config ct ctn2 ctns2 h2) T ->
-    terminal_state (Config ct (Container t1 [] lb1 sf1) [] h1) ->
-    L_equivalence_config (Config ct (Container t1 [] lb1 sf1) [] h1 )
+    terminal_state (Config ct (Container t1 nil lb1 sf1) nil h1) ->
+    L_equivalence_config (Config ct (Container t1 nil lb1 sf1) nil h1 )
                          (Config ct ctn2 ctns2 h2)  φ ->
     L_equivalence_heap h1 h2 φ ->
     Config ct ctn2 ctns2 h2 ==>
@@ -666,12 +665,12 @@ Lemma H_terminate_must_2H : forall ct t2 lb2 sf2 h2
                                    t1' ctns1' h1'
                                              T  φ ,
     valid_config (Config ct ctn1 ctns1 h1) ->
-    valid_config (Config ct  (Container t2 [] lb2 sf2) [] h2) ->
+    valid_config (Config ct  (Container t2 nil lb2 sf2) nil h2) ->
     config_has_type ct empty_context  (Config ct ctn1 ctns1 h1)  T ->
-    config_has_type ct empty_context (Config ct  (Container t2 [] lb2 sf2) [] h2)  T ->
-    terminal_state (Config ct  (Container t2 [] lb2 sf2) [] h2) ->
+    config_has_type ct empty_context (Config ct  (Container t2 nil lb2 sf2) nil h2)  T ->
+    terminal_state (Config ct  (Container t2 nil lb2 sf2) nil h2) ->
     L_equivalence_config (Config ct ctn1 ctns1 h1 )
-                         (Config ct  (Container t2 [] lb2 sf2) [] h2)  φ ->
+                         (Config ct  (Container t2 nil lb2 sf2) nil h2)  φ ->
     L_equivalence_heap h1 h2 φ ->
     Config ct ctn1 ctns1 h1 ==>
            Config ct (Container t1' fs1' lb1' sf1') ctns1' h1' ->
@@ -774,12 +773,12 @@ Lemma terminating_run_no_exception : forall final_v1 lb1' sf1' h1'
                                             n,
 
     Config ct ctn2 ctns2 h2 ==> config2' ->
-    terminal_state (Config ct (Container final_v1 [ ] lb1' sf1') [ ] h1') ->
-    terminal_state (Config ct (Container final_v2 [ ] lb2' sf2') [ ] h2') ->
+    terminal_state (Config ct (Container final_v1 nil lb1' sf1') nil h1') ->
+    terminal_state (Config ct (Container final_v2 nil lb2' sf2') nil h2') ->
     two_terminate_num (Config ct ctn1 ctns1 h1)
                       (Config ct ctn2 ctns2 h2)
-                      (Config ct (Container final_v1 [ ] lb1' sf1') [ ] h1')
-                      (Config ct (Container final_v2 [ ] lb2' sf2') [ ] h2') n ->
+                      (Config ct (Container final_v1 nil lb1' sf1') nil h1')
+                      (Config ct (Container final_v2 nil lb2' sf2') nil h2') n ->
     exists ctn' ctns' h', config2' =  (Config ct ctn' ctns' h').
 
 Proof with eauto.
@@ -789,10 +788,10 @@ Proof with eauto.
   intro H_reduction2. intro H_terminate1. intro H_terminate2.
   intro H_two_reduction.
   assert (exists m0 n0, terminate_num (Config ct ctn1 ctns1 h1)
-                                    (Config ct (Container final_v1 [ ] lb1' sf1') [ ] h1')
+                                    (Config ct (Container final_v1 nil lb1' sf1') nil h1')
                                     m0 /\
                       terminate_num (Config ct ctn2 ctns2 h2)
-                                    (Config ct (Container final_v2 [ ] lb2' sf2') [ ] h2')
+                                    (Config ct (Container final_v2 nil lb2' sf2') nil h2')
                                     n0 /\ (m0 + n0 = n)).
   eauto using two_executions_split .
   destruct H as [m']. destruct H as [n'].
@@ -800,11 +799,11 @@ Proof with eauto.
   inversion H_two_reduction; subst; auto.         
   + inversion H15; subst; auto.
     inversion H2; subst; auto; inversion H_reduction2; subst; auto.
-  + apply execution_no_exception with ctn2 ctns2 h2  (Container final_v2 [ ] lb2' sf2')
+  + apply execution_no_exception with ctn2 ctns2 h2  (Container final_v2 nil lb2' sf2')
                                       h2' n'; auto.
-  + apply execution_no_exception with ctn2 ctns2 h2  (Container final_v2 [ ] lb2' sf2')
+  + apply execution_no_exception with ctn2 ctns2 h2  (Container final_v2 nil lb2' sf2')
                                       h2' n'; auto.
-  + apply execution_no_exception with ctn2 ctns2 h2  (Container final_v2 [ ] lb2' sf2')
+  + apply execution_no_exception with ctn2 ctns2 h2  (Container final_v2 nil lb2' sf2')
                                       h2' n'; auto.
 Qed. Hint Resolve terminating_run_no_exception.
 
@@ -816,12 +815,12 @@ Lemma terminated_both_p_reduction : forall ct ctn1 ctns1 h1
     terminal_state (Config ct ctn2 ctns2 h2) ->
     two_terminate_num (Config ct ctn1 ctns1 h1)
                       (Config ct ctn2 ctns2 h2)
-                      (Config ct final_ctn1 [] h1')
-                      (Config ct final_ctn2 [] h2') n ->                               
+                      (Config ct final_ctn1 nil h1')
+                      (Config ct final_ctn2 nil h2') n ->                               
   multi_step_p_reduction (Config ct ctn1 ctns1 h1)
                          (Config ct ctn2 ctns2 h2)
-                         (Config ct final_ctn1 [ ] h1')
-                         (Config ct final_ctn2 [ ] h2').
+                         (Config ct final_ctn1 nil h1')
+                         (Config ct final_ctn2 nil h2').
 Proof with eauto.
   intros.
   inversion H1; subst; auto.
@@ -845,8 +844,8 @@ Qed. Hint Resolve   lt_addition_plus1.
 Lemma terminated_same_as_final : forall ct ctn ctns h final_v lb sf h' n, 
     terminal_state (Config ct ctn ctns h) ->
     terminate_num (Config ct ctn ctns h)
-                  (Config ct (Container final_v [ ] lb sf) [ ] h') n ->
-    (Config ct ctn ctns h) = (Config ct (Container final_v [ ] lb sf) [ ] h').
+                  (Config ct (Container final_v nil lb sf) nil h') n ->
+    (Config ct ctn ctns h) = (Config ct (Container final_v nil lb sf) nil h').
 Proof with eauto.
   intros.
   inversion H0; subst; auto.

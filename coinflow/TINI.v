@@ -6,7 +6,6 @@ Require Import Coq.Arith.EqNat.
 Require Import Coq.omega.Omega.
 Require Import Coq.Lists.List.
 
-Require Import SfLib.
 Require Import Language Types.
 Require Import Lemmas.
 Require Import Low_eq.
@@ -126,10 +125,10 @@ Proof with eauto.
   eauto using Progress.
 
   assert (exists m0 n0, terminate_num (Config ct (Container t1 fs1 lb1 sf1) ctns_stack1 h1)
-                                        (Config ct (Container final_v1 [ ] lb1' sf1') [ ] h1')
+                                        (Config ct (Container final_v1 nil lb1' sf1') nil h1')
                                         m0 /\
                         terminate_num (Config ct (Container t2 fs2 lb2 sf2) ctns_stack2 h2)
-                                        (Config ct (Container final_v2 [ ] lb2' sf2') [ ] h2')
+                                        (Config ct (Container final_v2 nil lb2' sf2') nil h2')
                                         n0 /\ (m0 + n0 = n)).
   eauto using two_executions_split.
   destruct H1 as [m0].
@@ -142,12 +141,12 @@ Proof with eauto.
     destruct H.
     + (* conf1 already terminated *)
       assert ((Config ct (Container t1 fs1 lb1 sf1) ctns_stack1 h1)
-                  = (Config ct (Container final_v1 [ ] lb1' sf1') [ ] h1')).
+                  = (Config ct (Container final_v1 nil lb1' sf1') nil h1')).
       eauto using terminated_same_as_final.
       destruct H0.
       ++ (*conf2 also terminated *)        
         assert ((Config ct (Container t2 fs2 lb2 sf2) ctns_stack2 h2)
-                  = (Config ct (Container final_v2 [ ] lb2' sf2') [ ] h2')).
+                  = (Config ct (Container final_v2 nil lb2' sf2') nil h2')).
         eauto using terminated_same_as_final.
         inversion H5; subst; auto.
         inversion H6; subst; auto.
@@ -172,7 +171,7 @@ Proof with eauto.
       destruct H0.
       ++ (*conf2 terminated; this is impossible *)  
         assert ((Config ct (Container t2 fs2 lb2 sf2) ctns_stack2 h2)
-                  = (Config ct (Container final_v2 [ ] lb2' sf2') [ ] h2')).
+                  = (Config ct (Container final_v2 nil lb2' sf2') nil h2')).
         eauto using terminated_same_as_final.
         inversion H5; subst; auto.
         inversion H_low_eq; subst; auto;
@@ -236,12 +235,12 @@ Proof with eauto.
         assert (forall n, 1 + n -1 = n).
         intros. induction n; auto.       
         assert (terminate_num (Config ct (Container t f l s) ctns1' h1'0)
-                                     (Config ct (Container final_v1 [ ] lb1' sf1') [ ] h1')
+                                     (Config ct (Container final_v1 nil lb1' sf1') nil h1')
                                      (1 + m0' - 1)).
         eauto using execution_num_step.
 
         assert (terminate_num (Config ct (Container t0 f0 l0 s0) ctns2' h2'0)
-                                     (Config ct (Container final_v2 [ ] lb2' sf2') [ ] h2')
+                                     (Config ct (Container final_v2 nil lb2' sf2') nil h2')
                                      (1 + n0' - 1)).
         eauto using execution_num_step.
         pose proof H8 m0'. rewrite H11 in H9.
@@ -282,7 +281,7 @@ Proof with eauto.
               (Config ct (Container t1 fs1 lb1 sf1) ctns_stack1 h1)
               (Config ct (Container t f l s) ctns2' h2'0).
           assert ((Config ct (Container t1 fs1 lb1 sf1) ctns_stack1 h1)
-                  = (Config ct (Container final_v1 [ ] lb1' sf1') [ ] h1')).
+                  = (Config ct (Container final_v1 nil lb1' sf1') nil h1')).
           eauto using terminated_same_as_final.
           inversion H6; subst; auto.
           assert (exists n0', 1 + n0' = n0).
@@ -298,7 +297,7 @@ Proof with eauto.
           ++++
             inversion H_typing2. eauto using typing_preservation.
           ++++ assert (terminate_num (Config ct (Container t f l s) ctns2' h2'0)
-                                     (Config ct (Container final_v2 [ ] lb2' sf2') [ ] h2') 
+                                     (Config ct (Container final_v2 nil lb2' sf2') nil h2') 
                                      (1 + n0' - 1)).
                eauto using execution_num_step.
                assert (forall n, 1 + n -1 = n).
@@ -366,12 +365,12 @@ Proof with eauto.
              assert (forall n, 1 + n -1 = n).
              intros. induction n; auto.       
              assert (terminate_num (Config ct (Container t f l s) ctns1' h1'0)
-                                     (Config ct (Container final_v1 [ ] lb1' sf1') [ ] h1')
+                                     (Config ct (Container final_v1 nil lb1' sf1') nil h1')
                                      (1 + m0' - 1)).
              eauto using execution_num_step.
 
              assert (terminate_num (Config ct (Container t0 f0 l0 s0) ctns2' h2'0)
-                                     (Config ct (Container final_v2 [ ] lb2' sf2') [ ] h2')
+                                     (Config ct (Container final_v2 nil lb2' sf2') nil h2')
                                      (1 + n0' - 1)).
              eauto using execution_num_step.
              pose proof H10 m0'. rewrite H13 in H11.
@@ -398,7 +397,7 @@ Proof with eauto.
           +++++ inversion H_typing2; subst; auto.
           eauto using typing_preservation.
           +++++ assert (terminate_num (Config ct (Container t0 f0 l0 s0) ctns2' h2'0)
-                                     (Config ct (Container final_v2 [ ] lb2' sf2') [ ] h2') 
+                                     (Config ct (Container final_v2 nil lb2' sf2') nil h2') 
                                      (1 + n0' - 1)).
           eauto using execution_num_step.
           assert (forall n, 1 + n -1 = n).
@@ -427,7 +426,7 @@ Proof with eauto.
          +++ inversion H_typing1; subst; auto. 
            eauto using typing_preservation.
          +++ assert (terminate_num (Config ct (Container t f l s) ctns1' h1'0)
-                                     (Config ct (Container final_v1 [ ] lb1' sf1') [ ] h1')
+                                     (Config ct (Container final_v1 nil lb1' sf1') nil h1')
                                      (1 + m0' - 1)).
                eauto using execution_num_step.
                assert (forall n, 1 + n -1 = n).

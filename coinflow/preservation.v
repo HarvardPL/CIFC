@@ -6,7 +6,6 @@ Require Import Coq.omega.Omega.
 Require Import Coq.Lists.List.
 Require Import Language.
 Require Import Lemmas.
-(* Require Import Low_eq. *)
 Require Import Label.
 Require Import Types. 
 
